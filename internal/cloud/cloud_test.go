@@ -63,6 +63,18 @@ func fakeRclone(mode string, args []string) int {
 			`{"Path":".hidden","Name":".hidden","Size":1,"ModTime":"2026-01-02T03:04:05Z","IsDir":false},` +
 			`{"Path":"x/y","Name":"x/y","Size":1,"ModTime":"2026-01-02T03:04:05Z","IsDir":false}]`)
 		return 0
+	case "rename":
+		// lsjson prints $FAKE_LIST; moveto exits with $FAKE_MOVE_EXIT
+		if len(args) > 0 && args[0] == "lsjson" {
+			fmt.Println(os.Getenv("FAKE_LIST"))
+			return 0
+		}
+		if len(args) > 0 && args[0] == "moveto" {
+			code := 0
+			fmt.Sscan(os.Getenv("FAKE_MOVE_EXIT"), &code)
+			return code
+		}
+		return 2
 	case "hang", "stubborn":
 		ch := make(chan os.Signal, 1)
 		signal.Notify(ch, os.Interrupt)

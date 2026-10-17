@@ -177,6 +177,25 @@ func (c *Client) Mkdir(ctx context.Context, dir Path, name string) error {
 
 // Rename renames the item at p to name in the same folder. An existing item
 // with the new name is never replaced.
+//
+// Whether the new name is taken is decided from the folder's listing, which
+// has the names as stored, not from a lookup of the new name: on a remote
+// that ignores letter case a lookup of "A.txt" finds "a.txt" itself, and on
+// one that keeps case "a.txt" and "A.txt" are two items. So:
+//
+//   - an item named exactly name (other than p) always blocks the rename;
+//   - another item whose name differs from name only in letter case blocks
+//     it too, since on a case-insensitive remote that is the same name
+//     (on a case-sensitive one this refuses a rename that would have been
+//     safe: TwinPane cannot tell reliably, and refusing loses nothing);
+//   - changing only the case of p's own name is allowed.
+//
+// A file is moved with --ignore-existing, so a file that appears with the
+// new name after the check is not replaced either (rclone then exits with
+// 9 under --error-on-no-transfer). That does not work for case-only renames
+// (the file itself would count as existing) or folders (rclone merges
+// folders and reports no transfer even when it moved one); those rely on
+// the check alone.
 func (c *Client) Rename(ctx context.Context, p Path, name string) error {
 	if err := CheckName(name); err != nil {
 		return &Error{Op: "rename", Kind: KindInvalid, Msg: err.Error()}
@@ -188,13 +207,61 @@ func (c *Client) Rename(ctx context.Context, p Path, name string) error {
 	if dst == p {
 		return nil
 	}
-	if ok, err := c.exists(ctx, dst); err != nil {
+	items, err := c.ListItems(ctx, p.Dir())
+	if err != nil {
 		return err
-	} else if ok && !strings.EqualFold(p.Base(), name) {
-		return &Error{Op: "rename", Kind: KindExists, Remote: p.Remote, Msg: fmt.Sprintf("%q already exists", name)}
 	}
-	_, err := c.output(ctx, "rename", []string{"moveto", "--", p.Arg(), dst.Arg()}, &p)
-	return err
+	src, err := renameCheck(items, p, name)
+	if err != nil {
+		return err
+	}
+	args := []string{"moveto"}
+	guarded := !src.IsDir && !strings.EqualFold(p.Base(), name)
+	if guarded {
+		args = append(args, "--ignore-existing", "--error-on-no-transfer")
+	}
+	args = append(args, "--", p.Arg(), dst.Arg())
+	if _, err := c.output(ctx, "rename", args, &p); err != nil {
+		var e *Error
+		if guarded && errors.As(err, &e) && e.Code == 9 {
+			return &Error{Op: "rename", Kind: KindExists, Remote: p.Remote, Code: 9,
+				Msg: fmt.Sprintf("%q appeared while renaming; nothing was renamed", name)}
+		}
+		return err
+	}
+	return nil
+}
+
+// renameCheck finds p in its folder's listing and refuses a rename to name
+// that could replace another item (see Rename).
+func renameCheck(items []Item, p Path, name string) (Item, error) {
+	var (
+		src   Item
+		found int
+		clash string
+	)
+	for _, it := range items {
+		switch {
+		case it.Name == p.Base():
+			src = it
+			found++
+		case it.Name == name:
+			return Item{}, &Error{Op: "rename", Kind: KindExists, Remote: p.Remote, Msg: fmt.Sprintf("%q already exists", name)}
+		case strings.EqualFold(it.Name, name):
+			clash = it.Name
+		}
+	}
+	switch {
+	case found == 0:
+		return Item{}, &Error{Op: "rename", Kind: KindNotFound, Remote: p.Remote, Msg: fmt.Sprintf("%q is no longer there (refresh with Ctrl+L)", p.Base())}
+	case found > 1:
+		return Item{}, &Error{Op: "rename", Kind: KindInvalid, Remote: p.Remote,
+			Msg: fmt.Sprintf("there are %d items named %q in this folder (some providers allow that); TwinPane cannot tell which one to rename", found, p.Base())}
+	case clash != "":
+		return Item{}, &Error{Op: "rename", Kind: KindExists, Remote: p.Remote,
+			Msg: fmt.Sprintf("%q already exists, and the names differ only in letter case (the same name on many remotes)", clash)}
+	}
+	return src, nil
 }
 
 // Delete deletes the file or folder (with everything in it) at p. Some
