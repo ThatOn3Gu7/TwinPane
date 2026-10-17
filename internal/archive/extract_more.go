@@ -297,15 +297,16 @@ func extractSingle(ctx context.Context, req ExtractRequest, codec Codec, hooks o
 // ---- 7Z and RAR (7-Zip) --------------------------------------------------------
 
 // 7-Zip is started directly (proc.Start: no shell, so names are never
-// interpreted) as
+// interpreted), first to list the archive, then as
 //
-//	7z x -y -bso0 -bse2 -bsp1 -o<staging> -- ARCHIVE
+//	7z x -y -bso0 -bse2 -bsp1 -o<staging> [-spd -x!LINK ...] -- ARCHIVE
 //
 // with stdin closed (an encrypted archive fails instead of prompting).
-// It unpacks into a fresh private folder inside the destination; when it
-// succeeded, regular files and folders are moved into place with the same
-// checks as the other formats (conflicts asked, links and special files
-// skipped). When it fails, nothing is moved and the folder is removed.
+// Link entries are left out by name (see sevenzip_list.go). 7-Zip unpacks
+// into a fresh private folder inside the destination; when it succeeded,
+// regular files and folders are moved into place with the same checks as
+// the other formats (conflicts asked, links and special files skipped).
+// When it fails, nothing is moved and the folder is removed.
 
 var percent7z = regexp.MustCompile(`(\d{1,3})%`)
 
@@ -348,13 +349,21 @@ func extract7z(ctx context.Context, req ExtractRequest, info Info, hooks ops.Hoo
 	defer os.RemoveAll(staging)
 	rep.report(true)
 
-	if err := run7z(ctx, req.SevenZip, src, staging, info, rep); err != nil {
+	listed, err := run7z(ctx, req.SevenZip, src, staging, info, rep)
+	if err != nil {
 		if errors.Is(err, context.Canceled) {
 			res.Canceled = true
 		} else {
 			res.Fatal = err
 		}
 		return res
+	}
+
+	// links were left out by 7-Zip (and what was stored below them)
+	res.Links, res.Unsafe = len(listed.links), listed.below
+	excluded := make(map[string]bool, len(listed.links))
+	for _, p := range listed.links {
+		excluded[p] = true
 	}
 
 	// move into place
@@ -386,7 +395,9 @@ func extract7z(ctx context.Context, req ExtractRequest, info Info, hooks ops.Hoo
 		}
 		switch t := d.Type(); {
 		case t&fs.ModeSymlink != 0:
-			res.Links++
+			if !excluded[filepath.ToSlash(r)] { // a link 7-Zip made anyway: never moved
+				res.Links++
+			}
 		case d.IsDir():
 			x.dir(rel)
 		case t.IsRegular():
@@ -436,33 +447,34 @@ func (x *extractor) moveFile(rel, staged string) {
 	x.noteTop(rel)
 }
 
-func run7z(ctx context.Context, tool, src, staging string, info Info, rep *reporter) error {
-	outR, outW, err := os.Pipe()
+// run7z lists the archive, then extracts it into staging without the
+// links (see sevenzip_list.go).
+func run7z(ctx context.Context, tool, src, staging string, info Info, rep *reporter) (listing7z, error) {
+	var (
+		l    listing7z
+		perr error
+	)
+	err := exec7z(ctx, tool, []string{"l", "-slt", "--", src}, staging, info, func(r io.Reader) {
+		l, perr = parseList7z(r)
+	})
 	if err != nil {
-		return err
+		return l, err
 	}
-	errR, errW, err := os.Pipe()
-	if err != nil {
-		outR.Close()
-		outW.Close()
-		return err
+	if perr != nil {
+		return l, fmt.Errorf("cannot read the list of files in the %s archive (%v); nothing was extracted", info.Name(), perr)
 	}
-	args := []string{tool, "x", "-y", "-bso0", "-bse2", "-bsp1", "-o" + staging, "--", src}
-	child, err := proc.Start(proc.Spec{Path: tool, Args: args, Dir: staging, Env: utf8Env(), Files: []*os.File{nil, outW, errW}, Sys: proc.NewGroup()})
-	outW.Close()
-	errW.Close()
-	if err != nil {
-		outR.Close()
-		errR.Close()
-		return fmt.Errorf("cannot start %s: %w", filepath.Base(tool), err)
+	if len(l.links) > 0 && l.version < min7zipForLinks {
+		return l, fmt.Errorf("the %s archive contains %s, and this 7-Zip (%s) is too old to leave them out safely; "+
+			"nothing was extracted. Install 7-Zip %d or newer (Termux: pkg install 7zip)",
+			info.Name(), plural(len(l.links), "link"), version7zName(l.version), min7zipForLinks)
 	}
-	outDone := make(chan struct{})
-	go func() {
-		defer close(outDone)
-		defer outR.Close()
+	args := []string{"x", "-y", "-bso0", "-bse2", "-bsp1", "-o" + staging}
+	args = append(args, l.exclusions()...)
+	args = append(args, "--", src)
+	return l, exec7z(ctx, tool, args, staging, info, func(r io.Reader) {
 		buf := make([]byte, 4096)
 		for {
-			n, err := outR.Read(buf)
+			n, err := r.Read(buf)
 			if n > 0 {
 				if m := percent7z.FindAllSubmatch(buf[:n], -1); len(m) > 0 {
 					if pct, _ := strconv.Atoi(string(m[len(m)-1][1])); pct <= 100 {
@@ -475,6 +487,45 @@ func run7z(ctx context.Context, tool, src, staging string, info Info, rep *repor
 				return
 			}
 		}
+	})
+}
+
+func version7zName(v int) string {
+	if v == 0 {
+		return "unknown version"
+	}
+	return fmt.Sprintf("version %d", v)
+}
+
+// exec7z runs 7-Zip with args (no shell; stdin closed so an encrypted
+// archive fails instead of prompting), passes its output to consume and
+// explains a failure. Cancelling ctx kills it.
+func exec7z(ctx context.Context, tool string, args []string, dir string, info Info, consume func(io.Reader)) error {
+	outR, outW, err := os.Pipe()
+	if err != nil {
+		return err
+	}
+	errR, errW, err := os.Pipe()
+	if err != nil {
+		outR.Close()
+		outW.Close()
+		return err
+	}
+	argv := append([]string{tool}, args...)
+	child, err := proc.Start(proc.Spec{Path: tool, Args: argv, Dir: dir, Env: utf8Env(), Files: []*os.File{nil, outW, errW}, Sys: proc.NewGroup()})
+	outW.Close()
+	errW.Close()
+	if err != nil {
+		outR.Close()
+		errR.Close()
+		return fmt.Errorf("cannot start %s: %w", filepath.Base(tool), err)
+	}
+	outDone := make(chan struct{})
+	go func() {
+		defer close(outDone)
+		defer outR.Close()
+		consume(outR)
+		io.Copy(io.Discard, outR) // whatever consume left: never block 7-Zip
 	}()
 	var stderr bytes.Buffer
 	errDone := make(chan struct{})
@@ -522,9 +573,11 @@ func explain7z(info Info, code int, stderr string) error {
 		return fmt.Errorf("the %s archive is password-protected: encrypted archives are not supported (nothing was extracted)", info.Name())
 	case strings.Contains(low, "unsupported method"), strings.Contains(low, "unsupported archive"):
 		return fmt.Errorf("this 7-Zip cannot read the %s archive (%s); nothing was extracted", info.Name(), last)
-	case strings.Contains(low, "cannot open the file as"), strings.Contains(low, "unexpected end"),
+	case strings.Contains(low, "cannot open the file as"), strings.Contains(low, "can not open the file as"), strings.Contains(low, "unexpected end"),
 		strings.Contains(low, "data error"), strings.Contains(low, "crc failed"), strings.Contains(low, "headers error"):
 		return fmt.Errorf("the %s archive is damaged or truncated (%s); nothing was extracted", info.Name(), last)
+	case strings.Contains(low, "dangerous link"):
+		return fmt.Errorf("the %s archive contains a link pointing outside the destination, which 7-Zip refused (%s); nothing was extracted", info.Name(), last)
 	case strings.Contains(low, "no space left"), strings.Contains(low, "disk full"):
 		return errors.New("the destination is full; nothing was extracted")
 	}

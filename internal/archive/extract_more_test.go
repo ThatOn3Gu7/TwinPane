@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -375,41 +376,94 @@ func find7z(t *testing.T) string {
 
 func run7zCreate(t *testing.T, tool, dir string, args ...string) {
 	t.Helper()
-	child, err := proc.Start(proc.Spec{Path: tool, Args: append([]string{tool}, args...), Dir: dir, Files: []*os.File{nil, nil, nil}})
+	if !try7z(tool, dir, args...) {
+		t.Fatalf("7z %v failed", args)
+	}
+}
+
+func try7z(tool, dir string, args ...string) bool {
+	child, err := proc.Start(proc.Spec{Path: tool, Args: append([]string{tool}, args...), Dir: dir, Env: utf8Env(), Files: []*os.File{nil, nil, nil}})
 	if err != nil {
-		t.Fatal(err)
+		return false
 	}
-	if st, err := child.Wait(); err != nil || st.Code != 0 {
-		t.Fatalf("7z %v: %v %v", args, st, err)
+	st, err := child.Wait()
+	return err == nil && st.Code == 0
+}
+
+// add7zLinks adds names to archive keeping symbolic links as links: -snl
+// on 7-Zip 21 and newer; p7zip 16.02 has no -snl and always keeps them.
+func add7zLinks(t *testing.T, tool, dir, archive string, names ...string) {
+	t.Helper()
+	if !try7z(tool, dir, append([]string{"a", "-bso0", "-bse0", "-snl", archive}, names...)...) {
+		run7zCreate(t, tool, dir, append([]string{"a", "-bso0", "-bse0", archive}, names...)...)
 	}
+}
+
+// version7zOf returns the major version of a 7-Zip program (0 if unknown).
+func version7zOf(t *testing.T, tool string) int {
+	t.Helper()
+	var out bytes.Buffer
+	exec7z(context.Background(), tool, []string{"i"}, t.TempDir(), Info{Format: Format7z}, func(r io.Reader) {
+		io.Copy(&out, io.LimitReader(r, 4096))
+	})
+	for _, line := range strings.Split(out.String(), "\n") {
+		if strings.Contains(line, "7-Zip") {
+			if m := version7z.FindStringSubmatch(line); m != nil {
+				v, _ := strconv.Atoi(m[1])
+				return v
+			}
+		}
+	}
+	return 0
 }
 
 func TestExtract7zReal(t *testing.T) {
 	tool := find7z(t)
+	modern := version7zOf(t, tool) >= min7zipForLinks
 	root := t.TempDir()
 	src := filepath.Join(root, "src")
 	os.MkdirAll(filepath.Join(src, "d", "e"), 0o755)
 	os.WriteFile(filepath.Join(src, "d", "a.txt"), []byte("seven"), 0o644)
 	os.WriteFile(filepath.Join(src, "d", "e", "ü n'i (c).txt"), []byte("unicode"), 0o644)
-	os.Symlink("/etc/passwd", filepath.Join(src, "d", "lnk"))
-	run7zCreate(t, tool, src, "a", "-bso0", "-bse0", "-snl", "../plain.7z", "d")
+	run7zCreate(t, tool, src, "a", "-bso0", "-bse0", "../nolink.7z", "d")
 	run7zCreate(t, tool, src, "a", "-bso0", "-bse0", "-psecret", "-mhe=on", "../enc.7z", "d")
-	plain := filepath.Join(root, "plain.7z")
+	// the same with a link to a file outside: 7-Zip 21+ itself refuses to
+	// create it (23.01) or points it inside the output folder (25.01);
+	// TwinPane leaves it out before 7-Zip sees it, on every version
+	os.Symlink("/etc/passwd", filepath.Join(src, "d", "lnk"))
+	add7zLinks(t, tool, src, "../links.7z", "d")
+	plain := filepath.Join(root, "nolink.7z")
 
 	dest := filepath.Join(root, "out")
 	var last ops.Progress
+	if modern {
+		res := ExtractAny(context.Background(), ExtractRequest{Archive: filepath.Join(root, "links.7z"), DestDir: dest, SevenZip: tool}, ops.Hooks{Progress: func(p ops.Progress) { last = p }})
+		if !res.OK() || res.Files != 2 || res.Links != 1 || res.Unsafe != 0 {
+			t.Fatalf("7z with a link: %s %+v %v", res.Summary(), res.Errors, res.Fatal)
+		}
+		if _, err := os.Lstat(filepath.Join(dest, "d", "lnk")); err == nil {
+			t.Fatal("links must not be created")
+		}
+		os.RemoveAll(dest)
+	} else {
+		// an old 7-Zip has no link checks of its own: refused, nothing written
+		res := ExtractAny(context.Background(), ExtractRequest{Archive: filepath.Join(root, "links.7z"), DestDir: dest, SevenZip: tool}, ops.Hooks{})
+		if res.Fatal == nil || !strings.Contains(res.Fatal.Error(), "too old") {
+			t.Fatalf("old 7-Zip with a link: %v", res.Fatal)
+		}
+		if ents, _ := os.ReadDir(dest); len(ents) != 0 {
+			t.Fatalf("nothing may be extracted: %v", ents)
+		}
+	}
 	res := ExtractAny(context.Background(), ExtractRequest{Archive: plain, DestDir: dest, SevenZip: tool}, ops.Hooks{Progress: func(p ops.Progress) { last = p }})
-	if !res.OK() || res.Files != 2 {
-		t.Fatalf("7z: %s %+v", res.Summary(), res.Errors)
+	if !res.OK() || res.Files != 2 || res.Links != 0 {
+		t.Fatalf("7z: %s %+v %v", res.Summary(), res.Errors, res.Fatal)
 	}
 	if b, _ := os.ReadFile(filepath.Join(dest, "d", "e", "ü n'i (c).txt")); string(b) != "unicode" {
 		t.Fatal("unicode name")
 	}
-	if _, err := os.Lstat(filepath.Join(dest, "d", "lnk")); err == nil {
-		t.Fatal("links must not be created")
-	}
-	if res.Links != 1 || last.Phase == "" {
-		t.Fatalf("links %d, progress %+v", res.Links, last)
+	if last.Phase == "" {
+		t.Fatalf("progress %+v", last)
 	}
 	noTemps(t, dest)
 
