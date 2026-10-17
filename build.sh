@@ -15,8 +15,8 @@
 # scripts/install.sh selects among these names; scripts/test_install.sh and
 # the release workflow check that both agree.
 #
-# Release file names (VERSION=0.7.0 -> tag v0.7.0):
-#   twinpane-v0.7.0-<os>-<arch>.tar.gz   (twinpane-v0.7.0-windows-amd64.zip for Windows)
+# Release file names (VERSION=0.8.0 -> tag v0.8.0):
+#   twinpane-v0.8.0-<os>-<arch>.tar.gz   (twinpane-v0.8.0-windows-amd64.zip for Windows)
 #   SHA256SUMS                           sha256 of every package, "<hash>  <file>"
 # Each package holds one folder named like the package (without the extension)
 # containing the program (twinpane or twinpane.exe), LICENSE and README.md.

@@ -1,3 +1,50 @@
+TwinPane 0.8.0 release preparation: verification log (2026-10-17T18:20Z, go1.23.4 linux/amd64)
+Since 0.7.0: rclone cloud remotes (Ctrl+R), refresh moved to Ctrl+L, new folder (n/F7), loading
+spinner, TAR/GZ/BZ2/XZ/ZST/LZ4 and 7Z/RAR extraction, installer output, build output paths. Fixed
+before release: 7Z/RAR extraction let 7-Zip create links (and failed CI with 7-Zip 23.01), and
+remote rename could replace an item whose name differed only in letter case.
+Every check below was actually run in this sandbox (Linux x86_64, Debian 13). Nothing ran on GitHub
+Actions, a phone, Termux, macOS or Windows, and no cloud provider was used.
+
+## Summary
+- gofmt clean; go vet ./... ok; make lint ok; actionlint 1.7.12: ci.yml and release.yml clean.
+- CI job simulated: every run: step of ci.yml (job "test"), read from the file, ran in order in a
+  fresh clone of the release commit, on a PATH without rclone: the install step downloaded rclone
+  v1.75.2 and 7-Zip 26.04 and checked both SHA-256 sums; "Unit and UI tests" with
+  TWINPANE_REQUIRE_TOOLS=1 (go test -race -count=1 ./...): 16 packages ok (2 have no tests);
+  archive tests with
+  7-Zip 26.04: ok; shellcheck ok; installer tests 153 passed, 0 failed (dash and bash);
+  cross-compile ok. (The system 7-Zip here is Debian's 25.01; ubuntu-24.04 has 23.01, tested below.)
+- Archive tests (go test ./internal/archive/) with each 7-Zip first in PATH: p7zip 16.02, 7-Zip
+  21.07, 22.01, 23.01, 25.01, 26.04: ok. With 16.02 an archive with links is refused before
+  extraction; with 21.07+ links are skipped and regular files extracted. The 7Z compression tests
+  (internal/compress, 11 tests) pass with the same six.
+- Mutation checks: removing the link exclusion, or restoring the old EqualFold rename check, makes
+  the new tests fail. With real rclone 1.75.2 on a local alias remote, the old Rename lost a.txt
+  when renaming a.txt to A.txt next to an existing A.txt; the new one refuses and keeps both.
+- End-to-end, binary from ./build.sh of the release code: tui_smoke 30/30, tui_smoke_ops 64/64,
+  editor_check 6/6 (Neovim), feature_check 16/16, phase4_check 11/11, phase5_check 13/13,
+  phase6_check 19/19, phase7_check 10/10, android_check 10/10 (Android-like seccomp filter).
+- Release workflow build job simulated with TAG=v0.8.0 in a fresh clone of the commit tagged
+  v0.8.0 (local tag): tag/VERSION/CHANGELOG check, build, package checks, reproducibility rebuild,
+  installer run against the packages (163 passed, 0 failed): all exit 0. The check rejects the tags
+  v0.8.1, v0.7.0, 0.8.0 and v0.8.0-rc1. scripts/release_notes.sh v0.8.0 prints the CHANGELOG
+  section and the install text; v0.9.0 is rejected. The smoke and publish jobs need GitHub runners
+  and were not run.
+- Packages: twinpane-v0.8.0-{android-arm64,darwin-amd64,darwin-arm64,linux-amd64,linux-arm64}.tar.gz,
+  twinpane-v0.8.0-windows-amd64.zip and SHA256SUMS. linux-amd64 --version: twinpane 0.8.0
+  (linux/amd64). file(1): android-arm64 ELF ARM aarch64 PIE (interpreter /system/bin/linker64),
+  linux-* static ELF, darwin-* Mach-O, windows PE32+. Their SHA-256 sums depend on the commit and
+  are published with the release.
+
+## NOT verified
+- The new CI steps have not run on GitHub yet (nothing pushed when this was written).
+- Termux's 7zip package and rclone were not run on a phone; android-arm64 was not executed.
+- No real cloud provider (Drive, S3, SFTP...) was used; the cloud tests use rclone's local and
+  alias remotes. Rename does not treat Unicode NFC and NFD spellings of a name as the same name.
+
+======================================================================================================
+
 TwinPane 0.7.0 release preparation: verification log (2026-10-17T07:26Z, go1.23.4 linux/amd64)
 Phase 8: public release and distribution. Module path github.com/ThatOn3Gu7/TwinPane, MIT license,
 logo, installer, release workflow, new README/CHANGELOG/CONTRIBUTING/docs. No change to program

@@ -2,7 +2,7 @@
 # Print the GitHub release notes for a tag: the CHANGELOG.md section of that
 # version, followed by installation and verification instructions.
 #
-#   scripts/release_notes.sh v0.7.0 > notes.md
+#   scripts/release_notes.sh v0.8.0 > notes.md
 #
 # Fails when the tag is not vMAJOR.MINOR.PATCH or CHANGELOG.md has no
 # "## [MAJOR.MINOR.PATCH]" section, so a release can't go out without notes.

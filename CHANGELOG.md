@@ -9,6 +9,12 @@ The complete description of every feature is in
 
 ## [Unreleased]
 
+## [0.8.0]
+
+Cloud remotes, more archive formats and a new-folder key. Two safety
+problems in the new code were found and fixed before this release (see
+*Security*); no published version had them.
+
 ### Added
 - Cloud remotes through rclone: `Ctrl+R` opens the Sources picker, and
   either panel can show a configured rclone remote (labelled with its name)
@@ -39,6 +45,35 @@ The complete description of every feature is in
   built (plus, for `./build.sh native`, how to run and install it). The
   README explains where each build command puts its output and how the
   build works.
+
+### Security
+- 7Z and RAR extraction leaves symbolic and hard links out before 7-Zip
+  runs, by their exact names, so 7-Zip never creates one, not even in
+  TwinPane's temporary folder. Files stored "below" a link are skipped with
+  it. Before, the result depended on the 7-Zip version: p7zip 16.02 created
+  links pointing outside the destination in that folder, and 7-Zip 21 to 23
+  refused them and failed the whole extraction (this made CI fail on
+  ubuntu-24.04's 7-Zip 23.01). With a 7-Zip older than 21, an archive that
+  contains links is now refused before anything is extracted, with a hint
+  to install a current 7-Zip.
+- Rename on a remote can no longer replace another item. It used to
+  allow a new name that differed from an existing one only in letter case,
+  so on a case-sensitive remote (Google Drive, S3, SFTP to Linux) renaming
+  `a.txt` to `A.txt` while both existed left only one of them. The check
+  now uses the folder's listing: an existing name is refused, and so is
+  one that differs only in case (the same name on case-insensitive remotes).
+  Changing the case of an item's own name still works. File renames are
+  also guarded by rclone (`--ignore-existing`), so a file that appears
+  during the rename is kept.
+
+### Development
+- CI installs rclone (pinned, checksum-checked) so the real-rclone tests
+  run. They use rclone's `local` and `alias` remotes on temporary folders,
+  never a cloud provider. CI also runs the archive tests a second time with
+  the latest 7-Zip release. `TWINPANE_REQUIRE_TOOLS=1` makes the real-tool
+  tests fail instead of skipping when rclone or 7-Zip is missing.
+- Lint, installer tests and the cross-compile run (and report) even when a
+  test fails; the job still fails.
 
 ## [0.7.0]
 
@@ -130,4 +165,5 @@ First public release.
 - Dual-pane navigation (phase 1).
 - Copy, move, rename and delete (trash first), external editing (phase 2).
 
+[0.8.0]: https://github.com/ThatOn3Gu7/TwinPane/releases/tag/v0.8.0
 [0.7.0]: https://github.com/ThatOn3Gu7/TwinPane/releases/tag/v0.7.0

@@ -93,7 +93,7 @@ Usage: install.sh [options]
 
   -d, --dir DIR          install into DIR (created if missing)
                          default: $PREFIX/bin in Termux, $HOME/.local/bin elsewhere
-  -v, --version VERSION  install this release (v0.7.0 or 0.7.0) instead of the latest
+  -v, --version VERSION  install this release (v0.8.0 or 0.8.0) instead of the latest
       --target TARGET    skip detection and install TARGET, one of:
                          android-arm64 linux-arm64 linux-amd64 darwin-arm64 darwin-amd64
       --downloader TOOL  use curl or wget (default: curl if present, else wget)
@@ -266,7 +266,7 @@ valid_tag() { printf '%s\n' "$1" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; }
 resolve_version() {
 	if [ -n "$REQ_VERSION" ]; then
 		case "$REQ_VERSION" in v*) TAG="$REQ_VERSION" ;; *) TAG="v$REQ_VERSION" ;; esac
-		valid_tag "$TAG" || die "invalid version '$REQ_VERSION' (expected MAJOR.MINOR.PATCH, e.g. v0.7.0)"
+		valid_tag "$TAG" || die "invalid version '$REQ_VERSION' (expected MAJOR.MINOR.PATCH, e.g. v0.8.0)"
 		RELEASE_JSON=""
 		return
 	fi

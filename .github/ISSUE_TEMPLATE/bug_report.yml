@@ -12,7 +12,7 @@ body:
     attributes:
       label: TwinPane version
       description: Output of `twinpane --version`
-      placeholder: twinpane 0.7.0 (android/arm64)
+      placeholder: twinpane 0.8.0 (android/arm64)
     validations:
       required: true
   - type: dropdown

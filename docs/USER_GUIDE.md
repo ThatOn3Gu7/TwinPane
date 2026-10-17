@@ -1,7 +1,6 @@
 # TwinPane user guide
 
-The complete reference for TwinPane 0.7.0 (plus the unreleased changes on
-`master`, marked as such): every feature, key and safety
+The complete reference for TwinPane 0.8.0: every feature, key and safety
 rule. For installation, building and an overview, see the
 [README](../README.md); for the version history, see the
 [changelog](../CHANGELOG.md).
@@ -11,7 +10,7 @@ Later versions sometimes changed earlier behaviour; such changes are noted
 where they apply and summarised under [Keyboard controls](#keyboard-controls).
 
 ```
- TwinPane  0.7.0                                   hidden: off · active: left panel
+ TwinPane  0.8.0                                   hidden: off · active: left panel
 ╭──────────────────────────────────────╮┌──────────────────────────────────────┐
 │ /home/me/L                           ││ /home/me/R                           │
 │ Name        ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓          │
@@ -30,9 +29,9 @@ where they apply and summarised under [Keyboard controls](#keyboard-controls).
 
 ## Features
 
-### Unreleased (phase 9: cloud remotes, more extraction formats, new folder)
+### New in 0.8.0 (cloud remotes, more extraction formats, new folder)
 
-On `master`, not part of v0.7.0. One key changed: **refresh moved from
+One key changed in v0.8.0: **refresh moved from
 `Ctrl+R` to `Ctrl+L`**, because `Ctrl+R` opens the new Sources picker
 (`Ctrl+R` inside the bulk-rename dialog still toggles regular expressions).
 Every other shortcut works as before.
@@ -79,7 +78,12 @@ passwords or tokens.
   with "apply to all"; nothing is overwritten without asking. A move removes
   each source only after rclone transferred it.
 - **New folder** (`n`/`F7`), **rename** (`r`, one item at a time; bulk
-  rename is for local folders) and **delete** (`d`) work on remotes. Delete
+  rename is for local folders) and **delete** (`d`) work on remotes. Rename
+  never replaces another item: a name already used in the folder is
+  refused, and so is a name that differs from an existing one only in
+  letter case (`Report.pdf` next to `report.pdf`), because many remotes
+  (OneDrive, Dropbox, Box, Windows and macOS disks) treat those as the same
+  name. Changing only the case of an item's own name works. Delete
   always confirms; folders or several items need typing `delete`. Some
   providers keep deleted items in their own trash (Google Drive does by
   default); on others deleting cannot be undone.
@@ -123,6 +127,13 @@ permissions are reduced to 0644/0755. Repeated names in a TAR keep the
 first entry. 7-Zip unpacks into a private temporary folder inside the
 destination first; only when it succeeded are the files moved into place
 (with the same conflict questions), so a failure extracts nothing.
+Symbolic and hard links in 7Z/RAR archives are left out before 7-Zip runs,
+so 7-Zip never creates them, not even in its temporary folder; files stored
+"below" a link are skipped with it, and the result counts both. This needs
+7-Zip 21 or newer (which also refuses dangerous links itself). With an older
+7-Zip, such as p7zip 16.02, an archive that contains links is refused
+before anything is extracted, with a hint to install a current 7-Zip
+(`pkg install 7zip`); archives without links extract normally.
 Password-protected 7Z/RAR archives are refused with a clear message (7-Zip
 never waits for a password). A file in no supported format, or a 7Z/RAR
 without 7-Zip, is refused with the list of formats or the package to
@@ -937,7 +948,7 @@ v0.3.1; the matching rules below still apply)
 | `P` | **properties**: details, rename, permissions |
 | `v` / `F3` | **view** the file (read-only); `Enter` on a file does the same |
 | `Enter` on a `.zip` | **browse** the archive (no extraction) |
-| `x` | **extract**: selected entries (in an archive) or the archive under the cursor (unreleased: also TAR, compressed files, 7Z/RAR) |
+| `x` | **extract**: selected entries (in an archive) or the archive under the cursor (also TAR, compressed files, 7Z/RAR since v0.8.0) |
 | `X` | extract the whole archive (in an archive) |
 | `z` | **compress** the selection / item under the cursor: ZIP, 7Z, TAR, TAR.GZ, TAR.XZ, TAR.ZST, TAR.BZ2, TAR.LZ4, GZIP, XZ, ZSTD, BZIP2, LZ4 |
 | `o` | **open** the file in its default app (Termux: `termux-open`; desktop: `xdg-open`) |
@@ -951,13 +962,13 @@ v0.3.1; the matching rules below still apply)
 | `h` / `H` / `.` | show / hide hidden files in **both** panels |
 | `s` | cycle sort: name → size → time → type |
 | `S` | reverse the sort order (↑/↓) |
-| `Ctrl+L` | refresh both panels (unreleased; `Ctrl+R` in v0.7.0) |
-| `Ctrl+R` | **sources**: local files or an rclone remote for the active panel (unreleased) |
-| `n` / `F7` | **new folder** (unreleased) |
+| `Ctrl+L` | refresh both panels (`Ctrl+R` in v0.7.0) |
+| `Ctrl+R` | **sources**: local files or an rclone remote for the active panel (new in v0.8.0) |
+| `n` / `F7` | **new folder** (new in v0.8.0) |
 | `?` / `F1` | help (scroll with `↑`/`↓` `PgUp`/`PgDn` `g`/`G`; any other key closes it) |
 | `q` / `F10` / `Ctrl+C` | quit (`Ctrl+C` cancels a running operation instead) |
 
-**Changed after v0.7.0 (unreleased):** refresh is `Ctrl+L` (was `Ctrl+R`);
+**Changed in v0.8.0:** refresh is `Ctrl+L` (was `Ctrl+R`);
 `Ctrl+R` opens Sources (cloud remotes); `n`/`F7` (new folder) are new. These
 keys were unused before, apart from `Ctrl+R`, whose move was decided
 deliberately and is documented here. `Ctrl+R` inside the bulk-rename dialog
@@ -1093,7 +1104,7 @@ including the end-to-end test scripts, are in
 - A double tap on a text file always asks first, even after you've used the
   editor many times; `e` opens it without asking.
 - Archives: browsing is ZIP only (also `.jar`, `.apk`, `.epub` and other
-  ZIP-based files); unreleased: TAR, compressed TAR, single compressed
+  ZIP-based files); TAR, compressed TAR, single compressed
   files, 7Z and RAR can be extracted as a whole (not partially, not
   browsed; 7Z/RAR need 7-Zip, encrypted ones are refused). Only "stored" and "deflate" entries can be read. Encrypted entries
   (ZipCrypto/AES) and other methods are listed but can't be viewed or
@@ -1102,7 +1113,7 @@ including the end-to-end test scripts, are in
   files get 0644/0755 permissions. Very large archives are listed from the
   central directory, so opening one costs memory proportional to the number
   of entries, not their size.
-- Cloud remotes (unreleased): need rclone and a remote set up with
+- Cloud remotes: need rclone and a remote set up with
   `rclone config`; TwinPane does not create or edit remotes. Remote files
   can't be viewed, edited or opened in place (copy them to a local panel).
   Rename on a remote is one item at a time. Symbolic links are not uploaded
@@ -1121,8 +1132,9 @@ including the end-to-end test scripts, are in
   of scope). No chown/chgrp, and no ACLs or extended attributes. Permissions
   apply to one item at a time.
 - Compression: only ZIP archives can be browsed/extracted; the other formats
-  are create-only. 7Z needs an installed 7-Zip and was tested with 7-Zip
-  25.01 only (not p7zip 16.02, not Termux's `7zip` package). XZ has a single
+  are create-only. 7Z needs an installed 7-Zip; creating and extracting 7Z
+  were tested on Linux x86_64 with 7-Zip 21.07, 22.01, 23.01, 25.01, 26.04
+  and p7zip 16.02 (not with Termux's `7zip` package on a phone). XZ has a single
   setting (the Go library has no levels). Encryption/passwords and split
   archives are not supported. TAR entries get the names, permissions,
   modification times, owner IDs and links that Go's `archive/tar` records;

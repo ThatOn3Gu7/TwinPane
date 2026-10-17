@@ -702,7 +702,7 @@ android-arm64 build".
   permanent (with the typed confirmation). Adding `android` to the
   freedesktop case would enable a trash in Termux's home.
 
-## Phase 9 (unreleased): cloud remotes, extraction formats, new folder
+## Phase 9 (v0.8.0): cloud remotes, extraction formats, new folder
 
 ### Keys
 `Ctrl+R` was refresh. After asking the user, Sources took `Ctrl+R` and
@@ -735,8 +735,25 @@ dialog-local and unaffected.
   --files-from-raw` (one name per line, so any character works). Progress comes from
   `--use-json-log --stats` lines; counts come from the pre-scan, because a
   server-side move reports zeros.
-- **Mkdir/Rename** check the target first and never touch an existing item.
+- **Mkdir** checks the target first and never touches an existing item.
   Delete uses `deletefile` or `purge`.
+- **Rename** decides from the parent folder's listing (`renameCheck`), not
+  from a lookup of the new name: on a case-insensitive remote `lsjson
+  --stat A.txt` finds `a.txt` itself, on a case-sensitive one they are two
+  items, and TwinPane cannot reliably tell which kind a remote is (the
+  `local` backend reports case-sensitive even on Android's case-insensitive
+  shared storage). An exact name match blocks; another item equal to the new
+  name ignoring case blocks too (refusing a rename that a case-sensitive
+  remote would allow loses nothing); changing only the case of the item's own
+  name is allowed; a missing or duplicated source (Drive allows duplicate
+  names) is refused. File renames that are not case-only add
+  `--ignore-existing --error-on-no-transfer`, so a file appearing after the
+  check is kept (exit 9 → `KindExists`). Folders can't use that: `moveto`
+  merges into an existing folder and reports no transfer even after moving
+  one, so for them the listing check is the protection. Before v0.8.0 was
+  released, the check was `exists(dst) && !strings.EqualFold(old, new)`,
+  which let `a.txt → A.txt` through when both existed on a case-sensitive
+  remote; real rclone then left only one of the two files.
 
 ### Panels (`internal/panel`)
 A panel has an optional `rem *RemoteSource` (client + remote). `OpenRemote`
@@ -785,6 +802,32 @@ are counted instead of created, and duplicates keep the first. 7-Zip runs
 via `proc` with closed stdin (`-bsp1` progress) into a staging folder
 `ops.TempPrefix+"x-*"` inside the destination, whose files are then placed
 with the same rules; encrypted archives fail fast instead of prompting.
+
+**Links in 7Z/RAR (`sevenzip_list.go`).** The staging folder is not enough
+on its own: 7-Zip writes there itself, so a link `d -> /etc` followed by a
+file `d/passwd` is 7-Zip's problem before TwinPane sees anything. Measured
+behaviour: p7zip 16.02 creates absolute and `../` links verbatim; 7-Zip 21.07,
+22.01 and 23.01 refuse them ("Dangerous link path was ignored", exit 2), so
+any archive with such a link failed as a whole; 25.01 and 26.04 rewrite
+absolute links into the output folder but still refuse `../` ones (exit 2).
+So `run7z` first lists the archive (`7z l -slt`, parsed by `parseList7z`):
+entries whose Unix mode is `l…`, whose Windows attributes contain `L`
+(reparse point), or that have a `Symbolic Link`/`Hard Link`/`Link`/`Copy
+Link` value are links. They are excluded by exact name, one `-x!NAME`
+argument each after `-spd` (no wildcards). A `-x@listfile` was rejected
+because 7-Zip trims leading and trailing spaces from list-file lines. Entries
+below an excluded link are skipped by 7-Zip with it and counted as unsafe
+(`countBelow`; the listing may name the link after them). Exact names need
+an unambiguous listing: 7-Zip 21+ prints control characters as `_` (a
+mismatch then falls back to 7-Zip's own refusal, so it fails closed), while
+p7zip prints names raw, so a crafted name can add lines. Every entry of a
+listing has the same keys in the same order, so a broken pattern or a
+repeated key marks it ambiguous. A repeated key is still inspected, because
+the real `Attributes` line of a link follows any faked one. Because exclusion
+can't be proven exact on old builds, a 7-Zip older than 21 (banner version)
+refuses every archive that contains a link. Beyond 128 KiB of exclusion
+arguments none are passed, and 7-Zip's own checks decide (fail closed).
+`explain7z` reports a refused link as such.
 The codecs are used directly (`archive` cannot import `compress`, which
 imports `archive`). In the UI, `x` on a local file calls `Detect`, refuses
 unknown formats with `archive.Supported`, and asks for 7-Zip when needed.
@@ -803,14 +846,26 @@ exit 130/143 after the cleanup trap removed the temporary folder.
 ### Tests
 - `cloud`: a fake rclone (the test binary itself, re-executed with
   `TWINPANE_FAKE_RCLONE=<mode>`) for failures (expired login, offline,
-  unparsable output, hangs for cancellation), and real rclone with local/alias
-  remotes in temp folders when it is installed (skipped otherwise).
+  unparsable output, hangs for cancellation) and for rename on simulated
+  case-insensitive remotes, duplicate names and late arrivals
+  (`rename_test.go`), and real rclone with local/alias remotes in temp
+  folders when it is installed (skipped otherwise; CI installs rclone and
+  sets `TWINPANE_REQUIRE_TOOLS=1`, which turns those skips into failures).
+  None of these tests talks to a cloud provider.
 - `panel/remote_test.go` and `ui/cloud_test.go`: source switching, labels,
   failed opens, vanished folders, transfers in every direction, conflicts,
   mkdir/rename/delete and the "no rclone" / "no remotes" states.
 - `archive/extract_more_test.go`, `ui/extract_formats_test.go`: every
   built-in format, damaged and truncated archives, unsafe names, links and
   FIFOs, conflicts, cancellation, and real 7-Zip when installed.
+  `sevenzip_list_test.go` parses listings (modern, p7zip with injected
+  lines, link kinds, malformed blocks, versions); `sevenzip_unix_test.go`
+  extracts a hostile 7Z (absolute, `../` and folder links, a file below a
+  link, names with spaces and wildcards) and a RAR fixture with the real
+  7-Zip, and covers the old-7-Zip refusal, exact exclusion arguments,
+  listing failures and refused links with a simulated `7zz` script. CI runs
+  the archive tests with the distribution's 7-Zip (23.01 on ubuntu-24.04)
+  and again with the latest 7-Zip release.
 - `scripts/test_install.sh`: banner and steps, colour rules, the missing
   tool check, the optional-companions report (Linux and Termux) and
   interruption, under dash and bash.

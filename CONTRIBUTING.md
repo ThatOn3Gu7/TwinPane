@@ -75,6 +75,13 @@ folder on a different filesystem than `$TMPDIR` (for example
 `TWINPANE_XDEV_DIR=/var/tmp` when `/tmp` is a tmpfs). Otherwise they are
 skipped.
 
+Some tests run the real `rclone` (on its `local` and `alias` remotes in
+temporary folders, never a cloud account) and the real 7-Zip (`7zz`, `7z`
+or `7za`). Without them installed these tests are skipped.
+`TWINPANE_REQUIRE_TOOLS=1` makes a missing tool a failure instead; CI sets
+it. To test with a particular 7-Zip, put its folder first in `PATH`
+(`PATH=/path/to/7zip-folder:$PATH go test ./internal/archive/`).
+
 ### End-to-end tests
 
 These start the real program in a terminal and check the screen. They run on

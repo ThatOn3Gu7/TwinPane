@@ -73,11 +73,16 @@ checks that the README and this workflow agree.
 
    ```sh
    git add VERSION CHANGELOG.md
-   git commit -m "Release v0.8.0"
+   git commit -m "TwinPane v0.8.0"
    git push origin master
+   # wait for CI on master to pass, then tag exactly that commit:
    git tag -a v0.8.0 -m "TwinPane v0.8.0"
    git push origin v0.8.0
    ```
+
+   The commit message is `TwinPane vX.Y.Z` (as for v0.7.0). The commit
+   itself does not start a release: pushing the tag does, once. Never push
+   a second tag for the same version; if the run fails, see below.
 
 5. Watch the run under **Actions → Release**, or with the GitHub CLI:
 

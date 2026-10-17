@@ -33,7 +33,7 @@ view with large touch targets is easier than typing long paths.
   nothing is ever overwritten without asking.
 
 ```
- TwinPane  0.7.0                                   hidden: off · active: left panel
+ TwinPane  0.8.0                                   hidden: off · active: left panel
 ╭──────────────────────────────────────╮┌──────────────────────────────────────┐
 │ /home/me/L                           ││ /home/me/R                           │
 │ Name        ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓          │
@@ -131,10 +131,7 @@ The [user guide](docs/USER_GUIDE.md) describes every feature in detail.
 Not included: content search, configurable keys or themes, and editing
 archives in place.
 
-### Unreleased (on `master`, not in v0.7.0)
-
-These are committed but not yet part of a release; build from source to
-try them (see [Building from source](#building-from-source)).
+### New in v0.8.0
 
 - **Cloud remotes with rclone.** `Ctrl+R` opens the Sources picker for the
   active panel: local files or any remote configured in
@@ -148,7 +145,8 @@ try them (see [Building from source](#building-from-source)).
 - **New folder** (`n` or `F7`), on local folders and remotes.
 - **Extraction of more formats** (`x` on the file): TAR, TAR.GZ/TGZ,
   TAR.BZ2, TAR.XZ, TAR.ZST, TAR.LZ4 and single GZ, BZ2, XZ, ZST, LZ4 files
-  are built in; 7Z and RAR use an installed 7-Zip. Browsing stays ZIP-only.
+  are built in; 7Z and RAR use an installed 7-Zip (links inside them are
+  never created). Browsing stays ZIP-only.
 - **Refresh moved from `Ctrl+R` to `Ctrl+L`** (`Ctrl+R` now opens Sources).
 
 ## Supported platforms
@@ -206,7 +204,7 @@ Options go after `sh -s --`:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/ThatOn3Gu7/TwinPane/master/scripts/install.sh | sh -s -- --dir "$HOME/bin"
-curl -fsSL https://raw.githubusercontent.com/ThatOn3Gu7/TwinPane/master/scripts/install.sh | sh -s -- --version v0.7.0
+curl -fsSL https://raw.githubusercontent.com/ThatOn3Gu7/TwinPane/master/scripts/install.sh | sh -s -- --version v0.8.0
 ```
 
 | Option | Meaning |
@@ -237,19 +235,19 @@ TwinPane.
 Download your platform's package and `SHA256SUMS` from the
 [Releases page](https://github.com/ThatOn3Gu7/TwinPane/releases), check the
 checksum, extract the package, and copy `twinpane` into a folder in your
-`PATH`. Replace `v0.7.0` below with the version you want.
+`PATH`. Replace `v0.8.0` below with the version you want.
 
 **Termux (Android ARM64):**
 
 ```sh
 cd ~
-curl -fLO https://github.com/ThatOn3Gu7/TwinPane/releases/download/v0.7.0/twinpane-v0.7.0-android-arm64.tar.gz
-curl -fLO https://github.com/ThatOn3Gu7/TwinPane/releases/download/v0.7.0/SHA256SUMS
-# with wget instead:  wget https://github.com/ThatOn3Gu7/TwinPane/releases/download/v0.7.0/twinpane-v0.7.0-android-arm64.tar.gz
-#                     wget https://github.com/ThatOn3Gu7/TwinPane/releases/download/v0.7.0/SHA256SUMS
-grep ' twinpane-v0.7.0-android-arm64.tar.gz$' SHA256SUMS | sha256sum -c -
-tar -xzf twinpane-v0.7.0-android-arm64.tar.gz
-install -m 755 twinpane-v0.7.0-android-arm64/twinpane "$PREFIX/bin/twinpane"
+curl -fLO https://github.com/ThatOn3Gu7/TwinPane/releases/download/v0.8.0/twinpane-v0.8.0-android-arm64.tar.gz
+curl -fLO https://github.com/ThatOn3Gu7/TwinPane/releases/download/v0.8.0/SHA256SUMS
+# with wget instead:  wget https://github.com/ThatOn3Gu7/TwinPane/releases/download/v0.8.0/twinpane-v0.8.0-android-arm64.tar.gz
+#                     wget https://github.com/ThatOn3Gu7/TwinPane/releases/download/v0.8.0/SHA256SUMS
+grep ' twinpane-v0.8.0-android-arm64.tar.gz$' SHA256SUMS | sha256sum -c -
+tar -xzf twinpane-v0.8.0-android-arm64.tar.gz
+install -m 755 twinpane-v0.8.0-android-arm64/twinpane "$PREFIX/bin/twinpane"
 twinpane --version
 ```
 
@@ -259,23 +257,23 @@ Keep the program in Termux's own folders. Shared storage (`/sdcard`,
 **Linux** (use `linux-arm64` on ARM machines):
 
 ```sh
-curl -fLO https://github.com/ThatOn3Gu7/TwinPane/releases/download/v0.7.0/twinpane-v0.7.0-linux-amd64.tar.gz
-curl -fLO https://github.com/ThatOn3Gu7/TwinPane/releases/download/v0.7.0/SHA256SUMS
-grep ' twinpane-v0.7.0-linux-amd64.tar.gz$' SHA256SUMS | sha256sum -c -
-tar -xzf twinpane-v0.7.0-linux-amd64.tar.gz
+curl -fLO https://github.com/ThatOn3Gu7/TwinPane/releases/download/v0.8.0/twinpane-v0.8.0-linux-amd64.tar.gz
+curl -fLO https://github.com/ThatOn3Gu7/TwinPane/releases/download/v0.8.0/SHA256SUMS
+grep ' twinpane-v0.8.0-linux-amd64.tar.gz$' SHA256SUMS | sha256sum -c -
+tar -xzf twinpane-v0.8.0-linux-amd64.tar.gz
 mkdir -p ~/.local/bin
-install -m 755 twinpane-v0.7.0-linux-amd64/twinpane ~/.local/bin/twinpane
+install -m 755 twinpane-v0.8.0-linux-amd64/twinpane ~/.local/bin/twinpane
 ```
 
 **macOS** (use `darwin-amd64` on Intel Macs):
 
 ```sh
-curl -fLO https://github.com/ThatOn3Gu7/TwinPane/releases/download/v0.7.0/twinpane-v0.7.0-darwin-arm64.tar.gz
-curl -fLO https://github.com/ThatOn3Gu7/TwinPane/releases/download/v0.7.0/SHA256SUMS
-grep ' twinpane-v0.7.0-darwin-arm64.tar.gz$' SHA256SUMS | shasum -a 256 -c -
-tar -xzf twinpane-v0.7.0-darwin-arm64.tar.gz
+curl -fLO https://github.com/ThatOn3Gu7/TwinPane/releases/download/v0.8.0/twinpane-v0.8.0-darwin-arm64.tar.gz
+curl -fLO https://github.com/ThatOn3Gu7/TwinPane/releases/download/v0.8.0/SHA256SUMS
+grep ' twinpane-v0.8.0-darwin-arm64.tar.gz$' SHA256SUMS | shasum -a 256 -c -
+tar -xzf twinpane-v0.8.0-darwin-arm64.tar.gz
 mkdir -p ~/.local/bin
-install -m 755 twinpane-v0.7.0-darwin-arm64/twinpane ~/.local/bin/twinpane
+install -m 755 twinpane-v0.8.0-darwin-arm64/twinpane ~/.local/bin/twinpane
 ```
 
 The macOS binaries are not signed. Files downloaded with a web browser get a
@@ -283,7 +281,7 @@ quarantine flag; remove it with
 `xattr -d com.apple.quarantine ~/.local/bin/twinpane`. Files downloaded with
 `curl` don't get that flag.
 
-**Windows (untested):** extract `twinpane-v0.7.0-windows-amd64.zip` and run
+**Windows (untested):** extract `twinpane-v0.8.0-windows-amd64.zip` and run
 `twinpane.exe` in Windows Terminal. It is compiled for completeness but has
 never been run, and Windows has no trash (deletes are permanent).
 
@@ -292,8 +290,8 @@ never been run, and Windows has no trash (deletes are permanent).
 | Tool | Used for | Termux | Debian/Ubuntu |
 |---|---|---|---|
 | `fd` | faster search (else `find`, else built in) | `pkg install fd` | `sudo apt install fd-find` |
-| 7-Zip | creating `.7z` archives (on `master`: also extracting 7Z and RAR) | `pkg install 7zip` | `sudo apt install 7zip` |
-| `rclone` | cloud remotes (on `master`, not yet released) | `pkg install rclone` | `sudo apt install rclone`, or [rclone.org/install](https://rclone.org/install/) |
+| 7-Zip | creating `.7z` archives, extracting 7Z and RAR (7-Zip 21 or newer for archives that contain links) | `pkg install 7zip` | `sudo apt install 7zip` |
+| `rclone` | cloud remotes | `pkg install rclone` | `sudo apt install rclone`, or [rclone.org/install](https://rclone.org/install/) |
 | an editor | `e` / `E` | `pkg install neovim` (or `nano`) | already installed |
 | `termux-open` | Open / Share (`o`, `O`) | included in `termux-tools` | `xdg-open` (desktop session) |
 
@@ -305,7 +303,7 @@ companions"); none of them is required.
 
 ### Optional: cloud remotes with rclone
 
-Cloud support (on `master`, not yet released) uses your own rclone setup;
+Cloud support (since v0.8.0) uses your own rclone setup;
 TwinPane has no login of its own and stores no credentials.
 
 1. Install rclone: `pkg install rclone` (Termux), your distribution's
@@ -353,8 +351,8 @@ twinpane --version
 | `Ctrl+R` ¹ | sources: local / cloud | `n` / `F7` ¹ | new folder |
 | `Ctrl+L` ¹ | refresh both panels | | |
 
-¹ On `master`, not yet released. In v0.7.0, `Ctrl+R` refreshes and there is
-no new-folder key.
+¹ New in v0.8.0. In v0.7.0, `Ctrl+R` refreshes and there is no new-folder
+key.
 
 The [user guide](docs/USER_GUIDE.md#keyboard-controls) lists every key,
 including those of the viewer, dialogs, search and bulk rename.
@@ -464,7 +462,7 @@ CGO_ENABLED=0 GOOS=android GOARCH=arm64 \
   on the target system.
 - `-X main.version=…` puts the contents of the `VERSION` file into the
   program (`twinpane --version`). Override it with
-  `VERSION=0.7.0-mytest ./build.sh`. `-s -w` drop debug symbols (smaller
+  `VERSION=0.8.0-mytest ./build.sh`. `-s -w` drop debug symbols (smaller
   file); `-trimpath` keeps your folder names out of the binary.
 - `./build.sh release` additionally packs each binary with `LICENSE` and
   `README.md` into a reproducible archive and writes `SHA256SUMS`; the
@@ -538,7 +536,7 @@ Go tests sit next to the code they test (`*_test.go`).
 Releases are published on
 [GitHub Releases](https://github.com/ThatOn3Gu7/TwinPane/releases) by a
 workflow that runs when a version tag `vMAJOR.MINOR.PATCH` (for example
-`v0.7.0`) is pushed. Each release contains:
+`v0.8.0`) is pushed. Each release contains:
 
 - one package per platform, named `twinpane-<tag>-<os>-<arch>.tar.gz`
   (`.zip` for Windows), holding a folder with `twinpane`, `LICENSE` and
@@ -559,7 +557,7 @@ in [CHANGELOG.md](CHANGELOG.md).
 | `Permission denied` when starting it in Termux | The file is on shared storage or not executable. Keep it in `$PREFIX/bin` or `~` and run `chmod +x`. |
 | `twinpane: command not found` | The install folder is not in `PATH`. Add `export PATH="$HOME/.local/bin:$PATH"` to `~/.profile` (zsh: `~/.zshrc`) and open a new shell. |
 | Installer: `neither curl nor wget is installed` | Termux: `pkg install curl`. Debian/Ubuntu: `sudo apt install curl`. |
-| Installer: `HTTP 403` or `60 requests per hour` | GitHub limits anonymous API requests. Wait, or pass `--version v0.7.0` (this skips the API). |
+| Installer: `HTTP 403` or `60 requests per hour` | GitHub limits anonymous API requests. Wait, or pass `--version v0.8.0` (this skips the API). |
 | Installer: `checksum mismatch` | The download is incomplete or altered; nothing was installed. Try again later or use another network. |
 | Installer: `could not download the latest release information` | Network problem, or no release is published yet. |
 | macOS: "cannot be opened because the developer cannot be verified" | `xattr -d com.apple.quarantine "$(command -v twinpane)"` |
