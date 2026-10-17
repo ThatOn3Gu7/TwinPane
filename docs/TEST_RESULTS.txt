@@ -47,7 +47,7 @@ a phone, Termux or macOS. Nothing was pushed or published.
 - GitHub Actions: neither workflow has run on GitHub. The runner labels (ubuntu-24.04,
   ubuntu-24.04-arm, macos-15, macos-15-intel) and action versions were checked against current
   documentation and actionlint only.
-- The public install URL (raw.githubusercontent.com/.../main/scripts/install.sh) and the GitHub API
+- The public install URL (raw.githubusercontent.com/.../master/scripts/install.sh) and the GitHub API
   path were not used against GitHub, because the repository is empty and has no release. The
   installer was tested against a local mock that serves the same URL layout.
 - android-arm64 was not executed (no ARM64 emulator here). macOS and Windows binaries were not

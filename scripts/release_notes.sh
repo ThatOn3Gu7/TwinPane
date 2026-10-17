@@ -48,9 +48,9 @@ cat <<EOF
 Termux, Linux or macOS (detects the platform, checks the SHA-256 checksum):
 
 \`\`\`sh
-curl -fsSL https://raw.githubusercontent.com/ThatOn3Gu7/TwinPane/main/scripts/install.sh | sh -s -- --version $tag
+curl -fsSL https://raw.githubusercontent.com/ThatOn3Gu7/TwinPane/master/scripts/install.sh | sh -s -- --version $tag
 # or
-wget -qO- https://raw.githubusercontent.com/ThatOn3Gu7/TwinPane/main/scripts/install.sh | sh -s -- --version $tag
+wget -qO- https://raw.githubusercontent.com/ThatOn3Gu7/TwinPane/master/scripts/install.sh | sh -s -- --version $tag
 \`\`\`
 
 Or download the file for your platform:

@@ -161,13 +161,13 @@ or `wget` (whichever is installed) and never needs root.
 With curl:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/ThatOn3Gu7/TwinPane/main/scripts/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/ThatOn3Gu7/TwinPane/master/scripts/install.sh | sh
 ```
 
 With wget:
 
 ```sh
-wget -qO- https://raw.githubusercontent.com/ThatOn3Gu7/TwinPane/main/scripts/install.sh | sh
+wget -qO- https://raw.githubusercontent.com/ThatOn3Gu7/TwinPane/master/scripts/install.sh | sh
 ```
 
 > These commands work once the first release has been published on GitHub
@@ -183,8 +183,8 @@ It installs into:
 Options go after `sh -s --`:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/ThatOn3Gu7/TwinPane/main/scripts/install.sh | sh -s -- --dir "$HOME/bin"
-curl -fsSL https://raw.githubusercontent.com/ThatOn3Gu7/TwinPane/main/scripts/install.sh | sh -s -- --version v0.7.0
+curl -fsSL https://raw.githubusercontent.com/ThatOn3Gu7/TwinPane/master/scripts/install.sh | sh -s -- --dir "$HOME/bin"
+curl -fsSL https://raw.githubusercontent.com/ThatOn3Gu7/TwinPane/master/scripts/install.sh | sh -s -- --version v0.7.0
 ```
 
 | Option | Meaning |
@@ -198,7 +198,7 @@ curl -fsSL https://raw.githubusercontent.com/ThatOn3Gu7/TwinPane/main/scripts/in
 To read the script before running it:
 
 ```sh
-curl -fsSLO https://raw.githubusercontent.com/ThatOn3Gu7/TwinPane/main/scripts/install.sh
+curl -fsSLO https://raw.githubusercontent.com/ThatOn3Gu7/TwinPane/master/scripts/install.sh
 less install.sh
 sh install.sh --dry-run
 sh install.sh

@@ -1,10 +1,10 @@
-# Tests for every push to main and every pull request. The release workflow
+# Tests for every push to master and every pull request. The release workflow
 # runs the same job before it builds anything.
 name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [master]
   pull_request:
   workflow_call:
 

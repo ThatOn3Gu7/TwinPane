@@ -53,7 +53,7 @@ checks that the README and this workflow agree.
 
 ## Making a release
 
-1. Make sure `main` is green in CI.
+1. Make sure `master` is green in CI.
 2. Set the version and write the changelog entry:
 
    ```sh
@@ -74,7 +74,7 @@ checks that the README and this workflow agree.
    ```sh
    git add VERSION CHANGELOG.md
    git commit -m "Release v0.8.0"
-   git push origin main
+   git push origin master
    git tag -a v0.8.0 -m "TwinPane v0.8.0"
    git push origin v0.8.0
    ```
@@ -98,20 +98,20 @@ checks that the README and this workflow agree.
    Termux:
 
    ```sh
-   curl -fsSL https://raw.githubusercontent.com/ThatOn3Gu7/TwinPane/main/scripts/install.sh | sh
+   curl -fsSL https://raw.githubusercontent.com/ThatOn3Gu7/TwinPane/master/scripts/install.sh | sh
    twinpane --version
    ```
 
 ## When a release fails
 
 **A step failed before publishing** (tests, build, checks, smoke runs):
-nothing was published. Fix the problem on `main`, then move the tag to the
+nothing was published. Fix the problem on `master`, then move the tag to the
 fixed commit and push it again:
 
 ```sh
 git push origin :refs/tags/v0.8.0     # delete the remote tag
 git tag -d v0.8.0                     # delete the local tag
-# fix, commit, push main
+# fix, commit, push master
 git tag -a v0.8.0 -m "TwinPane v0.8.0"
 git push origin v0.8.0
 ```

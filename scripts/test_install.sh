@@ -412,8 +412,8 @@ if [[ -f "$wf" ]]; then
 else
   fail "release workflow missing" "$wf"
 fi
-grep -q 'https://raw.githubusercontent.com/ThatOn3Gu7/TwinPane/main/scripts/install.sh' README.md \
-  && pass "README install URL points at scripts/install.sh on main" || fail "README install URL" ""
+grep -q 'https://raw.githubusercontent.com/ThatOn3Gu7/TwinPane/master/scripts/install.sh' README.md \
+  && pass "README install URL points at scripts/install.sh on master" || fail "README install URL" ""
 
 echo "test_install: $PASS passed, $FAIL failed (shells: ${SHELLS[*]})"
 [[ $FAIL -eq 0 ]]

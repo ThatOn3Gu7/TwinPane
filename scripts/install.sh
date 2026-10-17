@@ -2,8 +2,8 @@
 # TwinPane installer: downloads an official release binary from GitHub
 # Releases, checks its SHA-256 checksum and installs it.
 #
-#   curl -fsSL https://raw.githubusercontent.com/ThatOn3Gu7/TwinPane/main/scripts/install.sh | sh
-#   wget -qO-  https://raw.githubusercontent.com/ThatOn3Gu7/TwinPane/main/scripts/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/ThatOn3Gu7/TwinPane/master/scripts/install.sh | sh
+#   wget -qO-  https://raw.githubusercontent.com/ThatOn3Gu7/TwinPane/master/scripts/install.sh | sh
 #
 # Options go after "sh -s --", for example:  ... | sh -s -- --dir "$HOME/bin"
 # Run with --help for all options. The installer never uses sudo, never runs
