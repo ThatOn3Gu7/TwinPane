@@ -31,6 +31,9 @@ type cloudEnv struct {
 func newCloudApp(t *testing.T) (*harness, *cloudEnv) {
 	t.Helper()
 	if _, err := proc.LookPath("rclone"); err != nil {
+		if os.Getenv("TWINPANE_REQUIRE_TOOLS") != "" {
+			t.Fatal("REAL rclone tests: rclone is not installed, and TWINPANE_REQUIRE_TOOLS is set")
+		}
 		t.Skip("REAL rclone tests: rclone is not installed")
 	}
 	h, env := newOpsApp(t, nil, nil)

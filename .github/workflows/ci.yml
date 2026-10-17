@@ -37,17 +37,60 @@ jobs:
       - name: Vet
         run: go vet ./...
 
+      # The real-tool tests use rclone with "local"/"alias" remotes on temp
+      # folders (no network, no credentials, no cloud provider) and 7-Zip on
+      # archives made by the tests. TWINPANE_REQUIRE_TOOLS makes them fail
+      # instead of skipping when a tool is missing. Pinned, checksum-checked.
+      - name: Install rclone and 7-Zip for the real-tool tests
+        env:
+          TP_RCLONE_VERSION: v1.75.2
+          TP_RCLONE_SHA256: 349ac8fba6ff65d6247043f1750cdcb518ec5d500ef91463a10d37c0ccdf3702
+          TP_SEVENZIP_VERSION: "2604"
+          TP_SEVENZIP_SHA256: fc0327ba27e89bd086cf426dff17d77de582953cdbbc10a6576540a06853ffcd
+        run: |
+          tools="$RUNNER_TEMP/tools"
+          mkdir -p "$tools/bin" "$tools/7zz"
+          zip="rclone-$TP_RCLONE_VERSION-linux-amd64.zip"
+          curl -fsSL --retry 3 -o "$tools/$zip" "https://downloads.rclone.org/$TP_RCLONE_VERSION/$zip"
+          echo "$TP_RCLONE_SHA256  $tools/$zip" | sha256sum -c -
+          unzip -q -j "$tools/$zip" "rclone-$TP_RCLONE_VERSION-linux-amd64/rclone" -d "$tools/bin"
+          echo "$tools/bin" >> "$GITHUB_PATH"
+          "$tools/bin/rclone" version | head -n 1
+          # 7-Zip from the distribution (7z: 23.01 on ubuntu-24.04) for the
+          # main run, and the latest release (7zz) for a second archive run
+          command -v 7z >/dev/null || sudo apt-get install -y 7zip
+          7z i | grep -m 1 "7-Zip"
+          xz="7z$TP_SEVENZIP_VERSION-linux-x64.tar.xz"
+          curl -fsSL --retry 3 -o "$tools/$xz" "https://github.com/ip7z/7zip/releases/download/${TP_SEVENZIP_VERSION:0:2}.${TP_SEVENZIP_VERSION:2:2}/$xz"
+          echo "$TP_SEVENZIP_SHA256  $tools/$xz" | sha256sum -c -
+          tar -xJf "$tools/$xz" -C "$tools/7zz" 7zz
+          "$tools/7zz/7zz" i | grep -m 1 "7-Zip"
+          echo "SEVENZIP_LATEST=$tools/7zz" >> "$GITHUB_ENV"
+
       - name: Unit and UI tests
+        env:
+          TWINPANE_REQUIRE_TOOLS: "1"
         run: go test -race -count=1 ./...
 
+      - name: Archive tests with the latest 7-Zip
+        if: ${{ !cancelled() && env.SEVENZIP_LATEST != '' }}
+        env:
+          TWINPANE_REQUIRE_TOOLS: "1"
+        run: PATH="$SEVENZIP_LATEST:$PATH" go test -race -count=1 -run '7z|Rar' -v ./internal/archive/
+
+      # The steps below do not depend on the tests: they run (and report)
+      # even when a test failed, though the job still fails.
       - name: Lint shell scripts
+        if: ${{ !cancelled() }}
         run: |
           command -v shellcheck >/dev/null || sudo apt-get install -y shellcheck
           shellcheck -s sh scripts/install.sh
           shellcheck build.sh scripts/test_install.sh scripts/release_notes.sh
 
       - name: Installer tests
+        if: ${{ !cancelled() }}
         run: scripts/test_install.sh
 
       - name: Cross-compile every target
+        if: ${{ !cancelled() }}
         run: ./build.sh

@@ -17,6 +17,9 @@ func remoteSource(t *testing.T) (*RemoteSource, string) {
 	t.Helper()
 	c, err := cloud.Detect(proc.LookPath)
 	if err != nil {
+		if os.Getenv("TWINPANE_REQUIRE_TOOLS") != "" {
+			t.Fatal("REAL rclone tests: rclone is not installed, and TWINPANE_REQUIRE_TOOLS is set")
+		}
 		t.Skip("REAL rclone tests: rclone is not installed")
 	}
 	root := t.TempDir()

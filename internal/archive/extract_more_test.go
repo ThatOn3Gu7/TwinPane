@@ -370,6 +370,9 @@ func find7z(t *testing.T) string {
 			return p
 		}
 	}
+	if os.Getenv("TWINPANE_REQUIRE_TOOLS") != "" {
+		t.Fatal("REAL 7-Zip tests: 7-Zip is not installed, and TWINPANE_REQUIRE_TOOLS is set")
+	}
 	t.Skip("REAL 7-Zip tests: 7-Zip is not installed")
 	return ""
 }

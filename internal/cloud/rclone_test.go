@@ -33,6 +33,9 @@ func realBed(t *testing.T) *bed {
 	t.Helper()
 	bin, err := proc.LookPath("rclone")
 	if err != nil {
+		if os.Getenv("TWINPANE_REQUIRE_TOOLS") != "" {
+			t.Fatal("rclone is not installed, and TWINPANE_REQUIRE_TOOLS is set")
+		}
 		t.Skip("rclone is not installed (the real-rclone tests need it)")
 	}
 	root := t.TempDir()
