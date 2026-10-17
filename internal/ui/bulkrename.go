@@ -79,6 +79,9 @@ func (a *App) beginRename() tea.Cmd {
 	}
 	p := a.ActivePanel()
 	targets := p.Targets()
+	if p.InRemote() && len(targets) > 0 {
+		return a.renameRemote(targets) // cloud.go
+	}
 	switch len(targets) {
 	case 0:
 		a.setStatus("nothing to rename: put the cursor on an item", true)

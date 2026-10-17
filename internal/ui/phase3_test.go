@@ -176,7 +176,7 @@ func TestRenameTargetsSelectionOrFocus(t *testing.T) {
 	// the same targeting in the right panel
 	os.WriteFile(filepath.Join(env.dst, "r1"), nil, 0o644)
 	os.WriteFile(filepath.Join(env.dst, "r2"), nil, 0o644)
-	h.press("tab", "ctrl+r")
+	h.press("tab", "ctrl+l")
 	h.settle()
 	h.press("a") // select all
 	h.press("r")
@@ -199,7 +199,7 @@ func TestSortReverseHiddenAndCursorIdentity(t *testing.T) {
 	write("b.txt", 300, 1*time.Hour)
 	write("c.go", 50, 2*time.Hour)
 	write(".dot", 5, 0)
-	h.press("ctrl+r")
+	h.press("ctrl+l")
 	h.settle()
 	p := h.a.ActivePanel()
 	if got := strings.Join(names(p), ","); got != "..,sub,a.txt,b.txt,c.go" {
@@ -304,7 +304,7 @@ func bulkSetup(t *testing.T, files ...string) (*harness, *opsEnv) {
 	for _, f := range files {
 		os.WriteFile(filepath.Join(env.src, f), []byte("content of "+f), 0o644)
 	}
-	h.press("ctrl+r")
+	h.press("ctrl+l")
 	h.settle()
 	for _, f := range files {
 		h.focus(f)

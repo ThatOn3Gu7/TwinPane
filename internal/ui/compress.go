@@ -68,7 +68,7 @@ func (a *App) beginZip() tea.Cmd {
 	}
 	other := a.panels[1-a.active]
 	outDir := other.Path()
-	if other.InArchive() || other.Err() != nil || outDir == "" {
+	if other.InArchive() || other.InRemote() || other.Err() != nil || outDir == "" {
 		outDir = p.Path()
 	}
 	st := &compressState{caps: compress.Detect(a.lookPath), outDir: outDir}

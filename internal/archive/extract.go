@@ -21,21 +21,27 @@ type ExtractRequest struct {
 	Members []string // inner paths to extract (files or folders, recursively); empty = the whole archive
 	Base    string   // inner folder the members are relative to: Base/x/y is written to DestDir/x/y
 	DestDir string   // absolute path; created if it does not exist
+
+	// phase 9 (ExtractAny)
+	SevenZip   string // absolute path of 7-Zip, for 7Z and RAR ("" = not installed)
+	OutputName string // name of the decompressed file of a single compressed file ("" = the name without its extension)
 }
 
 // ExtractResult summarises a finished extraction.
 type ExtractResult struct {
-	Dest     string
-	Files    int   // files written
-	Dirs     int   // folders created
-	Bytes    int64 // bytes written
-	Skipped  int   // existing files kept (conflict: skip)
-	Links    int   // symbolic links in the selection (never extracted)
-	Unsafe   int   // unsafe names in the archive (never extracted)
-	Errors   []ops.ItemError
-	Canceled bool
-	Fatal    error
-	Top      []string // top-level names written in Dest, in order
+	Dest       string
+	Files      int   // files written
+	Dirs       int   // folders created
+	Bytes      int64 // bytes written
+	Skipped    int   // existing files kept (conflict: skip)
+	Links      int   // symbolic links in the selection (never extracted)
+	Unsafe     int   // unsafe names in the archive (never extracted)
+	Special    int   // devices, FIFOs and other special files (never extracted)
+	Duplicates int   // repeated names in a TAR archive (the first one is kept)
+	Errors     []ops.ItemError
+	Canceled   bool
+	Fatal      error
+	Top        []string // top-level names written in Dest, in order
 }
 
 // OK reports a complete run without errors (skips and links are not errors).
@@ -52,6 +58,12 @@ func (r ExtractResult) Summary() string {
 	}
 	if r.Links > 0 {
 		s += fmt.Sprintf(", %s not extracted", plural(r.Links, "symbolic link"))
+	}
+	if r.Special > 0 {
+		s += fmt.Sprintf(", %s not extracted", plural(r.Special, "special file"))
+	}
+	if r.Duplicates > 0 {
+		s += fmt.Sprintf(", %s ignored", plural(r.Duplicates, "duplicate name"))
 	}
 	if len(r.Errors) > 0 {
 		s += ", " + plural(len(r.Errors), "error")
@@ -109,24 +121,10 @@ func (r *reporter) report(force bool) {
 func Extract(ctx context.Context, req ExtractRequest, hooks ops.Hooks) ExtractResult {
 	res := ExtractResult{Dest: req.DestDir}
 	rep := &reporter{hooks: hooks, p: ops.Progress{Phase: "scanning"}}
-	if !filepath.IsAbs(req.DestDir) {
-		res.Fatal = fmt.Errorf("destination %q is not an absolute path", req.DestDir)
-		return res
-	}
-	dest := filepath.Clean(req.DestDir)
+	dest, err := prepareDest(req.DestDir)
 	res.Dest = dest
-	if fi, err := os.Stat(dest); err == nil {
-		if !fi.IsDir() {
-			res.Fatal = fmt.Errorf("destination %s exists and is not a folder", dest)
-			return res
-		}
-	} else if errors.Is(err, fs.ErrNotExist) {
-		if err := os.MkdirAll(dest, 0o755); err != nil {
-			res.Fatal = fmt.Errorf("cannot create the destination: %w", err)
-			return res
-		}
-	} else {
-		res.Fatal = fmt.Errorf("destination: %w", err)
+	if err != nil {
+		res.Fatal = err
 		return res
 	}
 
@@ -218,6 +216,7 @@ type extractor struct {
 	hooks    ops.Hooks
 	applyAll *ops.Action
 	top      map[string]bool
+	srcBytes bool // progress counts bytes read from the archive file (TAR, single files, 7-Zip)
 }
 
 func (x *extractor) fail(inner string, err error) {
@@ -362,6 +361,26 @@ func (x *extractor) resolve(c ops.Conflict) ops.Action {
 	return d.Action
 }
 
+// prepareDest checks (and creates) the destination folder.
+func prepareDest(dir string) (string, error) {
+	if !filepath.IsAbs(dir) {
+		return dir, fmt.Errorf("destination %q is not an absolute path", dir)
+	}
+	dest := filepath.Clean(dir)
+	if fi, err := os.Stat(dest); err == nil {
+		if !fi.IsDir() {
+			return dest, fmt.Errorf("destination %s exists and is not a folder", dest)
+		}
+	} else if errors.Is(err, fs.ErrNotExist) {
+		if err := os.MkdirAll(dest, 0o755); err != nil {
+			return dest, fmt.Errorf("cannot create the destination: %w", err)
+		}
+	} else {
+		return dest, fmt.Errorf("destination: %w", err)
+	}
+	return dest, nil
+}
+
 // write decompresses zf to a temporary file next to t and renames it onto t.
 func (x *extractor) write(zf *zip.File, e *Entry, t string, overwrite bool) (int64, error) {
 	rc, err := zf.Open()
@@ -372,6 +391,20 @@ func (x *extractor) write(zf *zip.File, e *Entry, t string, overwrite bool) (int
 		return 0, err
 	}
 	defer rc.Close()
+	return x.place(rc, e.Mode, e.Modified, t, overwrite, func(rerr error) error {
+		if errors.Is(rerr, zip.ErrChecksum) || errors.Is(rerr, zip.ErrFormat) {
+			return fmt.Errorf("damaged data (%v): nothing written", rerr)
+		}
+		return rerr
+	})
+}
+
+// place copies r to a temporary file next to t and renames it onto t
+// (only after Overwrite was confirmed when overwrite is set). A read
+// error is passed through readErr; errors, damaged data and cancellation
+// never leave a partial file or touch an existing t. Permissions are
+// reduced to 0644 / 0755.
+func (x *extractor) place(r io.Reader, mode fs.FileMode, mtime time.Time, t string, overwrite bool, readErr func(error) error) (int64, error) {
 	tmp, err := os.CreateTemp(filepath.Dir(t), ops.TempPrefix+"*.tmp")
 	if err != nil {
 		return 0, err
@@ -390,37 +423,36 @@ func (x *extractor) write(zf *zip.File, e *Entry, t string, overwrite bool) (int
 		if err := x.ctx.Err(); err != nil {
 			return n, err
 		}
-		k, rerr := rc.Read(buf)
+		k, rerr := r.Read(buf)
 		if k > 0 {
 			if _, werr := tmp.Write(buf[:k]); werr != nil {
 				return n, werr
 			}
 			n += int64(k)
-			x.rep.p.DoneBytes += int64(k)
+			if !x.srcBytes {
+				x.rep.p.DoneBytes += int64(k)
+			}
 			x.rep.report(false)
 		}
 		if rerr == io.EOF {
 			break
 		}
 		if rerr != nil {
-			if errors.Is(rerr, zip.ErrChecksum) || errors.Is(rerr, zip.ErrFormat) {
-				return n, fmt.Errorf("damaged data (%v): nothing written", rerr)
-			}
-			return n, rerr
+			return n, readErr(rerr)
 		}
 	}
 	if err := tmp.Close(); err != nil {
 		return n, err
 	}
 	perm := fs.FileMode(0o644)
-	if e.Mode.Perm()&0o100 != 0 {
+	if mode.Perm()&0o100 != 0 {
 		perm = 0o755
 	}
 	if err := os.Chmod(tmpName, perm); err != nil {
 		return n, err
 	}
-	if !e.Modified.IsZero() {
-		_ = os.Chtimes(tmpName, e.Modified, e.Modified) // best effort
+	if !mtime.IsZero() {
+		_ = os.Chtimes(tmpName, mtime, mtime) // best effort
 	}
 	if err := ops.PlaceFile(tmpName, t, overwrite); err != nil {
 		return n, err

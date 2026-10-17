@@ -99,7 +99,7 @@ run archive-extract \
 	click:'pack.zip' wait:0.3 'type:\r' wait:0.6 click:'readme.md' wait:0.3 \
 	type:x wait:0.4 expect:'Extract into folder:' 'type:\r' wait:1 expect:'Extracted 1 file' \
 	'type:\e' wait:0.6 click:'pack.zip' wait:0.3 type:x wait:0.4 \
-	expect:'Extract the archive "pack.zip"' 'type:\r' wait:1 expect:'Extracted 2 files'
+	expect:'Extract the ZIP archive "pack.zip"' 'type:\r' wait:1 expect:'Extracted 2 files'
 fscheck "extract: readme.md and pack/docs/guide/intro.txt" \
 	'grep -q "pack readme" "$H/readme.md" && grep -q "intro text" "$H/pack/docs/guide/intro.txt" && [ -d "$H/pack/empty" ]'
 

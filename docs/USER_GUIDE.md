@@ -1,6 +1,7 @@
 # TwinPane user guide
 
-The complete reference for TwinPane 0.7.0: every feature, key and safety
+The complete reference for TwinPane 0.7.0 (plus the unreleased changes on
+`master`, marked as such): every feature, key and safety
 rule. For installation, building and an overview, see the
 [README](../README.md); for the version history, see the
 [changelog](../CHANGELOG.md).
@@ -28,6 +29,105 @@ where they apply and summarised under [Keyboard controls](#keyboard-controls).
 ```
 
 ## Features
+
+### Unreleased (phase 9: cloud remotes, more extraction formats, new folder)
+
+On `master`, not part of v0.7.0. One key changed: **refresh moved from
+`Ctrl+R` to `Ctrl+L`**, because `Ctrl+R` opens the new Sources picker
+(`Ctrl+R` inside the bulk-rename dialog still toggles regular expressions).
+Every other shortcut works as before.
+
+#### Cloud remotes (rclone)
+
+Either panel can show a cloud folder instead of a local one, through
+[rclone](https://rclone.org). TwinPane has no login of its own: it uses the
+remotes you set up with `rclone config` and never asks for, sees or stores
+passwords or tokens.
+
+- **`Ctrl+R` (Sources)** opens a picker for the active panel: *Local files*
+  (`l`, back to the local folder the panel showed last), every configured
+  remote (`1`–`9`, with its type, e.g. `drive`, `onedrive`, `sftp`) and
+  *Refresh* (`r`). The remotes are listed in the background; the picker
+  opens at once. Menu → *Sources…* does the same.
+- Picking a remote opens its root folder; then navigate as usual (`Enter`,
+  `Backspace`, `Home`/`End`, `Space`, `a`, `u`, sort, hidden files, `Tab`).
+  The other panel keeps its folder and selection.
+- **Labels:** the path line starts with a coloured badge with the remote's
+  name, followed by the folder (`drive:` `/Backups`); while either panel shows a remote, local
+  panels get a `LOCAL` badge.
+- **Loading:** remote folders load in the background ("Loading … (Esc
+  cancels)"); `Esc` stops a slow listing and the panel stays where it was.
+  An empty remote folder says so.
+- **Errors:** opening a remote that fails (offline, login expired, missing
+  folder) leaves the panel where it was and explains why in the status line,
+  with the fix (for example the exact `rclone config reconnect NAME:`
+  command). If the folder shown becomes unavailable on refresh, the panel
+  shows the error with `^L retry` and `^R sources`; a folder that was
+  deleted takes you to its nearest existing parent.
+- **Copy and move** (`c`, `m`) work local → remote (upload), remote → local
+  (download) and remote → remote (also between two remotes), for the
+  selection or the item under the cursor, with the usual confirmation,
+  progress box and `Esc` to cancel. An item that exists in the destination
+  gets the usual Skip / Overwrite (files) or Skip / Merge (folders) dialog,
+  with "apply to all"; nothing is overwritten without asking. A move removes
+  each source only after rclone transferred it.
+- **New folder** (`n`/`F7`), **rename** (`r`, one item at a time; bulk
+  rename is for local folders) and **delete** (`d`) work on remotes. Delete
+  always confirms; folders or several items need typing `delete`. Some
+  providers keep deleted items in their own trash (Google Drive does by
+  default); on others deleting cannot be undone.
+- **What needs a local file:** view, edit, open, properties, compress,
+  extract, find and bookmarking say so and suggest copying the item to a
+  local panel first. `~` (and Menu → *Back to local files*) returns the panel
+  to local files; `=` shows the same remote folder in the other panel, or,
+  from a local panel, brings a remote panel back to that local folder.
+- **Without rclone** the Sources picker explains how to install it
+  (`pkg install rclone` in Termux) and everything else works as before. With
+  rclone but no remotes, it explains `rclone config`.
+
+How it works: TwinPane starts `rclone` directly (no shell, so names are
+never interpreted) with `--ask-password=false`, lists folders with
+`rclone lsjson`, and transfers with `rclone copyto`/`moveto`/`copy`/`move`.
+New items are copied with `--ignore-existing`; an item you chose to
+overwrite is copied with `--ignore-times`. Cancelling interrupts rclone,
+which removes its partial file. An rclone configuration protected by a
+password needs `RCLONE_CONFIG_PASS` set in the environment.
+
+#### Extraction of more formats (`x`)
+
+`x` on a file now recognises its format from the content (not the name):
+
+| Format | How |
+|---|---|
+| ZIP (also `.jar`, `.apk`, `.epub`, …) | built in, as before (browse with `Enter`) |
+| TAR, TAR.GZ / TGZ, TAR.BZ2, TAR.XZ, TAR.ZST, TAR.LZ4 | built in |
+| single GZ, BZ2, XZ, ZST, LZ4 files | built in: *Decompress* writes one file, the name without the extension (`notes.txt.gz` → `notes.txt`) |
+| 7Z, RAR | the installed 7-Zip (`7zz`, `7z`, `7za` or `7zr`; Termux: `pkg install 7zip`) |
+
+The dialog proposes a folder in the other panel named after the archive
+(`photos.tar.gz` → `photos/`; for a single compressed file the other
+panel's folder itself), which you can edit. The safety rules of ZIP
+extraction apply to every format: nothing is written outside the chosen
+folder or through a symbolic link, existing files are replaced only after
+you choose Overwrite, files appear only when complete (a damaged or
+cancelled entry leaves nothing behind and never destroys an existing file),
+symbolic links, hard links and special files are not created, and
+permissions are reduced to 0644/0755. Repeated names in a TAR keep the
+first entry. 7-Zip unpacks into a private temporary folder inside the
+destination first; only when it succeeded are the files moved into place
+(with the same conflict questions), so a failure extracts nothing.
+Password-protected 7Z/RAR archives are refused with a clear message (7-Zip
+never waits for a password). A file in no supported format, or a 7Z/RAR
+without 7-Zip, is refused with the list of formats or the package to
+install.
+
+#### New folder (`n` / `F7`)
+
+Creates a folder in the active panel (local or remote); the cursor moves to
+it. Empty names, `.`, `..` and names containing `/` are refused in the
+dialog, and so is a name that already exists (nothing existing is ever
+touched). Remotes without real folders (such as S3 buckets) cannot keep an
+empty folder; TwinPane then says so instead of reporting success.
 
 ### v0.7.0 (phase 7: help screen, editor confirmation)
 
@@ -830,7 +930,7 @@ v0.3.1; the matching rules below still apply)
 | `P` | **properties**: details, rename, permissions |
 | `v` / `F3` | **view** the file (read-only); `Enter` on a file does the same |
 | `Enter` on a `.zip` | **browse** the archive (no extraction) |
-| `x` | **extract**: selected entries (in an archive) or the ZIP under the cursor |
+| `x` | **extract**: selected entries (in an archive) or the archive under the cursor (unreleased: also TAR, compressed files, 7Z/RAR) |
 | `X` | extract the whole archive (in an archive) |
 | `z` | **compress** the selection / item under the cursor: ZIP, 7Z, TAR, TAR.GZ, TAR.XZ, TAR.ZST, TAR.BZ2, TAR.LZ4, GZIP, XZ, ZSTD, BZIP2, LZ4 |
 | `o` | **open** the file in its default app (Termux: `termux-open`; desktop: `xdg-open`) |
@@ -844,9 +944,17 @@ v0.3.1; the matching rules below still apply)
 | `h` / `H` / `.` | show / hide hidden files in **both** panels |
 | `s` | cycle sort: name → size → time → type |
 | `S` | reverse the sort order (↑/↓) |
-| `Ctrl+R` | refresh both panels |
+| `Ctrl+L` | refresh both panels (unreleased; `Ctrl+R` in v0.7.0) |
+| `Ctrl+R` | **sources**: local files or an rclone remote for the active panel (unreleased) |
+| `n` / `F7` | **new folder** (unreleased) |
 | `?` / `F1` | help (scroll with `↑`/`↓` `PgUp`/`PgDn` `g`/`G`; any other key closes it) |
 | `q` / `F10` / `Ctrl+C` | quit (`Ctrl+C` cancels a running operation instead) |
+
+**Changed after v0.7.0 (unreleased):** refresh is `Ctrl+L` (was `Ctrl+R`);
+`Ctrl+R` opens Sources (cloud remotes); `n`/`F7` (new folder) are new. These
+keys were unused before, apart from `Ctrl+R`, whose move was decided
+deliberately and is documented here. `Ctrl+R` inside the bulk-rename dialog
+(regular expressions) is unchanged.
 
 **Changed in v0.3.0:** `h` now toggles hidden files (`.` still works). Parent
 directory is `Backspace`/`←` only. `S` (reverse sort) and `/` (find) are new.
@@ -977,14 +1085,27 @@ including the end-to-end test scripts, are in
   touch-only users need the keyboard to type a filter.
 - A double tap on a text file always asks first, even after you've used the
   editor many times; `e` opens it without asking.
-- Archives: ZIP only (also `.jar`, `.apk`, `.epub` and other ZIP-based
-  files). Only "stored" and "deflate" entries can be read. Encrypted entries
+- Archives: browsing is ZIP only (also `.jar`, `.apk`, `.epub` and other
+  ZIP-based files); unreleased: TAR, compressed TAR, single compressed
+  files, 7Z and RAR can be extracted as a whole (not partially, not
+  browsed; 7Z/RAR need 7-Zip, encrypted ones are refused). Only "stored" and "deflate" entries can be read. Encrypted entries
   (ZipCrypto/AES) and other methods are listed but can't be viewed or
   extracted. Archives can't be modified in place (no adding or deleting
   entries). Symbolic links inside archives are not extracted, and extracted
   files get 0644/0755 permissions. Very large archives are listed from the
   central directory, so opening one costs memory proportional to the number
   of entries, not their size.
+- Cloud remotes (unreleased): need rclone and a remote set up with
+  `rclone config`; TwinPane does not create or edit remotes. Remote files
+  can't be viewed, edited or opened in place (copy them to a local panel).
+  Rename on a remote is one item at a time. Symbolic links are not uploaded
+  (rclone does not follow them; links inside uploaded folders are skipped).
+  Folder sizes are not shown, and permissions are not shown or changed on
+  remotes. Quitting while a slow listing runs can leave rclone running until
+  its own timeout. Whether empty folders, renames or server-side moves work
+  depends on the provider; rclone's error is shown when one is not
+  supported. Tested with rclone's local and alias backends, not with real
+  cloud accounts.
 - Viewer: text only, no syntax highlighting and no hex view for binary
   files. Search matches within a line, not across lines. Files bigger than
   8 MiB show their first 8 MiB. The viewer never modifies files: editing is

@@ -36,6 +36,10 @@ const (
 	dlgOpenWith  // Open with… (O)
 	dlgStorage   // storage overview (i)
 	dlgRunWith   // "Run a program…" prompt
+
+	// phase 9
+	dlgSources // Sources picker (Ctrl+R): local files or an rclone remote
+	dlgMkdir   // new folder name prompt
 )
 
 // dlgCompress is the compression dialog (z). It kept the kind of the

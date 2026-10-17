@@ -377,6 +377,44 @@ mkdir -p "$(nh)/bin/twinpane"
 run "$B" -- --dir "$(nh)/bin"
 expect_err "$S destination is a folder" "is a folder"
 
+# ---- presentation (phase 9): banner, steps, colours, dependency report
+run "$B" -- --dir "$(nh)/bin"
+expect_ok "$S banner and numbered steps" "| Twin" "[1/5] Checking the system" "[5/5] Optional companions" "Done."
+if grep -q $'\033' <<<"$OUT"; then fail "$S no colours when not on a terminal" "$OUT"; else pass "$S no colours when not on a terminal"; fi
+run "$B" FORCE_COLOR=1 -- --dir "$(nh)/bin"
+if grep -q $'\033\\[32m' <<<"$OUT"; then pass "$S FORCE_COLOR enables colours"; else fail "$S FORCE_COLOR enables colours" "$OUT"; fi
+run "$B" FORCE_COLOR=1 NO_COLOR=1 -- --dir "$(nh)/bin"
+if grep -q $'\033' <<<"$OUT"; then fail "$S NO_COLOR wins" "$OUT"; else pass "$S NO_COLOR wins"; fi
+run "$B" -- --dir "$(nh)/bin"
+expect_ok "$S optional companions on Linux" "rclone: not installed" "https://rclone.org/install/" "7-Zip: not installed"
+run "$B" FAKE_UNAME_M=aarch64 TERMUX_VERSION=0.118 PREFIX="$T/data/data/com.termux/files/usr" --
+expect_ok "$S optional companions in Termux" "pkg install rclone" "pkg install 7zip" "pkg install fd"
+mkdir -p "$T/bin-extra"
+printf '#!/bin/sh\nexit 0\n' > "$T/bin-extra/rclone"; chmod +x "$T/bin-extra/rclone"
+run "$B:$T/bin-extra" EDITOR=nvim -- --dir "$(nh)/bin"
+expect_ok "$S found companions are listed" "ok  rclone: $T/bin-extra/rclone" "rclone config" "editor: nvim"
+rm -rf "$T/bin-notar"; cp -a "$B" "$T/bin-notar"; rm -f "$T/bin-notar/tar"
+run "$T/bin-notar" -- --dir "$(nh)/bin"
+expect_err "$S missing required tool" "missing required tools: tar" "nothing was changed"
+tmp_empty && pass "$S missing tool: temporary folder removed" || fail "$S missing tool: temporary folder removed" "$(ls -A "$T/case$CASE/tmp")"
+
+# ---- interruption: TERM while downloading (background jobs ignore INT)
+rm -rf "$T/bin-slow"; cp -a "$B" "$T/bin-slow"
+printf '#!/bin/sh\necho started >> "$DL_LOG"\nexec sleep 30\n' > "$T/bin-slow/curl"; rm -f "$T/bin-slow/curl.tmp"; chmod +x "$T/bin-slow/curl"
+CASE=$((CASE + 1)); H="$T/case$CASE/home"; DL="$T/case$CASE/dl.log"; mkdir -p "$H" "$T/case$CASE/tmp"; : > "$DL"
+env -i PATH="$T/bin-slow" HOME="$H" TMPDIR="$T/case$CASE/tmp" DL_LOG="$DL" TWINPANE_API_BASE="$URL/api" \
+  TWINPANE_DOWNLOAD_BASE="$URL/dl" "$(command -v setsid)" "$T/bin-slow/$SHELL_UNDER_TEST" "$INSTALLER" --dir "$H/bin" > "$T/case$CASE/out" 2>&1 &
+ipid=$!
+for _ in $(seq 100); do grep -q started "$DL" 2>/dev/null && break; sleep 0.05; done
+kill -TERM -- "-$ipid" 2>/dev/null
+wait "$ipid"; RC=$?
+OUT="$(cat "$T/case$CASE/out")"
+if [[ $RC -eq 143 ]] && [[ ! -e "$H/bin/twinpane" ]] && tmp_empty && has "Interrupted: nothing was installed"; then
+  pass "$S interrupted download: message, exit 143, nothing installed, cleaned up"
+else
+  fail "$S interrupted download (rc $RC)" "$OUT"
+fi
+
 if [[ -n "${RVER:-}" ]]; then
   run "$B" FAKE_UNAME_M=x86_64 -- --version "$RVER" --dir "$(nh)/real"
   if [[ $RC -eq 0 ]] && v="$("$H/real/twinpane" --version 2>&1)" && [[ "$v" == "twinpane ${RVER#v} (linux/amd64)" ]]; then

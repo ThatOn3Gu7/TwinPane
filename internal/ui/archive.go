@@ -9,6 +9,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/ThatOn3Gu7/TwinPane/internal/archive"
+	"github.com/ThatOn3Gu7/TwinPane/internal/compress"
 	"github.com/ThatOn3Gu7/TwinPane/internal/fsys"
 	"github.com/ThatOn3Gu7/TwinPane/internal/panel"
 )
@@ -32,6 +33,20 @@ type opExtractDoneMsg struct {
 // zipNames are file extensions offered as archives in the hint bar (any
 // file with a ZIP signature can be opened).
 var zipNames = []string{".zip", ".jar", ".apk", ".aar", ".whl", ".epub", ".cbz", ".xpi"}
+
+// archiveNames are other extensions x can extract (phase 9); the hint bar
+// goes by the name, extraction checks the content.
+var archiveNames = []string{".tar", ".tgz", ".tbz2", ".txz", ".gz", ".bz2", ".xz", ".zst", ".lz4", ".7z", ".rar"}
+
+func looksLikeArchive(name string) bool {
+	n := strings.ToLower(name)
+	for _, ext := range archiveNames {
+		if strings.HasSuffix(n, ext) && len(n) > len(ext) {
+			return true
+		}
+	}
+	return false
+}
 
 func looksLikeZip(name string) bool {
 	n := strings.ToLower(name)
@@ -67,6 +82,10 @@ func (a *App) refuseArchiveDest(what string) bool {
 // the viewer, a ZIP archive is browsed, other files open in the viewer (or,
 // for a double tap, the editor as in phase 4).
 func (a *App) openFile(p *panel.Panel, e fsys.Entry, tap bool) tea.Cmd {
+	if p.InRemote() {
+		a.setStatus("files on a remote cannot be opened directly — copy it to a local panel first (c)", true)
+		return nil
+	}
 	if p.InArchive() {
 		return a.openViewer(p, e)
 	}
@@ -123,7 +142,9 @@ func stem(name string) string {
 
 // extractTarget is the archive to extract and what from it.
 type extractTarget struct {
-	archive string   // path of the ZIP file
+	archive string   // path of the archive file
+	tool    string   // 7-Zip, for 7Z and RAR
+	single  string   // output name when decompressing a single compressed file
 	base    string   // inner folder the members are relative to
 	members []string // inner paths; nil = whole archive
 	what    string   // description for the dialog
@@ -137,7 +158,7 @@ func (a *App) beginExtract(all bool) tea.Cmd {
 	p := a.ActivePanel()
 	other := a.panels[1-a.active]
 	destDir := other.Path()
-	if other.InArchive() || other.Err() != nil || destDir == "" {
+	if other.InArchive() || other.InRemote() || other.Err() != nil || destDir == "" {
 		destDir = p.RealDir()
 	}
 	var t extractTarget
@@ -173,24 +194,60 @@ func (a *App) beginExtract(all bool) tea.Cmd {
 		targets := p.Targets()
 		if len(targets) != 1 {
 			if len(targets) == 0 {
-				a.setStatus("nothing to extract: put the cursor on a ZIP archive", true)
+				a.setStatus("nothing to extract: put the cursor on an archive", true)
 			} else {
-				a.setStatus("select a single ZIP archive to extract (or clear the selection with u)", true)
+				a.setStatus("select a single archive to extract (or clear the selection with u)", true)
 			}
 			return nil
 		}
 		e := targets[0]
-		if e.IsDir || !archive.Sniff(e.Path) {
-			a.setStatus(fsys.SanitizeName(e.Name)+" is not a ZIP archive", true)
+		if e.IsDir {
+			a.setStatus(fsys.SanitizeName(e.Name)+" is a folder, not an archive", true)
 			return nil
 		}
+		info, err := archive.Detect(e.Path)
+		switch {
+		case err != nil:
+			a.setStatus("cannot read "+fsys.SanitizeName(e.Name)+": "+errText(err), true)
+			return nil
+		case info.Format == archive.FormatUnknown:
+			a.setStatus(fsys.SanitizeName(e.Name)+" is not an archive TwinPane can extract — supported: "+archive.Supported, true)
+			return nil
+		case info.External():
+			c, _ := compress.Find(compress.Detect(a.lookPath), compress.SevenZ)
+			if !c.Available {
+				hint := "install 7-Zip or p7zip"
+				if a.platform().Termux {
+					hint = "Termux: pkg install 7zip"
+				}
+				a.setStatus(fmt.Sprintf("extracting %s archives needs 7-Zip (7zz, 7z, 7za or 7zr), not found — %s", info.Name(), hint), true)
+				return nil
+			}
+			t.tool = c.Tool
+		}
 		t.archive = e.Path
-		t.what = fmt.Sprintf("the archive %q", e.Name)
-		defDest = filepath.Join(destDir, stem(e.Name))
+		if info.Single() {
+			t.single = archive.SingleOutputName(e.Name, info.Codec)
+			t.what = fmt.Sprintf("%s file %q", info.Name(), e.Name)
+			defDest = destDir
+		} else {
+			t.what = fmt.Sprintf("the %s archive %q", info.Name(), e.Name)
+			defDest = filepath.Join(destDir, archive.FolderName(e.Name))
+		}
 	}
 
-	d := &dialog{kind: dlgExtract, title: "Extract " + t.what + "?"}
+	verb := "Extract"
+	if t.single != "" {
+		verb = "Decompress"
+	}
+	d := &dialog{kind: dlgExtract, title: verb + " " + t.what + "?"}
 	d.body = []dline{text("From:"), path(t.archive)}
+	if t.single != "" {
+		d.body = append(d.body, text("Writes the file: "+fsys.SanitizeName(t.single)))
+	}
+	if t.tool != "" {
+		d.body = append(d.body, hint("Unpacked with "+filepath.Base(t.tool)+" into a temporary folder first; nothing is moved into place if it fails."))
+	}
 	if len(t.names) > 0 {
 		d.body = append(d.body, blank())
 		for i, n := range t.names {
@@ -204,8 +261,8 @@ func (a *App) beginExtract(all bool) tea.Cmd {
 	d.body = append(d.body, blank(),
 		hint("Missing folders are created. Existing files are never overwritten without asking; unsafe paths and symbolic links in the archive are never extracted."))
 	d.input = newLineInput(defDest)
-	d.inputLabel = "Extract into folder:"
-	d.footer = "Enter extract · Esc cancel"
+	d.inputLabel = verb + " into folder:"
+	d.footer = "Enter " + strings.ToLower(verb) + " · Esc cancel"
 	srcIdx := a.active
 	d.onSubmit = func(a *App, v string) tea.Cmd {
 		dest, err := resolveUserPath(v, p.RealDir())
@@ -222,7 +279,8 @@ func (a *App) beginExtract(all bool) tea.Cmd {
 			return nil
 		}
 		a.dialog = nil
-		return a.startExtract(srcIdx, archive.ExtractRequest{Archive: t.archive, Members: t.members, Base: t.base, DestDir: dest})
+		return a.startExtract(srcIdx, archive.ExtractRequest{Archive: t.archive, Members: t.members, Base: t.base, DestDir: dest,
+			SevenZip: t.tool, OutputName: t.single})
 	}
 	a.dialog = d
 	return nil
@@ -248,7 +306,7 @@ func (a *App) startExtract(srcIdx int, req archive.ExtractRequest) tea.Cmd {
 	s, ctx := a.newSession("Extracting", srcIdx, nil)
 	h := a.hooks(ctx, s)
 	go func() {
-		res := archive.Extract(ctx, req, h)
+		res := archive.ExtractAny(ctx, req, h) // ZIP: archive.Extract
 		s.events <- opExtractDoneMsg{s.id, res}
 	}()
 	return a.startCmds(s)

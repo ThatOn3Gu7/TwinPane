@@ -519,9 +519,9 @@ func TestHelpFilter(t *testing.T) {
 	if h.quit || h.a.dialog != nil || h.a.ActivePanel().Cursor() != cursor || len(env.execs) != 0 {
 		t.Fatal("typing in the filter leaked into the app")
 	}
-	// key names match too: ctrl+r is shown as ^R
+	// key names match too: ctrl+l is shown as ^L
 	h.press("ctrl+u")
-	h.typeText("ctrl+r", false)
+	h.typeText("ctrl+l", false)
 	if b := helpBody(h.view(), f); !strings.Contains(b, "refresh both panels") {
 		t.Fatalf("key names must match:\n%s", b)
 	}

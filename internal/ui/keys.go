@@ -43,6 +43,9 @@ type KeyMap struct {
 	OpenExt, OpenWith, Menu Binding
 	Bookmarks, Bookmark     Binding
 	Storage                 Binding
+
+	// Phase 9: Sources took Ctrl+R (Refresh moved to Ctrl+L), Mkdir
+	Sources, Mkdir Binding
 }
 
 // DefaultKeys returns the default key bindings.
@@ -66,7 +69,7 @@ func DefaultKeys() KeyMap {
 		Sort:      Binding{[]string{"s"}, "s", "sort by name/size/time/type"},
 		Reverse:   Binding{[]string{"S"}, "S", "reverse sort order (↑/↓)"},
 		Search:    Binding{[]string{"/"}, "/", "find files by name (live)"},
-		Refresh:   Binding{[]string{"ctrl+r"}, "^R", "refresh both panels"},
+		Refresh:   Binding{[]string{"ctrl+l"}, "^L", "refresh both panels"},
 		Copy:      Binding{[]string{"c", "f5"}, "c/F5", "copy to other panel"},
 		Move:      Binding{[]string{"m", "f6"}, "m/F6", "move to other panel"},
 		Rename:    Binding{[]string{"r", "f2"}, "r/F2", "rename (several: bulk)"},
@@ -79,7 +82,7 @@ func DefaultKeys() KeyMap {
 
 		Properties: Binding{[]string{"P"}, "P", "properties / permissions"},
 		View:       Binding{[]string{"v", "f3"}, "v/F3", "view file (read-only)"},
-		Extract:    Binding{[]string{"x"}, "x", "extract ZIP / selected"},
+		Extract:    Binding{[]string{"x"}, "x", "extract archive / selected"},
 		ExtractAll: Binding{[]string{"X"}, "X", "extract all (in a ZIP)"},
 		Zip:        Binding{[]string{"z"}, "z", "compress (ZIP/TAR/7Z…)"},
 
@@ -89,6 +92,9 @@ func DefaultKeys() KeyMap {
 		Bookmarks: Binding{[]string{"b"}, "b", "bookmarks (jump/edit)"},
 		Bookmark:  Binding{[]string{"B"}, "B", "bookmark this folder"},
 		Storage:   Binding{[]string{"i"}, "i", "storage / free space"},
+
+		Sources: Binding{[]string{"ctrl+r"}, "^R", "source: local / cloud"},
+		Mkdir:   Binding{[]string{"n", "f7"}, "n/F7", "new folder"},
 	}
 }
 
@@ -109,6 +115,9 @@ func (k KeyMap) helpSections() [2][]helpSection {
 		{
 			{"File operations", []Binding{k.Copy, k.Move, k.Rename, k.Delete, k.Edit, k.EditWith, k.Properties, k.Cancel}},
 			{"View & general", []Binding{k.View, k.Search, k.Hidden, k.Sort, k.Reverse, k.Refresh, k.Help, k.Quit}},
+			{"Folders & cloud (rclone)", []Binding{k.Mkdir, k.Sources,
+				{Help: "c / m", Desc: "upload / download"},
+				{Help: "Esc", Desc: "stop a slow listing"}}},
 		},
 	}
 }

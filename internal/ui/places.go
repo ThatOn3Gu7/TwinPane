@@ -48,6 +48,10 @@ func (a *App) bookmarkHere() tea.Cmd {
 		a.setStatus("folders inside a ZIP archive cannot be bookmarked: bookmark the folder that contains it (Esc leaves the archive)", true)
 		return nil
 	}
+	if p.InRemote() {
+		a.setStatus("bookmarks are for local folders — folders on a remote cannot be bookmarked", true)
+		return nil
+	}
 	dir := p.Path()
 	if dir == "" {
 		return nil
@@ -147,6 +151,9 @@ func (a *App) openBookmarks(cursor int, errLine string) tea.Cmd {
 		case bookmarks.OK:
 			a.dialog = nil
 			a.setStatus(fmt.Sprintf("bookmark %q", bm.Name), false)
+			if p := a.ActivePanel(); p.InRemote() {
+				return p.GoLocal(bm.Path, "") // back to local files
+			}
 			return a.ActivePanel().ChangeDir(bm.Path)
 		case bookmarks.Missing:
 			a.dialog.errLine = fmt.Sprintf("%q points to a folder that no longer exists (%s) — d removes the bookmark", bm.Name, bm.Path)

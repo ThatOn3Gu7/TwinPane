@@ -11,7 +11,8 @@ cmd/twinpane ──► internal/ui ──► internal/panel ──► internal/f
                    │  │  └──► internal/theme ◄┘
                    │  └─────► internal/ops      (phase 2, no UI imports)
                    ├────────► internal/editor ─┐ (phase 2/3, no UI imports)
-                   └────────► internal/search ─┴► internal/proc (v0.3.1)
+                   ├────────► internal/search ─┴► internal/proc (v0.3.1)
+                   └────────► internal/cloud  ──► internal/proc (phase 9, rclone)
 ```
 
 | Package | Responsibility | Knows about |
@@ -23,6 +24,7 @@ cmd/twinpane ──► internal/ui ──► internal/panel ──► internal/f
 | `editor` | Picks the external editor (`$VISUAL` → `$EDITOR` → fallbacks), checks whether a file is editable or binary, builds the `*exec.Cmd`. Phase 3: `Process` runs it with terminal hand-over and job control (`process_jobctl.go`, termios per OS). | stdlib, `x/sys` |
 | `search` | Filename search: `ParseQuery`/`Match`. v0.3.1: `Index` lists a tree with fd / find / a built-in walker and streams `IndexUpdate`s; `Filter`/`Rank` match the in-memory index per keystroke. (`Run`, the phase-3 walker-and-match, is kept and tested but no longer used by the UI.) | stdlib, `proc` |
 | `proc` | v0.3.1: `LookPath` and `Start`/`Wait`/`Kill` without the system calls Android's seccomp filter forbids. All program lookups and starts go through it. | stdlib, `x/sys` |
+| `cloud` | Phase 9: rclone remotes. `Detect`, `Client.Remotes`/`List`/`Stat`/`Mkdir`/`Rename`/`Delete`/`Transfer`, the `Path` type (`remote:path` or local), and `Error` with an `ErrKind` that explains failures (not installed, login, network, missing, exists, unsupported, locked config, cancelled). Starts rclone through `proc`, never a shell. | stdlib, `proc`, `ops` (transfer types) |
 | `ui` | Root `tea.Model`: owns two panels, routes keys to the active one, lays out the screen, and renders the title, status line, footer and help. Phase 2 adds dialogs (`dialog.go`, `input.go`), operation sessions (`fileops.go`) and editor launching (`edit.go`). | everything above |
 
 A panel never refers to the other panel. Cross-panel actions such as `=` (and
@@ -700,11 +702,111 @@ android-arm64 build".
   permanent (with the typed confirmation). Adding `android` to the
   freedesktop case would enable a trash in Termux's home.
 
+## Phase 9 (unreleased): cloud remotes, extraction formats, new folder
+
+### Keys
+`Ctrl+R` was refresh. After asking the user, Sources took `Ctrl+R` and
+refresh moved to the unused `Ctrl+L` (the usual "redraw" key); the help,
+hints, menu, error panels and tests were updated. `n`/`F7` (new folder)
+were unused. The bulk-rename dialog's own `Ctrl+R` (regex toggle) is
+dialog-local and unaffected.
+
+### rclone (`internal/cloud`)
+- **Process:** every call is `proc.Start` of the detected rclone binary with
+  an argument vector (paths after `--`, `remote:path` built by `Path.Arg`),
+  `--ask-password=false` and closed stdin, so rclone never waits for input.
+  Cancelling a context sends SIGINT to the process group
+  (`proc.Child.InterruptGroup`, new) so rclone removes partial files, then
+  `KillGroup` after `Client.Grace`. stdout and stderr are bounded buffers.
+- **Errors:** `explain` maps the exit status and rclone's JSON/text log
+  lines to an `ErrKind` and a hint (for example the exact
+  `rclone config reconnect NAME:`). `Fatal` kinds (unknown remote, locked
+  config, login, network, cancelled) stop multi-item operations at once.
+- **Listing:** `lsjson` (exit 3 → not found); names are sanitised only for
+  display, never for the arguments.
+- **Transfers:** `Transfer` takes `ops`-style requests and hooks (`Progress`,
+  `Conflict` decisions, `Result`), so the UI reuses the local progress box
+  and conflict dialog. Files use `copyto`/`moveto`; folders use `copy`/`move`
+  with `--create-empty-src-dirs`. New items get `--ignore-existing` (an item
+  appearing meanwhile is kept and reported); an Overwrite decision uses
+  `--ignore-times`; a folder Merge first lists both sides (`ListFiles`),
+  asks per conflicting file, copies the new files with `--ignore-existing`
+  and the files chosen for overwriting with `--ignore-times
+  --files-from-raw` (one name per line, so any character works). Progress comes from
+  `--use-json-log --stats` lines; counts come from the pre-scan, because a
+  server-side move reports zeros.
+- **Mkdir/Rename** check the target first and never touch an existing item.
+  Delete uses `deletefile` or `purge`.
+
+### Panels (`internal/panel`)
+A panel has an optional `rem *RemoteSource` (client + remote). `OpenRemote`
+/ `OpenRemoteAt` list in the background with a cancellable context
+(`CancelLoad`, `Esc`); the panel state is replaced only when the listing
+succeeds, so a failed open leaves the panel where it was (`LoadedMsg.Rem`
+carries the failure). `GoLocal` returns to `lastLocal`. A refresh whose
+folder vanished climbs to the nearest existing parent; other refresh
+failures show an error panel (`^L retry · ^R sources`). The path line shows
+a `CloudBadge` with the remote name, and a `LocalBadge` on local panels
+while the other panel is remote.
+
+### UI (`internal/ui/cloud.go`)
+The Sources dialog lists remotes asynchronously. On a remote panel a key
+whitelist applies (`remoteUnsupported`): view, edit, open, properties,
+compress, extract, find, bookmarks and storage are refused with a hint.
+Copy/move with a remote side go through `beginTransfer` → the existing
+conflict dialog → `cloud.Transfer` in a session like the local engine.
+Bookmarks stay local-only (`places.go`). Without rclone the picker shows
+`cloud.InstallHint` (Termux: `pkg install rclone`); with no remotes it
+explains `rclone config`.
+
+### Extraction (`internal/archive/formats.go`, `extract_more.go`)
+`Detect` identifies the format from magic bytes (ZIP, TAR, gzip, bzip2, xz,
+zstd, lz4, 7z, RAR; a compressed stream is checked for a TAR header inside).
+`ExtractAny` dispatches: ZIP to the existing extractor, TAR and compressed
+TAR to a streaming reader, single compressed files to one output file, 7Z
+and RAR to 7-Zip. All of them share `place()` and `prepareDest` from
+`extract.go`: names are checked (no absolute paths, `..`, or writing
+through symlinks), each file is written to a temporary name and renamed
+when complete (via `ops.PlaceFile` for conflicts), links and special files
+are counted instead of created, and duplicates keep the first. 7-Zip runs
+via `proc` with closed stdin (`-bsp1` progress) into a staging folder
+`ops.TempPrefix+"x-*"` inside the destination, whose files are then placed
+with the same rules; encrypted archives fail fast instead of prompting.
+The codecs are used directly (`archive` cannot import `compress`, which
+imports `archive`). In the UI, `x` on a local file calls `Detect`, refuses
+unknown formats with `archive.Supported`, and asks for 7-Zip when needed.
+
+### Installer output (`scripts/install.sh`)
+Presentation only; downloads, verification, detection and options are
+unchanged. `setup_colors` (NO_COLOR > FORCE_COLOR > a terminal that is not
+`TERM=dumb`), `banner`, `step` (`==> [N/5]`), `ok`/`info`, `warn` and `die`
+on stderr (`die` keeps the `twinpane-install: error:` prefix). The download
+shows curl's `--progress-bar` or wget's `--show-progress` only on a
+terminal. `check_required` names every missing tool at once;
+`report_optional` lists rclone, fd, 7-Zip and the editor with Termux or
+Linux install hints. INT/TERM/HUP traps print that nothing was changed and
+exit 130/143 after the cleanup trap removed the temporary folder.
+
+### Tests
+- `cloud`: a fake rclone (the test binary itself, re-executed with
+  `TWINPANE_FAKE_RCLONE=<mode>`) for failures (expired login, offline,
+  unparsable output, hangs for cancellation), and real rclone with local/alias
+  remotes in temp folders when it is installed (skipped otherwise).
+- `panel/remote_test.go` and `ui/cloud_test.go`: source switching, labels,
+  failed opens, vanished folders, transfers in every direction, conflicts,
+  mkdir/rename/delete and the "no rclone" / "no remotes" states.
+- `archive/extract_more_test.go`, `ui/extract_formats_test.go`: every
+  built-in format, damaged and truncated archives, unsafe names, links and
+  FIFOs, conflicts, cancellation, and real 7-Zip when installed.
+- `scripts/test_install.sh`: banner and steps, colour rules, the missing
+  tool check, the optional-companions report (Linux and Termux) and
+  interruption, under dash and bash.
+
 ## Extension points for later phases
-- **More archive formats**: `internal/archive` (browse/extract) is
-  ZIP-specific, but the panel only needs `List`, `InnerOf`/`VirtualPath`,
-  `Display`, `Changed` and `OpenEntry`. A TAR reader could provide the same
-  methods behind an interface. `internal/compress` already has the codecs.
+- **Browsing more archive formats**: browsing is ZIP-only; TAR and
+  compressed TAR are extracted as a whole (phase 9). The panel only needs
+  `List`, `InnerOf`/`VirtualPath`, `Display`, `Changed` and `OpenEntry`, so
+  a TAR index could provide the same methods behind an interface.
 - **Storage analysis (future)**: deliberately not implemented. `fileinfo`
   and `fsys` have no recursive sizing, so a future analyser can add its own
   cancellable walker (like `ops.PlanDelete`) without touching the panels.

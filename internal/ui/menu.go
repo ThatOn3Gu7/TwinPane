@@ -67,6 +67,30 @@ func (a *App) menuEntries() (title string, entries []menuEntry) {
 		return title, entries
 	}
 
+	if p.InRemote() {
+		// an rclone remote: only what works there (see remoteUnsupported)
+		if single && e.IsDir {
+			add(menuEntry{label: "Open folder", send: "enter"})
+		}
+		if len(targets) > 0 {
+			dest := a.panelLabel(1 - a.active)
+			add(menuEntry{label: "Copy to other panel", detail: dest, key: "c", send: "c"})
+			add(menuEntry{label: "Move to other panel", detail: dest, key: "m", send: "m"})
+			if len(targets) == 1 {
+				add(menuEntry{label: "Rename", key: "r", send: "r"})
+			}
+		}
+		add(menuEntry{label: "New folder", key: "n", send: "n"})
+		add(menuEntry{label: "Sources…", detail: "local / cloud", key: "^R", send: "ctrl+r"})
+		add(menuEntry{label: "Refresh", key: "^L", send: "ctrl+l"})
+		add(menuEntry{label: "Back to local files", detail: shortPath(a.localDirFor(a.active)), key: "l",
+			run: func() tea.Cmd { return p.GoLocal(a.localDirFor(a.active), "") }})
+		if len(targets) > 0 {
+			add(menuEntry{label: "Delete…", key: "d", send: "d", danger: true})
+		}
+		return title, entries
+	}
+
 	if single {
 		switch {
 		case e.IsDir:
@@ -95,8 +119,7 @@ func (a *App) menuEntries() (title string, entries []menuEntry) {
 		if files {
 			add(menuEntry{label: "Edit", key: "e", send: "e"})
 		}
-		other := a.panels[1-a.active]
-		dest := shortPath(other.RealDir())
+		dest := a.panelLabel(1 - a.active)
 		add(menuEntry{label: "Copy to other panel", detail: dest, key: "c", send: "c"})
 		add(menuEntry{label: "Move to other panel", detail: dest, key: "m", send: "m"})
 		if len(targets) > 1 {
@@ -105,7 +128,7 @@ func (a *App) menuEntries() (title string, entries []menuEntry) {
 			add(menuEntry{label: "Rename", key: "r", send: "r"})
 		}
 		add(menuEntry{label: "Compress…", key: "z", send: "z"})
-		if file && archive.Sniff(e.Path) {
+		if file && canExtract(e.Path) {
 			add(menuEntry{label: "Extract to other panel", key: "x", send: "x"})
 		}
 	}
@@ -117,6 +140,8 @@ func (a *App) menuEntries() (title string, entries []menuEntry) {
 			add(menuEntry{label: "Share…", detail: "Android share sheet", key: "s", run: a.shareFile})
 		}
 	}
+	add(menuEntry{label: "New folder", key: "n", send: "n"})
+	add(menuEntry{label: "Sources…", detail: "local / cloud", key: "^R", send: "ctrl+r"})
 	if dir := p.Path(); a.isBookmarked(dir) {
 		add(menuEntry{label: "Remove this folder's bookmark", key: "B", run: a.unbookmarkHere})
 	} else {
@@ -153,4 +178,20 @@ func (a *App) openMenu() tea.Cmd {
 	}
 	a.dialog = d
 	return nil
+}
+
+// panelLabel describes panel i's folder for menu details: a short local
+// path, or "remote:/folder".
+func (a *App) panelLabel(i int) string {
+	p := a.panels[i]
+	if p.InRemote() {
+		return fsys.SanitizeName(p.Location().Display())
+	}
+	return shortPath(p.RealDir())
+}
+
+// canExtract reports whether x can extract the file (any supported format).
+func canExtract(p string) bool {
+	info, err := archive.Detect(p)
+	return err == nil && info.Format != archive.FormatUnknown
 }

@@ -16,6 +16,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/ThatOn3Gu7/TwinPane/internal/bookmarks"
+	"github.com/ThatOn3Gu7/TwinPane/internal/cloud"
 	"github.com/ThatOn3Gu7/TwinPane/internal/compress"
 	"github.com/ThatOn3Gu7/TwinPane/internal/editor"
 	"github.com/ThatOn3Gu7/TwinPane/internal/fsys"
@@ -143,6 +144,9 @@ type App struct {
 	formatLevels map[compress.ID]int // level index chosen per format
 	bookmarks    *bookmarks.Store
 	bookmarksErr error // why the bookmarks could not be loaded
+
+	// phase 9
+	sourcesSeq int // the Sources picker's latest remote listing
 }
 
 // New creates the application model.
@@ -236,6 +240,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.press = pressState{}
 	}
 	a.syncSelections()
+	a.syncBadges()
 	return m, cmd
 }
 
@@ -283,12 +288,25 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a, nil
 		}
 		p := a.panels[msg.PanelID]
-		wasArc := p.Archive()
+		wasArc, wasRem := p.Archive(), p.Source()
 		if err := p.Apply(msg); err != nil {
-			a.setStatus(err.Error(), true)
+			switch {
+			case cloud.KindOf(err) == cloud.KindCanceled:
+				a.setStatusLevel("listing cancelled — the panel stays where it was", lvlWarn)
+			case msg.Rem != nil:
+				a.setStatus(msg.Rem.Remote.Name+": "+err.Error(), true)
+			default:
+				a.setStatus(err.Error(), true)
+			}
 		} else if p.Archive() != nil && wasArc == nil {
 			a.archiveOpened(p)
+		} else if src := p.Source(); src != nil && (wasRem == nil || wasRem.Remote != src.Remote) {
+			a.remoteOpened(p)
 		}
+		return a, nil
+
+	case remotesMsg:
+		a.remotesLoaded(msg)
 		return a, nil
 
 	case viewLoadedMsg:
@@ -393,6 +411,12 @@ func (a *App) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	a.setStatus("", false)
 	p := a.panels[a.active]
+	if p.InRemote() {
+		if what := a.remoteUnsupported(msg); what != "" {
+			a.refuseOnRemote(what)
+			return a, nil
+		}
+	}
 	switch {
 	case k.Quit.Matches(msg):
 		a.quitting = true
@@ -423,16 +447,29 @@ func (a *App) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case k.Parent.Matches(msg):
 		return a, p.Parent()
 	case k.Home.Matches(msg):
+		if p.InRemote() {
+			return a, p.GoLocal(fsys.HomeDir(), "")
+		}
 		return a, p.ChangeDir(fsys.HomeDir())
 	case k.SyncOther.Matches(msg):
 		other := a.panels[1-a.active]
-		if p.InArchive() {
-			// the other panel shows the folder containing the archive
-			return a, other.Load(p.RealDir(), filepath.Base(p.Archive().Path), panel.LoadNavigate)
-		}
 		focus := ""
 		if e, ok := p.Current(); ok && !e.IsParent {
 			focus = e.Name
+		}
+		switch {
+		case p.InRemote():
+			// the other panel shows the same remote folder
+			return a, other.OpenRemoteAt(p.Source(), p.Location(), focus)
+		case other.InRemote() && !p.InArchive():
+			return a, other.GoLocal(p.Path(), focus)
+		}
+		if p.InArchive() {
+			// the other panel shows the folder containing the archive
+			if other.InRemote() {
+				return a, other.GoLocal(p.RealDir(), filepath.Base(p.Archive().Path))
+			}
+			return a, other.Load(p.RealDir(), filepath.Base(p.Archive().Path), panel.LoadNavigate)
 		}
 		return a, other.Load(p.Path(), focus, panel.LoadNavigate)
 	case k.Select.Matches(msg):
@@ -455,8 +492,11 @@ func (a *App) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case k.Search.Matches(msg):
 		return a, a.beginSearch()
 	case k.Refresh.Matches(msg):
-		a.setStatus("refreshed", false)
-		return a, tea.Batch(p.Refresh(), a.panels[1-a.active].Refresh())
+		return a, a.refreshBoth()
+	case k.Sources.Matches(msg):
+		return a, a.openSources()
+	case k.Mkdir.Matches(msg):
+		return a, a.beginMkdir()
 	case k.Copy.Matches(msg):
 		if p.InArchive() {
 			return a, a.beginExtract(false) // copying out of an archive = extracting
@@ -495,6 +535,9 @@ func (a *App) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case k.Storage.Matches(msg):
 		return a, a.showStorage()
 	case k.Cancel.Matches(msg):
+		if p.Loading() && p.CancelLoad() {
+			return a, nil // the cancelled load reports itself
+		}
 		if p.InArchive() {
 			return a, p.LeaveArchive()
 		}

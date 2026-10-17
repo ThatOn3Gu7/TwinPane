@@ -128,8 +128,28 @@ The [user guide](docs/USER_GUIDE.md) describes every feature in detail.
 - `--no-mouse` turns touch and mouse input off, so the terminal can select
   text normally.
 
-Not included: creating folders, content search, configurable keys or themes,
-and editing archives in place.
+Not included: content search, configurable keys or themes, and editing
+archives in place.
+
+### Unreleased (on `master`, not in v0.7.0)
+
+These are committed but not yet part of a release; build from source to
+try them (see [Building from source](#building-from-source)).
+
+- **Cloud remotes with rclone.** `Ctrl+R` opens the Sources picker for the
+  active panel: local files or any remote configured in
+  [rclone](https://rclone.org) (Google Drive, Dropbox, OneDrive, SFTP, S3, …).
+  Either panel can show a remote while the other stays where it was.
+  Copy/move between local and remote folders (or between two remotes), new
+  folder, rename and delete work with progress, cancel (`Esc`) and the usual
+  conflict dialog. rclone is optional: without it TwinPane explains how to
+  install it, and it never asks for or stores logins (`rclone config` does
+  that). See [Cloud remotes](docs/USER_GUIDE.md#cloud-remotes-rclone).
+- **New folder** (`n` or `F7`), on local folders and remotes.
+- **Extraction of more formats** (`x` on the file): TAR, TAR.GZ/TGZ,
+  TAR.BZ2, TAR.XZ, TAR.ZST, TAR.LZ4 and single GZ, BZ2, XZ, ZST, LZ4 files
+  are built in; 7Z and RAR use an installed 7-Zip. Browsing stays ZIP-only.
+- **Refresh moved from `Ctrl+R` to `Ctrl+L`** (`Ctrl+R` now opens Sources).
 
 ## Supported platforms
 
@@ -170,9 +190,11 @@ With wget:
 wget -qO- https://raw.githubusercontent.com/ThatOn3Gu7/TwinPane/master/scripts/install.sh | sh
 ```
 
-> These commands work once the first release has been published on GitHub
-> Releases. Until then the installer stops with "could not download the
-> latest release information".
+The installer shows its steps (checking the system, finding the release,
+downloading with a progress bar on a terminal, installing, optional
+companions). Colours are used on a terminal only; `NO_COLOR=1` turns them
+off. If anything fails, or you press `Ctrl+C`, it stops with the reason and
+leaves an existing `twinpane` untouched; the temporary files are removed.
 
 It installs into:
 
@@ -270,12 +292,33 @@ never been run, and Windows has no trash (deletes are permanent).
 | Tool | Used for | Termux | Debian/Ubuntu |
 |---|---|---|---|
 | `fd` | faster search (else `find`, else built in) | `pkg install fd` | `sudo apt install fd-find` |
-| 7-Zip | creating `.7z` archives | `pkg install 7zip` | `sudo apt install 7zip` |
+| 7-Zip | creating `.7z` archives (on `master`: also extracting 7Z and RAR) | `pkg install 7zip` | `sudo apt install 7zip` |
+| `rclone` | cloud remotes (on `master`, not yet released) | `pkg install rclone` | `sudo apt install rclone`, or [rclone.org/install](https://rclone.org/install/) |
 | an editor | `e` / `E` | `pkg install neovim` (or `nano`) | already installed |
 | `termux-open` | Open / Share (`o`, `O`) | included in `termux-tools` | `xdg-open` (desktop session) |
 
 In Termux, run `termux-setup-storage` once to reach your phone's shared
 storage at `~/storage/shared`.
+
+The installer lists which of these it found at the end ("Optional
+companions"); none of them is required.
+
+### Optional: cloud remotes with rclone
+
+Cloud support (on `master`, not yet released) uses your own rclone setup;
+TwinPane has no login of its own and stores no credentials.
+
+1. Install rclone: `pkg install rclone` (Termux), your distribution's
+   package, or <https://rclone.org/install/>.
+2. Add a remote: run `rclone config`, press `n`, choose the provider and
+   follow its login steps. On a phone without a browser for the login,
+   rclone explains how to authorise on another device (`rclone authorize`).
+3. In TwinPane press `Ctrl+R` and pick the remote.
+
+Google Drive: rclone's shared Google client ID is being retired in 2026 and
+rclone prints a notice about it; creating your own client ID (see
+[rclone's Google Drive docs](https://rclone.org/drive/#making-your-own-client-id))
+avoids rate limits and keeps the remote working.
 
 ### Uninstall
 
@@ -307,6 +350,11 @@ twinpane --version
 | `b` / `B` | bookmarks / add | `M` | action menu |
 | `i` | storage | `?` / `F1` | help (with `/` filter) |
 | `~` | home folder | `q` / `F10` | quit |
+| `Ctrl+R` ¹ | sources: local / cloud | `n` / `F7` ¹ | new folder |
+| `Ctrl+L` ¹ | refresh both panels | | |
+
+¹ On `master`, not yet released. In v0.7.0, `Ctrl+R` refreshes and there is
+no new-folder key.
 
 The [user guide](docs/USER_GUIDE.md#keyboard-controls) lists every key,
 including those of the viewer, dialogs, search and bulk rename.
@@ -467,6 +515,10 @@ in [CHANGELOG.md](CHANGELOG.md).
 | Boxes or symbols look broken | Use a UTF-8 locale and a font with box-drawing characters. |
 | Build: `go.mod requires go >= 1.23` | Update Go (Termux: `pkg upgrade golang`). |
 | `.7z` is marked unavailable | Install 7-Zip (Termux: `pkg install 7zip`). |
+| Cloud (`master`): "rclone is not installed" | Install rclone (Termux: `pkg install rclone`), add a remote with `rclone config`, press `Ctrl+R` again. |
+| Cloud (`master`): "the login has expired or was refused" | Run the `rclone config reconnect NAME:` command shown in the message, then try again. |
+| Cloud (`master`): "the configuration is encrypted" | TwinPane cannot type the rclone config password. Set `RCLONE_CONFIG_PASS` in the shell that starts TwinPane, or use an unencrypted config. |
+| Cloud (`master`): a listing takes long | `Esc` cancels it; the panel stays where it was. |
 
 The [known limitations](docs/USER_GUIDE.md#known-limitations) list what
 TwinPane does not do.

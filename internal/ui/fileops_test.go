@@ -55,6 +55,10 @@ func (h *harness) press(keys ...string) {
 			m = tea.KeyMsg{Type: tea.KeyCtrlK}
 		case "ctrl+r":
 			m = tea.KeyMsg{Type: tea.KeyCtrlR}
+		case "ctrl+l":
+			m = tea.KeyMsg{Type: tea.KeyCtrlL}
+		case "f7":
+			m = tea.KeyMsg{Type: tea.KeyF7}
 		case "pgdown":
 			m = tea.KeyMsg{Type: tea.KeyPgDown}
 		case "pgup":
@@ -645,7 +649,7 @@ func TestEditRefusesDirsAndWarnsOnBinary(t *testing.T) {
 		t.Fatalf("dir: %q", h.status())
 	}
 	os.WriteFile(filepath.Join(env.src, "prog.bin"), []byte{0x7f, 'E', 'L', 'F', 0, 1, 2}, 0o644)
-	h.press("ctrl+r")
+	h.press("ctrl+l")
 	h.settle()
 	h.focus("prog.bin")
 	h.press("e")
@@ -715,7 +719,7 @@ func TestRealCancelDuringLargeCopy(t *testing.T) {
 	for i := 0; i < 40; i++ {
 		os.WriteFile(filepath.Join(big, "f"+string(rune('A'+i))), []byte(data), 0o644)
 	}
-	h.press("ctrl+r")
+	h.press("ctrl+l")
 	h.focus("big")
 	h.press("c")
 	h.send(key("enter"))                 // starts the copy
@@ -781,7 +785,7 @@ func TestFooterAndHelpShowOperationKeys(t *testing.T) {
 	h.send(tea.WindowSizeMsg{Width: 80, Height: 24})
 	h.press("?")
 	v = h.view()
-	for _, want := range []string{"Navigation", "File operations", "c/F5", "m/F6", "r/F2", "d/F8/Del", "e/F4", "Esc", "^R", "quit", "close help"} {
+	for _, want := range []string{"Navigation", "File operations", "c/F5", "m/F6", "r/F2", "d/F8/Del", "e/F4", "Esc", "^L", "quit", "close help"} {
 		if !strings.Contains(v, want) {
 			t.Errorf("help at 80x24 lacks %q:\n%s", want, v)
 		}

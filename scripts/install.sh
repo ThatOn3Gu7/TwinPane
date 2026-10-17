@@ -29,21 +29,61 @@ DRY_RUN=0
 
 TMP_DIR=""
 STAGED=""
+STEP=0
+STEPS=5
+
+# ---------------------------------------------------------------- output
+# Colours: never with NO_COLOR, always with FORCE_COLOR, otherwise only on
+# a terminal that is not TERM=dumb. Messages go to stdout, warnings and
+# errors to stderr.
+
+setup_colors() {
+	C_RESET="" C_BOLD="" C_DIM="" C_RED="" C_GREEN="" C_YELLOW="" C_BLUE="" C_CYAN=""
+	[ -n "${NO_COLOR:-}" ] && return
+	if [ -n "${FORCE_COLOR:-}" ] || { [ -t 1 ] && [ "${TERM:-}" != dumb ]; }; then
+		esc="$(printf '\033')"
+		C_RESET="${esc}[0m" C_BOLD="${esc}[1m" C_DIM="${esc}[2m" C_RED="${esc}[31m"
+		C_GREEN="${esc}[32m" C_YELLOW="${esc}[33m" C_BLUE="${esc}[34m" C_CYAN="${esc}[36m"
+	fi
+}
+setup_colors
 
 say() { printf '%s\n' "$*"; }
-warn() { printf 'twinpane-install: warning: %s\n' "$*" >&2; }
+step() { # step TEXT: the next numbered stage
+	STEP=$((STEP + 1))
+	printf '%s==>%s %s[%d/%d]%s %s\n' "$C_BLUE$C_BOLD" "$C_RESET" "$C_DIM" "$STEP" "$STEPS" "$C_RESET" "$C_BOLD$*$C_RESET"
+}
+ok() { printf '    %sok%s  %s\n' "$C_GREEN$C_BOLD" "$C_RESET" "$*"; }
+info() { printf '    %s--%s  %s\n' "$C_DIM" "$C_RESET" "$*"; }
+warn() { printf '    %swarning:%s %s\n' "$C_YELLOW$C_BOLD" "$C_RESET" "$*" >&2; }
 die() {
-	printf 'twinpane-install: error: %s\n' "$*" >&2
+	printf '%stwinpane-install: error:%s %s\n' "$C_RED$C_BOLD" "$C_RESET" "$*" >&2
+	if [ "$STEP" -gt 0 ]; then
+		printf '%sInstallation failed; nothing was changed.%s\n' "$C_RED" "$C_RESET" >&2
+	fi
 	exit 1
+}
+
+banner() {
+	printf '\n'
+	printf '  %s+------------+------------+%s\n' "$C_CYAN" "$C_RESET"
+	printf '  %s|%s %sTwin%s       %s|%s       %sPane%s %s|%s\n' "$C_CYAN" "$C_RESET" "$C_BOLD" "$C_RESET" "$C_CYAN" "$C_RESET" "$C_BOLD" "$C_RESET" "$C_CYAN" "$C_RESET"
+	printf '  %s+------------+------------+%s\n' "$C_CYAN" "$C_RESET"
+	printf '  %sdual-panel file manager for the terminal%s\n\n' "$C_DIM" "$C_RESET"
 }
 
 cleanup() {
 	if [ -n "$STAGED" ] && [ -e "$STAGED" ]; then rm -f "$STAGED"; fi
 	if [ -n "$TMP_DIR" ] && [ -d "$TMP_DIR" ]; then rm -rf "$TMP_DIR"; fi
 }
+interrupted() {
+	cleanup
+	printf '\n%sInterrupted: nothing was installed or changed.%s\n' "$C_YELLOW" "$C_RESET" >&2
+	exit "$1"
+}
 trap cleanup EXIT
-trap 'cleanup; exit 130' INT
-trap 'cleanup; exit 143' TERM HUP
+trap 'interrupted 130' INT
+trap 'interrupted 143' TERM HUP
 
 usage() {
 	cat <<'EOF'
@@ -158,24 +198,36 @@ pick_downloader() {
 	fi
 }
 
-# fetch URL OUTPUT [api]: download URL to OUTPUT. Sets HTTP_CODE when known.
+# fetch URL OUTPUT [api|progress]: download URL to OUTPUT. Sets HTTP_CODE
+# when known. "progress" shows a progress bar on an interactive terminal.
 fetch() {
 	# POSIX sh has no local variables: f_* names only, so callers keep theirs.
 	f_url="$1"
 	f_out="$2"
 	f_mode="${3:-}"
+	f_bar=0
+	[ "$f_mode" = progress ] && [ -t 2 ] && [ "${TERM:-}" != dumb ] && f_bar=1
 	HTTP_CODE=""
 	rm -f "$f_out"
 	if [ "$DOWNLOADER" = curl ]; then
-		set -- -fsSL --retry 2 --connect-timeout 20 -o "$f_out" -w '%{http_code}'
+		set -- -fSL --retry 2 --connect-timeout 20 -o "$f_out" -w '%{http_code}'
+		[ $f_bar -eq 1 ] || set -- "$@" -s
 		case "$f_url" in https://*) set -- "$@" --proto '=https' --tlsv1.2 ;; esac
 		[ "$f_mode" = api ] && set -- "$@" -H 'Accept: application/vnd.github+json'
-		HTTP_CODE="$(curl "$@" "$f_url" 2>/dev/null)"
+		if [ $f_bar -eq 1 ]; then
+			HTTP_CODE="$(curl "$@" --progress-bar "$f_url")"
+		else
+			HTTP_CODE="$(curl "$@" "$f_url" 2>/dev/null)"
+		fi
 		f_rc=$?
 	else
 		set -- -q -T 30 -O "$f_out"
 		[ "$f_mode" = api ] && set -- "$@" --header='Accept: application/vnd.github+json'
-		wget "$@" "$f_url" 2>/dev/null
+		if [ $f_bar -eq 1 ] && wget --help 2>&1 | grep -q -- '--show-progress'; then
+			wget "$@" --show-progress "$f_url"
+		else
+			wget "$@" "$f_url" 2>/dev/null
+		fi
 		f_rc=$?
 		[ $f_rc -eq 8 ] && HTTP_CODE="error"
 	fi
@@ -278,18 +330,69 @@ default_dir() {
 	esac
 }
 
+# ---------------------------------------------------------------- dependencies
+
+# check_required: the tools the installer itself needs, all reported at once.
+check_required() {
+	missing=""
+	for t in uname tar gzip mktemp od awk; do
+		command -v "$t" >/dev/null 2>&1 || missing="$missing $t"
+	done
+	if ! command -v sha256sum >/dev/null 2>&1 && ! command -v shasum >/dev/null 2>&1 &&
+		! command -v openssl >/dev/null 2>&1; then
+		missing="$missing sha256sum"
+	fi
+	if [ -n "$missing" ]; then
+		if is_android; then hint="pkg install coreutils tar gzip"; else hint="install them with your package manager"; fi
+		die "missing required tools:$missing ($hint)"
+	fi
+}
+
+# report_optional: programs TwinPane uses when present (never required).
+report_optional() {
+	termux=0
+	case "$TARGET" in android-*) termux=1 ;; esac
+	opt_line() { # opt_line NAME FOUND WHAT TERMUX_PKG OTHER_HINT
+		if [ -n "$2" ]; then
+			ok "$1: $2"
+		elif [ $termux -eq 1 ]; then
+			info "$1: not installed ($3) - pkg install $4"
+		else
+			info "$1: not installed ($3) - $5"
+		fi
+	}
+	opt_line rclone "$(command -v rclone 2>/dev/null)" "optional, for cloud remotes" rclone "https://rclone.org/install/"
+	f="$(command -v fd 2>/dev/null || command -v fdfind 2>/dev/null)"
+	opt_line fd "$f" "optional, faster find" fd "package fd-find or fd"
+	f="$(command -v 7zz 2>/dev/null || command -v 7z 2>/dev/null || command -v 7za 2>/dev/null || command -v 7zr 2>/dev/null)"
+	opt_line 7-Zip "$f" "optional, for 7Z archives" 7zip "package 7zip or p7zip"
+	if [ -n "${VISUAL:-}${EDITOR:-}" ]; then
+		ok "editor: ${VISUAL:-$EDITOR}"
+	else
+		info "editor: \$EDITOR is not set (TwinPane looks for an installed editor)"
+	fi
+	if [ -n "$(command -v rclone 2>/dev/null)" ]; then
+		info "rclone: remotes are set up with 'rclone config'; TwinPane never stores logins"
+	fi
+}
+
 # ---------------------------------------------------------------- main
 
 main() {
 	parse_args "$@"
+	banner
 
+	step "Checking the system"
+	check_required
 	if [ -n "$TARGET" ]; then check_target "$TARGET"; else detect_target; fi
 	[ -n "$INSTALL_DIR" ] || default_dir
 	pick_downloader
+	ok "platform $TARGET, downloads with $DOWNLOADER"
 
 	TMP_DIR="$(mktemp -d 2>/dev/null || mktemp -d -t twinpane)" || die "cannot create a temporary folder"
 	[ -d "$TMP_DIR" ] || die "cannot create a temporary folder"
 
+	step "Finding the release"
 	resolve_version
 	base="twinpane-$TAG-$TARGET"
 	asset="$base.tar.gz"
@@ -300,6 +403,7 @@ main() {
 		printf '%s\n' "$names" | grep -Fqx "SHA256SUMS" ||
 			die "release $TAG has no SHA256SUMS file, so the download cannot be verified"
 	fi
+	ok "TwinPane $TAG ($asset)"
 
 	if [ "$DRY_RUN" -eq 1 ]; then
 		say "target:      $TARGET"
@@ -318,13 +422,15 @@ main() {
 	dest="$INSTALL_DIR/twinpane"
 	[ -d "$dest" ] && die "$dest is a folder; remove it or choose another --dir"
 
-	say "Downloading TwinPane $TAG for $TARGET with $DOWNLOADER..."
+	step "Downloading"
+	say "    Downloading TwinPane $TAG for $TARGET with $DOWNLOADER..."
 	url="$DOWNLOAD_BASE/$REPO/releases/download/$TAG"
-	fetch "$url/$asset" "$TMP_DIR/$asset" || explain "$asset" "$url/$asset"
+	fetch "$url/$asset" "$TMP_DIR/$asset" progress || explain "$asset" "$url/$asset"
 	fetch "$url/SHA256SUMS" "$TMP_DIR/SHA256SUMS" || explain "SHA256SUMS" "$url/SHA256SUMS"
 	verify_checksum "$TMP_DIR/$asset" "$asset" "$TMP_DIR/SHA256SUMS"
-	say "Checksum OK."
+	ok "Checksum OK."
 
+	step "Installing"
 	mkdir "$TMP_DIR/x" || die "cannot use the temporary folder"
 	tar -xzf "$TMP_DIR/$asset" -C "$TMP_DIR/x" "$base/twinpane" 2>/dev/null ||
 		die "$asset does not contain $base/twinpane; nothing was installed"
@@ -345,10 +451,14 @@ main() {
 	STAGED=""
 
 	if [ $existed -eq 1 ]; then
-		say "Updated $dest to TwinPane $TAG ($TARGET)."
+		ok "Updated $dest to TwinPane $TAG ($TARGET)."
 	else
-		say "Installed TwinPane $TAG ($TARGET) to $dest."
+		ok "Installed TwinPane $TAG ($TARGET) to $dest."
 	fi
+
+	step "Optional companions"
+	report_optional
+	printf '\n%sDone.%s ' "$C_GREEN$C_BOLD" "$C_RESET"
 	case ":${PATH:-}:" in
 	*":$INSTALL_DIR:"*)
 		found="$(command -v twinpane 2>/dev/null || true)"

@@ -225,6 +225,16 @@ func (a *App) handleOpMsg(msg tea.Msg) (tea.Cmd, bool) {
 			return nil, true
 		}
 		return a.finishZip(a.op, m.res), true
+	case opCloudDoneMsg:
+		if !cur(m.id) {
+			return nil, true
+		}
+		return a.finishCloudOp(a.op, m), true
+	case opCloudDeleteDoneMsg:
+		if !cur(m.id) {
+			return nil, true
+		}
+		return a.finishCloudDelete(a.op, m.res), true
 	case deletePlannedMsg:
 		if a.planning == nil || a.planning.id != m.id {
 			return nil, true // cancelled or superseded
@@ -254,6 +264,9 @@ func (a *App) beginTransfer(kind ops.Kind) tea.Cmd {
 	}
 	if a.refuseArchiveDest(what) {
 		return nil
+	}
+	if a.ActivePanel().InRemote() || a.panels[1-a.active].InRemote() {
+		return a.beginCloudTransfer(kind) // cloud.go
 	}
 	srcIdx := a.active
 	src, dst := a.panels[srcIdx], a.panels[1-srcIdx]
@@ -430,6 +443,9 @@ func (a *App) beginDelete() tea.Cmd {
 		return nil
 	}
 	p := a.ActivePanel()
+	if p.InRemote() {
+		return a.beginCloudDelete() // cloud.go
+	}
 	targets := p.Targets()
 	if len(targets) == 0 {
 		a.setStatus("nothing to delete: put the cursor on an item or select items with Space", true)

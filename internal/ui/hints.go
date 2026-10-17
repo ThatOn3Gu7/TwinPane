@@ -56,11 +56,18 @@ func (a *App) hints() (items []barItem, pinned *barItem) {
 func (a *App) browseHints() []barItem {
 	p := a.ActivePanel()
 	if p.Err() != nil {
-		return []barItem{item("⌫", "parent", "backspace"), item("^R", "retry", "ctrl+r"),
-			item("Tab", "switch", "tab"), item("~", "home", "~"), item("q", "quit", "q")}
+		if p.InRemote() {
+			return []barItem{item("^L", "retry", "ctrl+l"), item("^R", "sources", "ctrl+r"),
+				item("Tab", "switch", "tab"), item("~", "local home", "~"), item("q", "quit", "q")}
+		}
+		return []barItem{item("⌫", "parent", "backspace"), item("^L", "retry", "ctrl+l"),
+			item("Tab", "switch", "tab"), item("~", "home", "~"), item("q", "quit", "q"), item("^R", "sources", "ctrl+r")}
 	}
 	if p.InArchive() {
 		return a.archiveHints()
+	}
+	if p.InRemote() {
+		return a.remoteHints()
 	}
 	cur, ok := p.Current()
 	targets := p.Targets()
@@ -107,6 +114,9 @@ func (a *App) browseHints() []barItem {
 		} else {
 			out = append(out, item("⏎", "view", "enter"))
 		}
+		if !isZip && looksLikeArchive(cur.Name) {
+			out = append(out, item("x", "extract", "x")) // phase 9: TAR, 7Z, RAR, compressed files
+		}
 	}
 	hidden := "show hidden"
 	if a.showHidden {
@@ -128,6 +138,44 @@ func (a *App) browseHints() []barItem {
 		out = append(out, item("o/O", "open with", "O"))
 	}
 	out = append(out, item("b", "bookmarks", "b"), item("i", "storage", "i"))
+	// phase 9, again after everything that was there before
+	out = append(out, item("^R", "sources", "ctrl+r"), item("n", "new folder", "n"))
+	return out
+}
+
+// remoteHints is the hint bar of a panel showing an rclone remote: only
+// what works there.
+func (a *App) remoteHints() []barItem {
+	p := a.ActivePanel()
+	cur, ok := p.Current()
+	nsel := len(p.Selection())
+	out := []barItem{item("Tab", "switch", "tab")}
+	if ok && cur.IsDir && nsel == 0 {
+		out = append(out, item("⏎", "open", "enter"))
+	}
+	if ok && !cur.IsParent {
+		if p.IsSelected(cur.Name) {
+			out = append(out, item("Space", "unselect", " "))
+		} else {
+			out = append(out, item("Space", "select", " "))
+		}
+	}
+	if nsel > 0 {
+		out = append(out, item("u", "clear", "u"))
+	}
+	if len(p.Targets()) > 0 {
+		out = append(out, item("c", "copy", "c"), item("m", "move", "m"))
+		if len(p.Targets()) == 1 {
+			out = append(out, item("r", "rename", "r"))
+		}
+		out = append(out, item("d", "delete", "d"))
+	}
+	out = append(out, item("n", "new folder", "n"), item("^R", "sources", "ctrl+r"), item("^L", "refresh", "ctrl+l"))
+	hidden := "show hidden"
+	if a.showHidden {
+		hidden = "hide hidden"
+	}
+	out = append(out, item("h", hidden, "h"), item("s/S", "sort", "s"), item("M", "menu", "M"), item("q", "quit", "q"))
 	return out
 }
 
@@ -378,7 +426,7 @@ func (a *App) fitSegment(it barItem, w int) string {
 func keyFor(s string) tea.KeyMsg {
 	special := map[string]tea.KeyType{
 		"esc": tea.KeyEsc, "enter": tea.KeyEnter, "tab": tea.KeyTab, "backspace": tea.KeyBackspace,
-		"ctrl+r": tea.KeyCtrlR, "ctrl+t": tea.KeyCtrlT, "f4": tea.KeyF4, "up": tea.KeyUp, "down": tea.KeyDown,
+		"ctrl+r": tea.KeyCtrlR, "ctrl+l": tea.KeyCtrlL, "f7": tea.KeyF7, "ctrl+t": tea.KeyCtrlT, "f4": tea.KeyF4, "up": tea.KeyUp, "down": tea.KeyDown,
 		"pgup": tea.KeyPgUp, "pgdown": tea.KeyPgDown, "left": tea.KeyLeft, "right": tea.KeyRight,
 		"shift+tab": tea.KeyShiftTab, "home": tea.KeyHome, "end": tea.KeyEnd,
 	}

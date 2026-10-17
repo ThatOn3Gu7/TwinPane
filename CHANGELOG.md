@@ -7,6 +7,31 @@ the tagged version as the release notes, so every release needs an entry here.
 The complete description of every feature is in
 [docs/USER_GUIDE.md](docs/USER_GUIDE.md).
 
+## [Unreleased]
+
+### Added
+- Cloud remotes through rclone: `Ctrl+R` opens the Sources picker, and
+  either panel can show a configured rclone remote (labelled with its name)
+  while the other keeps its folder. Copy and move between local folders and
+  remotes, or between remotes, with progress, cancel and the usual conflict
+  dialog; new folder, rename and delete on remotes. Loading, empty, offline,
+  expired-login and missing-folder states are explained without blocking
+  the interface. rclone is optional; TwinPane stores no credentials.
+- New folder (`n` / `F7`) in local folders and on remotes.
+- Extraction (`x`) of TAR, TAR.GZ/TGZ, TAR.BZ2, TAR.XZ, TAR.ZST, TAR.LZ4
+  and single GZ, BZ2, XZ, ZST, LZ4 files (built in), and 7Z and RAR with an
+  installed 7-Zip, with the same safety rules as ZIP extraction. Unknown and
+  password-protected archives are refused with a clear message.
+- Installer output: banner, numbered steps, a download progress bar on a
+  terminal, colours (off with `NO_COLOR`, forced with `FORCE_COLOR`), a
+  check of the required tools, a report of optional companions (rclone, fd,
+  7-Zip, editor) and a clear message when interrupted.
+
+### Changed
+- Refresh moved from `Ctrl+R` to `Ctrl+L`, because `Ctrl+R` now opens
+  Sources. `Ctrl+R` in the bulk-rename dialog is unchanged.
+- The menu offers *Sources…* and, on a remote, *Back to local files*.
+
 ## [0.7.0]
 
 First public release.

@@ -4,6 +4,7 @@
 package panel
 
 import (
+	"context"
 	"fmt"
 	"io/fs"
 	"path/filepath"
@@ -13,6 +14,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/ThatOn3Gu7/TwinPane/internal/archive"
+	"github.com/ThatOn3Gu7/TwinPane/internal/cloud"
 	"github.com/ThatOn3Gu7/TwinPane/internal/fsys"
 )
 
@@ -47,6 +49,16 @@ type LoadedMsg struct {
 	// to its folder).
 	Arc  *archive.Archive
 	Warn error
+
+	// Phase 9: Rem is the rclone remote the listing comes from (nil = the
+	// local filesystem or an archive).
+	Rem *RemoteSource
+}
+
+// RemoteSource is the rclone remote a panel shows.
+type RemoteSource struct {
+	Client *cloud.Client
+	Remote cloud.Remote
 }
 
 // Panel is one side of the dual-pane view.
@@ -73,6 +85,15 @@ type Panel struct {
 	// inner path (see archive.VirtualPath). The UI checks InArchive before
 	// any operation that would treat them as real paths.
 	arc *archive.Archive
+
+	// rem is set while the panel shows an rclone remote (phase 9). Paths
+	// are then rclone arguments ("remote:dir/name", see cloud.Path); the UI
+	// checks InRemote before any operation that needs real paths.
+	rem        *RemoteSource
+	lastLocal  string             // the last local folder shown (to return to)
+	loadCancel context.CancelFunc // stops the remote listing in progress
+	localBadge bool               // label a local panel "LOCAL" (set by the UI)
+	pending    string             // display name of the remote folder being loaded
 
 	width, height int
 }
@@ -114,9 +135,42 @@ func (p *Panel) ArchiveInner() string {
 	return in
 }
 
+// InRemote reports whether the panel shows an rclone remote.
+func (p *Panel) InRemote() bool { return p.rem != nil }
+
+// Source returns the remote being shown (nil = local).
+func (p *Panel) Source() *RemoteSource { return p.rem }
+
+// Location returns the remote folder being shown (a zero Path when local).
+func (p *Panel) Location() cloud.Path {
+	if p.rem == nil {
+		return cloud.Path{}
+	}
+	loc, _ := cloud.Parse(p.path)
+	return loc
+}
+
+// pendingLabel names what is being loaded (for the "Loading …" row).
+func (p *Panel) pendingLabel() string {
+	if p.pending != "" {
+		return p.pending
+	}
+	return p.Location().Display()
+}
+
+// LastLocal returns the local folder the panel showed last ("" = none yet).
+func (p *Panel) LastLocal() string { return p.lastLocal }
+
+// SetLocalBadge makes a local panel show a "LOCAL" label on its path line
+// (the UI turns it on while a remote is shown in either panel).
+func (p *Panel) SetLocalBadge(on bool) { p.localBadge = on }
+
 // RealDir returns the real filesystem folder the panel is in: its path, or
-// the folder containing the archive being browsed.
+// the folder containing the archive being browsed ("" on a remote).
 func (p *Panel) RealDir() string {
+	if p.rem != nil {
+		return ""
+	}
 	if p.arc != nil {
 		return filepath.Dir(p.arc.Path)
 	}
@@ -227,10 +281,22 @@ func (p *Panel) NextFocus(gone map[string]bool) string {
 // Load starts an asynchronous read of path and returns the command to run.
 // focus names the entry the cursor should land on (may be empty).
 func (p *Panel) Load(path, focus string, mode LoadMode) tea.Cmd {
+	if src := p.rem; src != nil {
+		if loc, ok := cloud.Parse(path); ok && loc.Remote == src.Remote.Name {
+			return p.loadRemote(src, loc, focus, mode)
+		}
+	}
+	return p.loadLocal(path, focus, mode, true)
+}
+
+// loadLocal reads a local folder (or, with inArc, a folder inside the
+// archive shown).
+func (p *Panel) loadLocal(path, focus string, mode LoadMode, inArc bool) tea.Cmd {
+	p.CancelLoad()
 	p.seq++
 	p.loading = true
 	seq, id, lister, opts := p.seq, p.id, p.lister, p.opts
-	if arc := p.arc; arc != nil {
+	if arc := p.arc; arc != nil && inArc {
 		if inner, ok := arc.InnerOf(path); ok {
 			return func() tea.Msg { return loadArchive(id, seq, arc, inner, focus, mode, opts) }
 		}
@@ -269,6 +335,62 @@ func loadArchive(id int, seq uint64, arc *archive.Archive, inner, focus string, 
 	return LoadedMsg{PanelID: id, Seq: seq, Path: arc.VirtualPath(inner), Focus: focus, Mode: mode, Listing: l, Err: err, Arc: arc}
 }
 
+// loadRemote lists a folder of a remote with rclone in the background. A
+// newer load (or CancelLoad) stops it. A refresh of a folder that no longer
+// exists climbs to the nearest folder that does.
+func (p *Panel) loadRemote(src *RemoteSource, loc cloud.Path, focus string, mode LoadMode) tea.Cmd {
+	p.CancelLoad()
+	p.seq++
+	p.loading = true
+	ctx, cancel := context.WithCancel(context.Background())
+	p.loadCancel = cancel
+	p.pending = loc.Display()
+	seq, id, opts := p.seq, p.id, p.opts
+	return func() tea.Msg {
+		defer cancel()
+		l, err := src.Client.List(ctx, loc, opts)
+		if err != nil && mode == LoadRefresh && cloud.KindOf(err) == cloud.KindNotFound {
+			for up := loc.Dir(); ; up = up.Dir() {
+				if l2, err2 := src.Client.List(ctx, up, opts); err2 == nil {
+					return LoadedMsg{PanelID: id, Seq: seq, Path: up.Arg(), Mode: LoadForce, Listing: l2, Rem: src,
+						Warn: fmt.Errorf("%s no longer exists", loc.Display())}
+				} else if cloud.KindOf(err2) != cloud.KindNotFound || up.IsRoot() {
+					break
+				}
+			}
+		}
+		return LoadedMsg{PanelID: id, Seq: seq, Path: loc.Arg(), Focus: focus, Mode: mode, Listing: l, Err: err, Rem: src}
+	}
+}
+
+// OpenRemote shows the root folder of a remote. On failure the panel stays
+// where it is (Apply returns the error).
+func (p *Panel) OpenRemote(src *RemoteSource) tea.Cmd {
+	return p.loadRemote(src, src.Remote.Root(), "", LoadNavigate)
+}
+
+// OpenRemoteAt shows folder loc of a remote (used to show the same remote
+// folder in the other panel).
+func (p *Panel) OpenRemoteAt(src *RemoteSource, loc cloud.Path, focus string) tea.Cmd {
+	return p.loadRemote(src, loc, focus, LoadNavigate)
+}
+
+// GoLocal leaves a remote (or archive) and shows the local folder path.
+func (p *Panel) GoLocal(path, focus string) tea.Cmd {
+	return p.loadLocal(path, focus, LoadNavigate, false)
+}
+
+// CancelLoad stops a remote listing in progress. It reports whether there
+// was one; its result arrives as a cancelled load.
+func (p *Panel) CancelLoad() bool {
+	if p.loadCancel == nil {
+		return false
+	}
+	p.loadCancel()
+	p.loadCancel = nil
+	return p.loading
+}
+
 // OpenArchive reads the ZIP archive at path and shows its root folder. On
 // failure the panel stays where it is (Apply returns the error).
 func (p *Panel) OpenArchive(path string) tea.Cmd {
@@ -305,6 +427,7 @@ func (p *Panel) Apply(msg LoadedMsg) error {
 		return nil // stale result from a superseded request
 	}
 	p.loading = false
+	p.loadCancel = nil
 
 	if msg.Err != nil {
 		switch msg.Mode {
@@ -312,20 +435,32 @@ func (p *Panel) Apply(msg LoadedMsg) error {
 			return msg.Err
 		default: // Force / Refresh: show the error inside the panel
 			p.arc = msg.Arc
-			path, _ := filepath.Abs(msg.Path)
-			p.path = filepath.Clean(path)
+			p.rem = msg.Rem
 			p.err = msg.Err
-			p.listing = fsys.Listing{Path: p.path}
 			p.entries = nil
-			if !fsys.IsRoot(p.path) {
-				p.entries = []fsys.Entry{{Name: "..", Path: fsys.Parent(p.path), IsDir: true, IsParent: true, Mode: fs.ModeDir}}
+			if loc, ok := cloud.Parse(msg.Path); ok && msg.Rem != nil {
+				p.path = loc.Arg()
+				if !loc.IsRoot() {
+					p.entries = []fsys.Entry{{Name: "..", Path: loc.Dir().Arg(), IsDir: true, IsParent: true, Mode: fs.ModeDir}}
+				}
+			} else {
+				path, _ := filepath.Abs(msg.Path)
+				p.path = filepath.Clean(path)
+				if !fsys.IsRoot(p.path) {
+					p.entries = []fsys.Entry{{Name: "..", Path: fsys.Parent(p.path), IsDir: true, IsParent: true, Mode: fs.ModeDir}}
+				}
 			}
+			p.listing = fsys.Listing{Path: p.path}
 			p.detach()
 			p.cursor, p.offset = 0, 0
 			return msg.Warn
 		}
 	}
 	p.arc = msg.Arc
+	p.rem = msg.Rem
+	if msg.Rem == nil && msg.Arc == nil {
+		p.lastLocal = msg.Listing.Path
+	}
 
 	prevName := ""
 	if cur, ok := p.Current(); ok {
@@ -429,6 +564,13 @@ func (p *Panel) Open() tea.Cmd {
 // Parent navigates to the parent directory, placing the cursor on the
 // directory we came from.
 func (p *Panel) Parent() tea.Cmd {
+	if p.rem != nil {
+		loc := p.Location()
+		if loc.IsRoot() {
+			return nil
+		}
+		return p.Load(loc.Dir().Arg(), loc.Base(), LoadNavigate)
+	}
 	if p.path == "" || fsys.IsRoot(p.path) {
 		return nil
 	}

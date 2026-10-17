@@ -124,3 +124,20 @@ func (c *Child) KillGroup() error {
 	}
 	return syscall.Kill(c.Pid, syscall.SIGKILL)
 }
+
+// InterruptGroup sends SIGINT to the process group of a child started with
+// NewGroup (falling back to the child alone), unless it has been reaped.
+// Unlike KillGroup it lets the program clean up (rclone removes its
+// partially written files), so callers send it first and KillGroup only if
+// the program has not exited after a grace period.
+func (c *Child) InterruptGroup() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.done {
+		return nil
+	}
+	if err := syscall.Kill(-c.Pid, syscall.SIGINT); err == nil {
+		return nil
+	}
+	return syscall.Kill(c.Pid, syscall.SIGINT)
+}

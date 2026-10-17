@@ -292,7 +292,7 @@ func TestHintBarPanelErrorAndBusy(t *testing.T) {
 	os.RemoveAll(gone)
 	h.exec(h.a.panels[0].Load(gone, "", panel.LoadForce))
 	h.settle()
-	if f := h.footer(); !strings.Contains(f, "⌫  parent") || !strings.Contains(f, "^R  retry") || strings.Contains(f, "copy") {
+	if f := h.footer(); !strings.Contains(f, "⌫  parent") || !strings.Contains(f, "^L  retry") || strings.Contains(f, "copy") {
 		t.Fatalf("error hints: %q", f)
 	}
 	h.a.planning = &planState{cancel: func() {}}

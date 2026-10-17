@@ -582,10 +582,10 @@ func TestExtractWholeArchiveFromFolderAndTraversal(t *testing.T) {
 	if !strings.Contains(h.status(), "unsafe") {
 		t.Fatalf("status does not mention refused entries: %q", h.status())
 	}
-	// not a ZIP: refused clearly
+	// not an archive: refused clearly, naming the supported formats
 	h.focus("a.txt")
 	h.press("x")
-	if h.a.dialog != nil || !strings.Contains(h.status(), "not a ZIP archive") {
+	if h.a.dialog != nil || !strings.Contains(h.status(), "not an archive TwinPane can extract") || !strings.Contains(h.status(), "TAR.GZ") {
 		t.Fatalf("x on a text file: %q", h.status())
 	}
 }

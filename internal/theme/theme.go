@@ -72,6 +72,8 @@ type Theme struct {
 
 	// Phase 5
 	ArchiveBadge lipgloss.Style // "ZIP" badge on the path line of a panel browsing an archive
+	CloudBadge   lipgloss.Style // remote name badge ("drive:") on the path line of a panel showing an rclone remote
+	LocalBadge   lipgloss.Style // "LOCAL" badge while the other panel shows a remote
 	ViewerBadge  lipgloss.Style // "VIEW" / "READ-ONLY" badges of the file viewer
 	LineNumber   lipgloss.Style // viewer line numbers
 	Match        lipgloss.Style // viewer search matches
@@ -149,6 +151,8 @@ func Default() Theme {
 		ScrollThumbOff:    lipgloss.NewStyle().Foreground(lipgloss.Color("247")),
 
 		ArchiveBadge: lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("16")).Background(lipgloss.Color("179")).Padding(0, 1),
+		CloudBadge:   lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("16")).Background(lipgloss.Color("117")).Padding(0, 1),
+		LocalBadge:   lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("16")).Background(lipgloss.Color("250")).Padding(0, 1),
 		ViewerBadge:  lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("16")).Background(lipgloss.Color("179")).Padding(0, 1),
 		LineNumber:   lipgloss.NewStyle().Foreground(lipgloss.Color("240")),
 		Match:        lipgloss.NewStyle().Foreground(lipgloss.Color("16")).Background(lipgloss.Color("221")),

@@ -55,3 +55,7 @@ func NewGroup() *syscall.SysProcAttr { return nil }
 
 // KillGroup is Kill on Windows.
 func (c *Child) KillGroup() error { return c.Kill() }
+
+// InterruptGroup stops the child. Windows has no SIGINT for a process
+// without a console of its own, so this is the same as Kill.
+func (c *Child) InterruptGroup() error { return c.Kill() }

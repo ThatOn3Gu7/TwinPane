@@ -87,7 +87,22 @@ func (p *Panel) View(th theme.Theme, active bool) string {
 	if active {
 		pathStyle = th.PathActive
 	}
-	if p.arc != nil {
+	switch {
+	case p.rem != nil:
+		// On a remote: the remote's name as a badge, then the folder:
+		// "[drive:] /Backups".
+		loc := p.Location()
+		badge := th.CloudBadge.Render(fsys.SanitizeName(loc.Remote) + ":")
+		bw := lipgloss.Width(badge)
+		disp := "/" + strings.TrimPrefix(loc.Path, "/")
+		if bw+6 > l.innerW {
+			badge, bw = "", 0
+			disp = loc.Remote + ":" + disp
+		}
+		w := l.innerW - bw
+		pathText := " " + fitLeft(fsys.SanitizeName(disp), w-1-ansi.StringWidth(suffix)) + suffix
+		lines = append(lines, badge+pathStyle.Render(fit(pathText, w)))
+	case p.arc != nil:
 		// Inside an archive: a "ZIP" badge, then "archive ▸ folder".
 		badge := th.ArchiveBadge.Render("ZIP")
 		bw := lipgloss.Width(badge)
@@ -98,9 +113,19 @@ func (p *Panel) View(th theme.Theme, active bool) string {
 		disp := fsys.SanitizeName(p.arc.Display(p.ArchiveInner()))
 		pathText := " " + fitLeft(disp, w-1-ansi.StringWidth(suffix)) + suffix
 		lines = append(lines, badge+pathStyle.Render(fit(pathText, w)))
-	} else {
-		pathText := " " + fitLeft(fsys.SanitizeName(p.path), l.innerW-1-ansi.StringWidth(suffix)) + suffix
-		lines = append(lines, pathStyle.Render(fit(pathText, l.innerW)))
+	default:
+		badge, bw := "", 0
+		if p.localBadge {
+			// labelled while the other panel shows a remote
+			badge = th.LocalBadge.Render("LOCAL")
+			bw = lipgloss.Width(badge)
+			if bw+8 > l.innerW {
+				badge, bw = "", 0
+			}
+		}
+		w := l.innerW - bw
+		pathText := " " + fitLeft(fsys.SanitizeName(p.path), w-1-ansi.StringWidth(suffix)) + suffix
+		lines = append(lines, badge+pathStyle.Render(fit(pathText, w)))
 	}
 
 	if l.header {
@@ -275,12 +300,22 @@ func (p *Panel) renderRows(th theme.Theme, active bool, l layout, cols columns) 
 		for _, w := range wrap("⚠ "+fsys.SanitizeName(p.err.Error()), l.innerW-2) {
 			msgs = append(msgs, " "+w)
 		}
-		msgs = append(msgs, " Backspace: parent · ^R: retry")
+		if p.rem != nil {
+			msgs = append(msgs, " ^L: retry · ^R: sources")
+		} else {
+			msgs = append(msgs, " Backspace: parent · ^L: retry")
+		}
+	} else if p.loading && p.rem != nil && p.realCount() == 0 {
+		msgStyle = th.Empty
+		msgs = append(msgs, " Loading "+fsys.SanitizeName(p.pendingLabel())+" … (Esc cancels)")
 	} else if !p.loading && p.path != "" && p.realCount() == 0 {
 		msgStyle = th.Empty
 		msg := " (empty directory)"
-		if p.arc != nil {
+		switch {
+		case p.arc != nil:
 			msg = " (empty folder in the archive)"
+		case p.rem != nil:
+			msg = " (empty folder on " + fsys.SanitizeName(p.rem.Remote.Name) + ":)"
 		}
 		if p.listing.Hidden > 0 {
 			msg = fmt.Sprintf(" (%d hidden — press h to show)", p.listing.Hidden)
@@ -369,6 +404,16 @@ func (p *Panel) infoText() string {
 	if p.arc != nil {
 		return p.archiveInfo(e)
 	}
+	if p.rem != nil {
+		s := "folder"
+		if !e.IsDir {
+			s = fsys.HumanSize(e.Size)
+		}
+		if !e.ModTime.IsZero() {
+			s += "  " + e.ModTime.Local().Format("2006-01-02 15:04")
+		}
+		return s + "  · " + p.rem.Remote.Type
+	}
 	s := e.Mode.String()
 	if !e.IsDir || e.IsLink {
 		s += "  " + fsys.HumanSize(e.Size)
@@ -416,6 +461,9 @@ func (p *Panel) summaryText(w int) string {
 	left := fmt.Sprintf(" %d dirs  %d files", p.listing.Dirs, p.listing.Files)
 	if p.arc != nil {
 		left = " ZIP, read-only ·" + left[1:]
+	}
+	if p.rem != nil {
+		left = " " + p.rem.Remote.Name + ": ·" + left[1:]
 	}
 	if !p.opts.ShowHidden && p.listing.Hidden > 0 {
 		left += fmt.Sprintf("  +%d hidden", p.listing.Hidden)
