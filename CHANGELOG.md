@@ -31,6 +31,10 @@ The complete description of every feature is in
 - Refresh moved from `Ctrl+R` to `Ctrl+L`, because `Ctrl+R` now opens
   Sources. `Ctrl+R` in the bulk-rename dialog is unchanged.
 - The menu offers *Sources…* and, on a remote, *Back to local files*.
+- `build.sh` and `make build` end by printing the full path of what they
+  built (plus, for `./build.sh native`, how to run and install it). The
+  README explains where each build command puts its output and how the
+  build works.
 
 ## [0.7.0]
 

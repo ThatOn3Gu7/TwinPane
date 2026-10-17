@@ -5,6 +5,7 @@ LDFLAGS := -s -w -X main.version=$(VERSION)
 
 build:            ## build for the current platform -> ./twinpane
 	CGO_ENABLED=0 go build -trimpath -ldflags "$(LDFLAGS)" -o twinpane ./cmd/twinpane
+	@echo "Built $(CURDIR)/twinpane  (run it: ./twinpane)"
 
 run: build
 	./twinpane

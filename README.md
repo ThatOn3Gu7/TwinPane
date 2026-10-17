@@ -383,49 +383,101 @@ so no C compiler is needed (`CGO_ENABLED=0`).
 ```sh
 git clone https://github.com/ThatOn3Gu7/TwinPane.git
 cd TwinPane
-go mod download
-make build                  # creates ./twinpane for this computer
+make build                  # creates ./twinpane in this folder (the repository root)
 ./twinpane --version
 ```
 
-Without make:
+**In Termux:** `pkg install golang git make` first, then the same commands.
+A build made inside Termux is automatically the Android build.
 
-```sh
-CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=$(cat VERSION)" -o twinpane ./cmd/twinpane
-```
+### Where the binaries go
 
-**In Termux:** `pkg install golang git make`, then the same commands. A
-native build in Termux is automatically the android/arm64 build. Copy the
-result into your `PATH` with `install -m 755 twinpane "$PREFIX/bin/"`.
+Each build command writes to a fixed place inside the repository. **Only
+`make build` creates a file in the repository folder itself**; the others
+use `dist/`. Every command prints the full path when it finishes.
 
-With `go install`:
-
-```sh
-go install github.com/ThatOn3Gu7/TwinPane/cmd/twinpane@latest
-```
-
-This puts `twinpane` into `$(go env GOPATH)/bin`. It reports its version as
-`dev`, because `go install` doesn't set the version.
-
-**Cross-compiling:**
-
-```sh
-./build.sh            # all targets: dist/twinpane-<os>-<arch>[.exe] + dist/SHA256SUMS
-./build.sh native     # this computer only
-./build.sh release    # release packages in dist/release/ (as published on GitHub)
-```
-
-| Target | `GOOS` | `GOARCH` |
+| Command | Builds | Output |
 |---|---|---|
-| Android ARM64 (Termux) | `android` | `arm64` |
-| Linux ARM64 | `linux` | `arm64` |
-| Linux x86_64 | `linux` | `amd64` |
-| macOS Apple silicon | `darwin` | `arm64` |
-| macOS Intel | `darwin` | `amd64` |
-| Windows x86_64 | `windows` | `amd64` |
+| `make build` | this computer only | `./twinpane` (`twinpane.exe` on Windows) in the repository root |
+| `./build.sh native` | this computer only | `dist/twinpane-<os>-<arch>`, e.g. `dist/twinpane-android-arm64` in Termux |
+| `./build.sh` (or `make dist`) | all six platforms | `dist/twinpane-android-arm64`, `dist/twinpane-linux-amd64`, … `dist/twinpane-windows-amd64.exe`, plus `dist/SHA256SUMS` |
+| `./build.sh release` (or `make release`) | all six platforms, packaged | `dist/release/twinpane-v<version>-<os>-<arch>.tar.gz` (`.zip` for Windows) and `dist/release/SHA256SUMS`, the same files as on GitHub Releases |
+| `go install github.com/ThatOn3Gu7/TwinPane/cmd/twinpane@latest` | this computer only | `$(go env GOPATH)/bin/twinpane` (usually `~/go/bin/twinpane`); reports its version as `dev` |
 
-For a single target:
-`CGO_ENABLED=0 GOOS=android GOARCH=arm64 go build -trimpath -ldflags "-s -w -X main.version=$(cat VERSION)" -o twinpane ./cmd/twinpane`.
+Things that make the binaries seem to be missing:
+
+- **`dist/` is always next to `build.sh`, not in the folder you ran it
+  from.** `~/TwinPane/build.sh` run from `~` still writes to
+  `~/TwinPane/dist/`.
+- **`dist/` and `./twinpane` are in `.gitignore`.** Many editors and file
+  trees hide ignored files (for example the Neovim/LazyVim explorer), so the
+  folder is there but not shown. `ls dist` in a terminal always shows it.
+- **`./build.sh` does not create `./twinpane`.** Its files are named after
+  the platform, e.g. `dist/twinpane-android-arm64`.
+- **Each run replaces the previous files.** `./build.sh release` empties
+  `dist/release/` first, and `make clean` deletes `dist/` and `./twinpane`.
+- **A failed build writes no binary** (with `./build.sh`, the platforms
+  built before the error are kept and the rest are skipped). Without a
+  `Done. The files are in …` line at the end, scroll up for the error,
+  often `go: command not found` (Termux: `pkg install golang`).
+
+### Using a binary you built
+
+Run it in place, then copy it into a folder in your `PATH` as `twinpane`:
+
+```sh
+./twinpane --version                                        # after make build
+dist/twinpane-android-arm64 --version                       # after ./build.sh
+
+# Termux
+install -m 755 dist/twinpane-android-arm64 "$PREFIX/bin/twinpane"
+# Linux / macOS
+mkdir -p ~/.local/bin && install -m 755 dist/twinpane-linux-amd64 ~/.local/bin/twinpane
+```
+
+In Termux, run and install the program from Termux's own folders (`~`,
+`$PREFIX/bin`). Android doesn't allow running programs from shared storage
+(`/sdcard`, `~/storage/shared`, or a file downloaded with a browser), so
+copy a downloaded binary into `~` first and `chmod +x` it. Use the
+`android-arm64` build in Termux: a `linux-arm64` binary is killed there with
+`SIGSYS: bad system call`.
+
+### How the build works
+
+TwinPane is a single Go program with no C code, so every build is one
+`go build` call per platform:
+
+```sh
+CGO_ENABLED=0 GOOS=android GOARCH=arm64 \
+  go build -trimpath -ldflags "-s -w -X main.version=$(cat VERSION)" \
+  -o dist/twinpane-android-arm64 ./cmd/twinpane
+```
+
+- `./cmd/twinpane` is the program's entry point; Go compiles it together
+  with everything under `internal/` and the libraries from `go.mod`
+  (downloaded automatically on the first build) into one file.
+- `GOOS` / `GOARCH` choose the platform. Go cross-compiles by itself, so
+  any computer can build all six targets; that is all `./build.sh` does in a
+  loop. Termux needs `GOOS=android`, not `linux` (see
+  [Supported platforms](#supported-platforms)).
+- `CGO_ENABLED=0` makes a self-contained binary that needs no C libraries
+  on the target system.
+- `-X main.version=…` puts the contents of the `VERSION` file into the
+  program (`twinpane --version`). Override it with
+  `VERSION=0.7.0-mytest ./build.sh`. `-s -w` drop debug symbols (smaller
+  file); `-trimpath` keeps your folder names out of the binary.
+- `./build.sh release` additionally packs each binary with `LICENSE` and
+  `README.md` into a reproducible archive and writes `SHA256SUMS`; the
+  installer and GitHub Releases use these files.
+
+| Target | `GOOS` | `GOARCH` | File from `./build.sh` |
+|---|---|---|---|
+| Android ARM64 (Termux) | `android` | `arm64` | `dist/twinpane-android-arm64` |
+| Linux ARM64 | `linux` | `arm64` | `dist/twinpane-linux-arm64` |
+| Linux x86_64 | `linux` | `amd64` | `dist/twinpane-linux-amd64` |
+| macOS Apple silicon | `darwin` | `arm64` | `dist/twinpane-darwin-arm64` |
+| macOS Intel | `darwin` | `amd64` | `dist/twinpane-darwin-amd64` |
+| Windows x86_64 | `windows` | `amd64` | `dist/twinpane-windows-amd64.exe` |
 
 **Tests:**
 
@@ -513,6 +565,7 @@ in [CHANGELOG.md](CHANGELOG.md).
 | macOS: "cannot be opened because the developer cannot be verified" | `xattr -d com.apple.quarantine "$(command -v twinpane)"` |
 | The mouse/touch selects nothing in the terminal | TwinPane uses mouse reporting. Start it with `--no-mouse` to select text. |
 | Boxes or symbols look broken | Use a UTF-8 locale and a font with box-drawing characters. |
+| Built it, but no binary to be found | `make build` writes `./twinpane`; `./build.sh` writes `dist/twinpane-<os>-<arch>` next to `build.sh`, and `dist/` is hidden by editors that hide git-ignored files. See [Where the binaries go](#where-the-binaries-go). |
 | Build: `go.mod requires go >= 1.23` | Update Go (Termux: `pkg upgrade golang`). |
 | `.7z` is marked unavailable | Install 7-Zip (Termux: `pkg install 7zip`). |
 | Cloud (`master`): "rclone is not installed" | Install rclone (Termux: `pkg install rclone`), add a remote with `rclone config`, press `Ctrl+R` again. |

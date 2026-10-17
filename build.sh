@@ -6,6 +6,11 @@
 #   ./build.sh release       release packages in ./dist/release (what GitHub Releases publish)
 #   ./build.sh list-assets   print the release file names for the current VERSION
 #
+# Output always goes to the dist/ folder NEXT TO THIS SCRIPT (the repository
+# root), not to the folder you run it from, and never to ./twinpane (that is
+# `make build`). dist/ is listed in .gitignore, so editors and file trees that
+# hide ignored files don't show it. The script prints the full path at the end.
+#
 # This file is the single definition of the release targets and file names.
 # scripts/install.sh selects among these names; scripts/test_install.sh and
 # the release workflow check that both agree.
@@ -31,6 +36,16 @@ TARGETS=(linux/amd64 linux/arm64 android/arm64 darwin/amd64 darwin/arm64 windows
 # Release packages. windows/amd64 is published as an untested extra; the
 # installer only knows the first five.
 RELEASE_TARGETS=(android/arm64 linux/arm64 linux/amd64 darwin/arm64 darwin/amd64 windows/amd64)
+
+summary() { # summary DIR FILE... : say where the results are
+  local dir f
+  dir="$(cd "$1" && pwd)"; shift
+  echo
+  echo "Done. The files are in $dir/"
+  for f in "$@"; do
+    printf '  %-44s %6s\n' "$f" "$(wc -c < "$dir/$f" | awk '{ s = $1 + 0; if (s >= 1048576) printf "%.1fM", s / 1048576; else if (s >= 1024) printf "%.1fK", s / 1024; else printf "%dB", s }')"
+  done
+}
 
 sha256() { # sha256sum is missing on macOS
   if command -v sha256sum >/dev/null 2>&1; then sha256sum "$@"; else shasum -a 256 "$@"; fi
@@ -100,7 +115,7 @@ release)
   done
   rm -rf "$REL/stage"
   (cd "$REL" && sha256 twinpane-v* > SHA256SUMS)
-  echo "done: $(cd "$REL" && printf '%s ' *)"
+  (cd "$REL" && summary . twinpane-v* SHA256SUMS)
   ;;
 
 native | all)
@@ -116,7 +131,20 @@ native | all)
     compile "$os" "$arch" "$OUT/$name"
   done
   (cd "$OUT" && sha256 twinpane-* > SHA256SUMS)
-  echo "done: $(cd "$OUT" && printf '%s ' SHA256SUMS twinpane-*)"
+  (cd "$OUT" && summary . twinpane-* SHA256SUMS)
+  if [[ "${1:-all}" == native ]]; then
+    bin="$(pwd)/$OUT/$name"
+    echo
+    echo "Try it:   $bin --version"
+    if [[ -n "${PREFIX:-}" && -d "${PREFIX}/bin" && "${PREFIX}" == *com.termux* ]]; then
+      echo "Install:  install -m 755 $bin \"\$PREFIX/bin/twinpane\""
+    else
+      echo "Install:  mkdir -p ~/.local/bin && install -m 755 $bin ~/.local/bin/twinpane"
+    fi
+  else
+    echo
+    echo "Termux (Android) uses twinpane-android-arm64; the linux-* files are for regular Linux."
+  fi
   ;;
 
 *)

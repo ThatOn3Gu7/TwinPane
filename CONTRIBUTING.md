@@ -64,7 +64,7 @@ Run these before opening a pull request. CI runs the same:
 make lint            # gofmt, go vet, shellcheck
 make race            # go test -race ./...
 make test-install    # installer tests (needs python3, curl, wget, and dash or bash)
-./build.sh           # cross-compiles every target
+./build.sh           # cross-compiles every target into dist/ (see README "Where the binaries go")
 ```
 
 Go tests sit next to the code (`*_test.go`). UI behaviour is tested through
