@@ -114,6 +114,7 @@ type App struct {
 	editing    bool      // the external editor owns the terminal
 	quietUntil time.Time // ignore keys until then (late terminal replies)
 	now        func() time.Time
+	spinning   bool        // a spinner tick is scheduled (only while a panel loads)
 	search     *searchView // recursive search overlay
 	bulk       *bulkRename // bulk rename overlay
 
@@ -241,7 +242,24 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 	a.syncSelections()
 	a.syncBadges()
-	return m, cmd
+	return m, a.syncSpinner(cmd)
+}
+
+// spinInterval is the frame time of the loading spinner.
+const spinInterval = 100 * time.Millisecond
+
+// spinTickMsg advances the loading spinners.
+type spinTickMsg struct{}
+
+// syncSpinner schedules the next spinner frame while a panel is loading
+// (a remote listing can take seconds). One tick is pending at a time, and
+// none once nothing loads, so an idle TwinPane does no work.
+func (a *App) syncSpinner(cmd tea.Cmd) tea.Cmd {
+	if a.spinning || !(a.panels[0].Loading() || a.panels[1].Loading()) {
+		return cmd
+	}
+	a.spinning = true
+	return tea.Batch(cmd, tea.Tick(spinInterval, func(time.Time) tea.Msg { return spinTickMsg{} }))
 }
 
 // syncSelections mirrors the selection while both panels show the same
@@ -265,6 +283,13 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.width, a.height = msg.Width, msg.Height
 		a.layout()
 		return a, nil
+
+	case spinTickMsg:
+		a.spinning = false
+		for _, p := range a.panels {
+			p.SpinnerTick()
+		}
+		return a, nil // Update schedules the next frame if still loading
 
 	case openDoneMsg:
 		a.openDone(msg)

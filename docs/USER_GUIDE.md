@@ -55,9 +55,16 @@ passwords or tokens.
 - **Labels:** the path line starts with a coloured badge with the remote's
   name, followed by the folder (`drive:` `/Backups`); while either panel shows a remote, local
   panels get a `LOCAL` badge.
-- **Loading:** remote folders load in the background ("Loading … (Esc
-  cancels)"); `Esc` stops a slow listing and the panel stays where it was.
-  An empty remote folder says so.
+- **Loading:** remote folders load in the background, which can take a
+  few seconds. Meanwhile a spinner turns after the folder name on the path
+  line, and the panel's info line says what is loading and for how long,
+  e.g. `⠹ Loading drive: /Backups/Photos … 2s · Esc cancels` (in a narrow
+  panel the Esc hint is left out first, then the seconds). Both disappear
+  the moment the listing arrives. The panel keeps showing the previous
+  folder until then; `Esc` stops a slow listing and the panel stays where it
+  was. An empty remote folder says so. Local folders and ZIP archives use
+  the same spinner, which you will rarely notice because they load at
+  once.
 - **Errors:** opening a remote that fails (offline, login expired, missing
   folder) leaves the panel where it was and explains why in the status line,
   with the fix (for example the exact `rclone config reconnect NAME:`

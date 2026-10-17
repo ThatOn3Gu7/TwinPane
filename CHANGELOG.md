@@ -18,6 +18,10 @@ The complete description of every feature is in
   expired-login and missing-folder states are explained without blocking
   the interface. rclone is optional; TwinPane stores no credentials.
 - New folder (`n` / `F7`) in local folders and on remotes.
+- Loading spinner: while a folder loads (seconds, for a remote), a spinner
+  turns on the panel's path line and the info line says what is loading,
+  for how long and that `Esc` cancels. It replaces the static `…`
+  and disappears as soon as the folder is listed.
 - Extraction (`x`) of TAR, TAR.GZ/TGZ, TAR.BZ2, TAR.XZ, TAR.ZST, TAR.LZ4
   and single GZ, BZ2, XZ, ZST, LZ4 files (built in), and 7Z and RAR with an
   installed 7-Zip, with the same safety rules as ZIP extraction. Unknown and

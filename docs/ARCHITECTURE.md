@@ -749,6 +749,19 @@ failures show an error panel (`^L retry · ^R sources`). The path line shows
 a `CloudBadge` with the remote name, and a `LocalBadge` on local panels
 while the other panel is remote.
 
+**Loading spinner.** Every load starts with `beginLoad(label)` (local,
+archive and remote alike), which records the label and start time;
+`Apply` clears them. `ui.App.Update` schedules one `tea.Tick` of 100 ms
+(`spinTickMsg`) whenever a panel is loading and none is pending
+(`App.spinning`); the tick calls `Panel.SpinnerTick` (next braille frame,
+elapsed time) and the next one is scheduled only if a panel is still
+loading, so nothing runs while idle. The path line shows the frame at once;
+the info line switches to `⠹ Loading <label> … Ns · Esc cancels` after the
+first tick (at once in an empty panel), so loads that finish immediately
+don't flash it. In narrow panels the Esc hint, then the seconds, are
+dropped. The synchronous `drain` test helper drops `spinTickMsg`, because
+it runs commands one at a time.
+
 ### UI (`internal/ui/cloud.go`)
 The Sources dialog lists remotes asynchronously. On a remote panel a key
 whitelist applies (`remoteUnsupported`): view, edit, open, properties,

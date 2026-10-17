@@ -93,7 +93,10 @@ type Panel struct {
 	lastLocal  string             // the last local folder shown (to return to)
 	loadCancel context.CancelFunc // stops the remote listing in progress
 	localBadge bool               // label a local panel "LOCAL" (set by the UI)
-	pending    string             // display name of the remote folder being loaded
+	pending    string             // display name of the folder being loaded ("" when idle)
+	loadSince  time.Time          // when the current load started (for the spinner's seconds)
+	spinFrame  int                // spinner frame; > 0 once the load has lasted one tick
+	spinFor    time.Duration      // how long the current load has been running, as of the last tick
 
 	width, height int
 }
@@ -148,6 +151,25 @@ func (p *Panel) Location() cloud.Path {
 	}
 	loc, _ := cloud.Parse(p.path)
 	return loc
+}
+
+// beginLoad marks the panel as loading label (shown by the spinner line)
+// and restarts the spinner.
+func (p *Panel) beginLoad(label string) {
+	p.loading = true
+	p.pending = label
+	p.loadSince = time.Now()
+	p.spinFrame, p.spinFor = 0, 0
+}
+
+// SpinnerTick advances the loading spinner. The UI calls it about ten
+// times a second while Loading() is true; it does nothing otherwise.
+func (p *Panel) SpinnerTick() {
+	if !p.loading {
+		return
+	}
+	p.spinFrame++
+	p.spinFor = time.Since(p.loadSince)
 }
 
 // pendingLabel names what is being loaded (for the "Loading …" row).
@@ -294,10 +316,11 @@ func (p *Panel) Load(path, focus string, mode LoadMode) tea.Cmd {
 func (p *Panel) loadLocal(path, focus string, mode LoadMode, inArc bool) tea.Cmd {
 	p.CancelLoad()
 	p.seq++
-	p.loading = true
+	p.beginLoad(path)
 	seq, id, lister, opts := p.seq, p.id, p.lister, p.opts
 	if arc := p.arc; arc != nil && inArc {
 		if inner, ok := arc.InnerOf(path); ok {
+			p.pending = arc.Display(inner)
 			return func() tea.Msg { return loadArchive(id, seq, arc, inner, focus, mode, opts) }
 		}
 	}
@@ -341,10 +364,9 @@ func loadArchive(id int, seq uint64, arc *archive.Archive, inner, focus string, 
 func (p *Panel) loadRemote(src *RemoteSource, loc cloud.Path, focus string, mode LoadMode) tea.Cmd {
 	p.CancelLoad()
 	p.seq++
-	p.loading = true
+	p.beginLoad(loc.Display())
 	ctx, cancel := context.WithCancel(context.Background())
 	p.loadCancel = cancel
-	p.pending = loc.Display()
 	seq, id, opts := p.seq, p.id, p.opts
 	return func() tea.Msg {
 		defer cancel()
@@ -395,7 +417,7 @@ func (p *Panel) CancelLoad() bool {
 // failure the panel stays where it is (Apply returns the error).
 func (p *Panel) OpenArchive(path string) tea.Cmd {
 	p.seq++
-	p.loading = true
+	p.beginLoad(path)
 	seq, id, opts := p.seq, p.id, p.opts
 	return func() tea.Msg {
 		arc, err := archive.Open(path)
@@ -428,6 +450,7 @@ func (p *Panel) Apply(msg LoadedMsg) error {
 	}
 	p.loading = false
 	p.loadCancel = nil
+	p.pending = ""
 
 	if msg.Err != nil {
 		switch msg.Mode {

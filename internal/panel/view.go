@@ -3,6 +3,7 @@ package panel
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
@@ -81,7 +82,7 @@ func (p *Panel) View(th theme.Theme, active bool) string {
 	// Path line
 	suffix := ""
 	if p.loading {
-		suffix = " …"
+		suffix = " " + p.spinner()
 	}
 	pathStyle := th.PathInactive
 	if active {
@@ -143,10 +144,10 @@ func (p *Panel) View(th theme.Theme, active bool) string {
 
 	if l.footer {
 		lines = append(lines, th.Divider.Render(strings.Repeat("─", l.innerW)))
-		lines = append(lines, th.Info.Render(fit(" "+p.infoText(), l.innerW)))
+		lines = append(lines, th.Info.Render(fit(" "+p.infoText(l.innerW-1), l.innerW)))
 		lines = append(lines, th.Summary.Render(p.summaryText(l.innerW)))
 	} else if l.info {
-		lines = append(lines, th.Info.Render(fit(" "+p.infoText(), l.innerW)))
+		lines = append(lines, th.Info.Render(fit(" "+p.infoText(l.innerW-1), l.innerW)))
 	}
 
 	return p.frame(th, active, l, lines)
@@ -307,7 +308,7 @@ func (p *Panel) renderRows(th theme.Theme, active bool, l layout, cols columns) 
 		}
 	} else if p.loading && p.rem != nil && p.realCount() == 0 {
 		msgStyle = th.Empty
-		msgs = append(msgs, " Loading "+fsys.SanitizeName(p.pendingLabel())+" … (Esc cancels)")
+		msgs = append(msgs, " "+p.spinner()+" Loading "+fsys.SanitizeName(p.pendingLabel())+" … (Esc cancels)")
 	} else if !p.loading && p.path != "" && p.realCount() == 0 {
 		msgStyle = th.Empty
 		msg := " (empty directory)"
@@ -387,9 +388,48 @@ func sizeLabel(e fsys.Entry) string {
 	}
 }
 
-func (p *Panel) infoText() string {
-	if p.loading && len(p.entries) == 0 {
-		return "loading…"
+// spinnerFrames animate a load in progress (braille dots: one cell wide,
+// in Termux's and most terminals' default fonts).
+var spinnerFrames = [...]string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
+
+func (p *Panel) spinner() string { return spinnerFrames[p.spinFrame%len(spinnerFrames)] }
+
+// loadingText is the info line while a load runs: what is being loaded,
+// for how long (from one second on), and whether Esc cancels it. In a
+// narrow panel the Esc hint goes first, then the seconds; the spinner and
+// the folder name (shortened from the left, so its end stays visible)
+// always remain.
+func (p *Panel) loadingText(w int) string {
+	head := p.spinner() + " Loading "
+	secs := ""
+	if p.spinFor >= time.Second {
+		secs = fmt.Sprintf(" %ds", int(p.spinFor/time.Second))
+	}
+	tails := []string{" …" + secs, " …"}
+	if p.loadCancel != nil {
+		tails = append([]string{" …" + secs + " · Esc cancels"}, tails...)
+	}
+	label := fsys.SanitizeName(p.pendingLabel())
+	const minName = 6 // e.g. "…ckups"
+	tail := tails[len(tails)-1]
+	for _, t := range tails {
+		if w-ansi.StringWidth(head)-ansi.StringWidth(t) >= min(minName, ansi.StringWidth(label)) {
+			tail = t
+			break
+		}
+	}
+	room := w - ansi.StringWidth(head) - ansi.StringWidth(tail)
+	if room < 1 {
+		return head
+	}
+	return head + fitLeft(label, room) + tail
+}
+
+func (p *Panel) infoText(w int) string {
+	// While loading: at once in an empty panel, otherwise after the first
+	// spinner tick, so loads that finish at once don't flash the line.
+	if p.loading && (len(p.entries) == 0 || p.spinFrame > 0) {
+		return p.loadingText(w)
 	}
 	e, ok := p.Current()
 	if !ok {
