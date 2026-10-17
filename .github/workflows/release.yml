@@ -143,11 +143,13 @@ jobs:
 
       - name: Start the program
         run: |
-          cd artifact/dist/release
+          rel="$PWD/artifact/dist/release"
           f="twinpane-$TAG-$TARGET.tar.gz"
-          grep " $f\$" SHA256SUMS | shasum -a 256 -c -
-          tar -xzf "$f"
-          out="$("./twinpane-$TAG-$TARGET/twinpane" --version)"
+          (cd "$rel" && grep " $f\$" SHA256SUMS | shasum -a 256 -c -)
+          # Unpack outside the artifact folder: the next step copies its files.
+          mkdir -p "$RUNNER_TEMP/unpacked"
+          tar -xzf "$rel/$f" -C "$RUNNER_TEMP/unpacked"
+          out="$("$RUNNER_TEMP/unpacked/twinpane-$TAG-$TARGET/twinpane" --version)"
           echo "$out"
           [ "$out" = "twinpane ${TAG#v} ($PLATFORM)" ] || { echo "::error::unexpected --version: $out"; exit 1; }
 
@@ -155,7 +157,8 @@ jobs:
         run: |
           srv="$RUNNER_TEMP/srv"
           mkdir -p "$srv/ThatOn3Gu7/TwinPane/releases/download/$TAG"
-          cp artifact/dist/release/twinpane-* artifact/dist/release/SHA256SUMS "$srv/ThatOn3Gu7/TwinPane/releases/download/$TAG/"
+          cp artifact/dist/release/*.tar.gz artifact/dist/release/*.zip artifact/dist/release/SHA256SUMS \
+            "$srv/ThatOn3Gu7/TwinPane/releases/download/$TAG/"
           python3 -m http.server 8765 --bind 127.0.0.1 --directory "$srv" >/dev/null 2>&1 &
           for _ in $(seq 30); do curl -fs -o /dev/null http://127.0.0.1:8765/ && break; sleep 1; done
           TWINPANE_DOWNLOAD_BASE=http://127.0.0.1:8765 sh scripts/install.sh --version "$TAG" --dir "$RUNNER_TEMP/bin" | tee install.log
