@@ -1,0 +1,53 @@
+# Tests for every push to main and every pull request. The release workflow
+# runs the same job before it builds anything.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+
+      - name: Check formatting
+        run: |
+          unformatted="$(gofmt -l .)"
+          if [ -n "$unformatted" ]; then
+            echo "::error::These files need gofmt:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Unit and UI tests
+        run: go test -race -count=1 ./...
+
+      - name: Lint shell scripts
+        run: |
+          command -v shellcheck >/dev/null || sudo apt-get install -y shellcheck
+          shellcheck -s sh scripts/install.sh
+          shellcheck build.sh scripts/test_install.sh scripts/release_notes.sh
+
+      - name: Installer tests
+        run: scripts/test_install.sh
+
+      - name: Cross-compile every target
+        run: ./build.sh

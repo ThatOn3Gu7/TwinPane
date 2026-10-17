@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-label="TwinPane">
+<title>TwinPane</title>
+<rect x="16" y="16" width="480" height="480" rx="112" fill="#0B1D30"/>
+<rect x="18" y="18" width="476" height="476" rx="110" fill="none" stroke="#24476B" stroke-width="4"/>
+<rect x="88" y="96" width="160" height="256" rx="24" fill="#22D3EE"/>
+<rect x="264" y="96" width="160" height="256" rx="24" fill="#3B82F6"/>
+<path d="M112 96h112a24 24 0 0 1 24 24v20h-160v-20a24 24 0 0 1 24-24z" fill="#0B1D30" fill-opacity="0.22"/>
+<path d="M288 96h112a24 24 0 0 1 24 24v20h-160v-20a24 24 0 0 1 24-24z" fill="#0B1D30" fill-opacity="0.22"/>
+<rect x="112" y="172" width="96" height="8" rx="4" fill="#0B1D30"/>
+<rect x="100" y="194" width="136" height="28" rx="8" fill="#0B1D30"/>
+<rect x="112" y="204" width="88" height="8" rx="4" fill="#22D3EE"/>
+<rect x="112" y="236" width="80" height="8" rx="4" fill="#0B1D30"/>
+<rect x="112" y="268" width="112" height="8" rx="4" fill="#0B1D30"/>
+<rect x="112" y="300" width="64" height="8" rx="4" fill="#0B1D30"/>
+<rect x="288" y="172" width="72" height="8" rx="4" fill="#0B1D30"/>
+<rect x="288" y="204" width="112" height="8" rx="4" fill="#0B1D30"/>
+<rect x="288" y="236" width="96" height="8" rx="4" fill="#0B1D30"/>
+<rect x="288" y="268" width="56" height="8" rx="4" fill="#0B1D30"/>
+<path d="M96 380l28 22-28 22" fill="none" stroke="#22D3EE" stroke-width="14" stroke-linecap="round" stroke-linejoin="round"/>
+<rect x="144" y="392" width="40" height="20" rx="4" fill="#22D3EE"/>
+</svg>

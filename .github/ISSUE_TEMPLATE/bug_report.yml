@@ -1,0 +1,61 @@
+name: Bug report
+description: Something doesn't work as described.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting! Please check the [troubleshooting table](https://github.com/ThatOn3Gu7/TwinPane#troubleshooting) first.
+        Security problems: please use "Report a vulnerability" on the Security tab instead.
+  - type: input
+    id: version
+    attributes:
+      label: TwinPane version
+      description: Output of `twinpane --version`
+      placeholder: twinpane 0.7.0 (android/arm64)
+    validations:
+      required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - Android (Termux)
+        - Linux x86_64
+        - Linux ARM64
+        - macOS
+        - Windows
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: Termux version and Android version, or Linux distribution / macOS version; terminal app; installed with the installer, a release file or from source?
+      placeholder: Termux 0.118.1, Android 14, installed with install.sh
+  - type: dropdown
+    id: input
+    attributes:
+      label: Input method
+      multiple: true
+      options:
+        - Keyboard
+        - Touch
+        - Mouse
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open a folder with …
+        2. Press …
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected and what happened
+      description: Error messages and screenshots help. Remove private file names you don't want to share.
+    validations:
+      required: true

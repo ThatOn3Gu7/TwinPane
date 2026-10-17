@@ -1,0 +1,198 @@
+# Builds and publishes a GitHub Release when a version tag is pushed:
+#
+#   git tag -a v0.7.0 -m "TwinPane v0.7.0"
+#   git push origin v0.7.0
+#
+# The tag must be vMAJOR.MINOR.PATCH, match the VERSION file and have a
+# CHANGELOG.md section. Nothing is published unless the tests pass, every
+# package is built and checked, and the Linux/macOS binaries start on real
+# runners. File names come from ./build.sh (see docs/RELEASING.md).
+name: Release
+
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  test:
+    name: Test
+    uses: ./.github/workflows/ci.yml
+
+  build:
+    name: Build packages
+    needs: test
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      TAG: ${{ github.ref_name }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Check the tag, VERSION and CHANGELOG
+        run: |
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Tag $TAG is not vMAJOR.MINOR.PATCH"
+            exit 1
+          fi
+          if [[ "v$(cat VERSION)" != "$TAG" ]]; then
+            echo "::error::VERSION says $(cat VERSION) but the tag is $TAG. Set VERSION to ${TAG#v}, commit, and tag that commit."
+            exit 1
+          fi
+          scripts/release_notes.sh "$TAG" > release-notes.md
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+
+      - name: Build release packages
+        run: ./build.sh release
+
+      - name: Check the packages
+        run: |
+          expected="$(./build.sh list-assets | sort)"
+          actual="$(find dist/release -maxdepth 1 -type f -printf '%f\n' | sort)"
+          if [ "$expected" != "$actual" ]; then
+            echo "::error::Release files differ from ./build.sh list-assets"
+            diff <(echo "$expected") <(echo "$actual")
+            exit 1
+          fi
+          (cd dist/release && sha256sum -c SHA256SUMS)
+          x="$RUNNER_TEMP/unpacked"
+          mkdir -p "$x"
+          for f in dist/release/*.tar.gz; do tar -xzf "$f" -C "$x"; done
+          unzip -q dist/release/*-windows-amd64.zip -d "$x"
+          check() { # check TARGET PROGRAM "file(1) text"
+            local p="$x/twinpane-$TAG-$1/$2"
+            echo "$1: $(file -b "$p")"
+            file -b "$p" | grep -q "$3" || { echo "::error::$1 is not '$3'"; exit 1; }
+            for doc in LICENSE README.md; do
+              [ -f "$x/twinpane-$TAG-$1/$doc" ] || { echo "::error::$1 package lacks $doc"; exit 1; }
+            done
+          }
+          check linux-amd64 twinpane "ELF 64-bit LSB executable, x86-64"
+          check linux-arm64 twinpane "ELF 64-bit LSB executable, ARM aarch64"
+          check android-arm64 twinpane "ARM aarch64"
+          check darwin-arm64 twinpane "Mach-O 64-bit arm64 executable"
+          check darwin-amd64 twinpane "Mach-O 64-bit x86_64 executable"
+          check windows-amd64 twinpane.exe "PE32+ executable"
+          readelf -l "$x/twinpane-$TAG-android-arm64/twinpane" | grep -q '/system/bin/linker64' \
+            || { echo "::error::android-arm64 does not use Android's /system/bin/linker64"; exit 1; }
+          out="$("$x/twinpane-$TAG-linux-amd64/twinpane" --version)"
+          echo "$out"
+          [ "$out" = "twinpane ${TAG#v} (linux/amd64)" ] || { echo "::error::unexpected --version: $out"; exit 1; }
+
+      - name: Check that the build is reproducible
+        run: |
+          cp dist/release/SHA256SUMS "$RUNNER_TEMP/first-build"
+          ./build.sh release
+          diff "$RUNNER_TEMP/first-build" dist/release/SHA256SUMS
+
+      - name: Install the packages with scripts/install.sh
+        run: RELEASE_DIR=dist/release scripts/test_install.sh
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release
+          path: |
+            dist/release/
+            release-notes.md
+          if-no-files-found: error
+          retention-days: 7
+
+  smoke:
+    name: Run on ${{ matrix.target }}
+    needs: build
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - target: linux-arm64
+            runner: ubuntu-24.04-arm
+            platform: linux/arm64
+          - target: darwin-arm64
+            runner: macos-15
+            platform: darwin/arm64
+          - target: darwin-amd64
+            runner: macos-15-intel
+            platform: darwin/amd64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
+    env:
+      TAG: ${{ github.ref_name }}
+      TARGET: ${{ matrix.target }}
+      PLATFORM: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release
+          path: artifact
+
+      - name: Start the program
+        run: |
+          cd artifact/dist/release
+          f="twinpane-$TAG-$TARGET.tar.gz"
+          grep " $f\$" SHA256SUMS | shasum -a 256 -c -
+          tar -xzf "$f"
+          out="$("./twinpane-$TAG-$TARGET/twinpane" --version)"
+          echo "$out"
+          [ "$out" = "twinpane ${TAG#v} ($PLATFORM)" ] || { echo "::error::unexpected --version: $out"; exit 1; }
+
+      - name: Install with scripts/install.sh (real platform detection)
+        run: |
+          srv="$RUNNER_TEMP/srv"
+          mkdir -p "$srv/ThatOn3Gu7/TwinPane/releases/download/$TAG"
+          cp artifact/dist/release/twinpane-* artifact/dist/release/SHA256SUMS "$srv/ThatOn3Gu7/TwinPane/releases/download/$TAG/"
+          python3 -m http.server 8765 --bind 127.0.0.1 --directory "$srv" >/dev/null 2>&1 &
+          for _ in $(seq 30); do curl -fs -o /dev/null http://127.0.0.1:8765/ && break; sleep 1; done
+          TWINPANE_DOWNLOAD_BASE=http://127.0.0.1:8765 sh scripts/install.sh --version "$TAG" --dir "$RUNNER_TEMP/bin" | tee install.log
+          grep -q "($TARGET)" install.log || { echo "::error::installer did not choose $TARGET"; exit 1; }
+          "$RUNNER_TEMP/bin/twinpane" --version
+
+  publish:
+    name: Publish release
+    needs: [build, smoke]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    env:
+      TAG: ${{ github.ref_name }}
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release
+          path: artifact
+
+      - name: Publish the GitHub Release
+        run: |
+          if draft="$(gh release view "$TAG" --json isDraft --jq .isDraft 2>/dev/null)"; then
+            if [ "$draft" = "true" ]; then
+              echo "Removing the unfinished draft of $TAG left by an earlier run"
+              gh release delete "$TAG" --yes
+            else
+              echo "::error::Release $TAG is already published. To replace it, see docs/RELEASING.md."
+              exit 1
+            fi
+          fi
+          # Upload everything to a draft first; publish only when complete.
+          gh release create "$TAG" --draft --verify-tag \
+            --title "TwinPane $TAG" --notes-file artifact/release-notes.md \
+            artifact/dist/release/*
+          gh release edit "$TAG" --draft=false --latest
+          echo "Published https://github.com/$GH_REPO/releases/tag/$TAG"

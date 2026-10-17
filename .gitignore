@@ -1,0 +1,6 @@
+/dist/
+*.test
+*.out
+/twinpane
+/twinpane.exe
+.DS_Store

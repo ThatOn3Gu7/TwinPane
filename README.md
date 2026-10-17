@@ -1,0 +1,492 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/twinpane-wordmark-dark.svg">
+    <img src="assets/twinpane-wordmark-light.svg" alt="TwinPane" width="440">
+  </picture>
+</p>
+
+<p align="center">
+  A lightweight dual-pane terminal file manager for Android (Termux) and Linux.
+</p>
+
+<p align="center">
+  <a href="https://github.com/ThatOn3Gu7/TwinPane/actions/workflows/ci.yml"><img src="https://github.com/ThatOn3Gu7/TwinPane/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://github.com/ThatOn3Gu7/TwinPane/releases/latest"><img src="https://img.shields.io/github/v/release/ThatOn3Gu7/TwinPane" alt="Latest release"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT license"></a>
+</p>
+
+TwinPane shows two folders side by side and lets you copy, move, rename,
+delete, compress, extract, view and edit files between them, entirely inside
+the terminal. It is built for people who manage files in a shell, especially
+on a phone in [Termux](https://termux.dev), where a full-screen two-panel
+view with large touch targets is easier than typing long paths.
+
+- **Lightweight:** a single program with no runtime dependencies. Optional
+  tools (such as `fd` or 7-Zip) are used when they are installed.
+- **Keyboard first:** every action has a key, and the bottom bar always shows
+  the keys that work right now.
+- **Touch and mouse where available:** tap, double tap and swipe in Termux;
+  click, wheel and drag in desktop terminals. Destructive actions always ask
+  first.
+- **Careful with your data:** copies are written to temporary files and
+  renamed when complete, deletes go to the trash where one exists, and
+  nothing is ever overwritten without asking.
+
+```
+ TwinPane  0.7.0                                   hidden: off · active: left panel
+╭──────────────────────────────────────╮┌──────────────────────────────────────┐
+│ /home/me/L                           ││ /home/me/R                           │
+│ Name        ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓          │
+│ ..          ┃  Move 2 items (1 folder, 1 file) to the trash?       ┃          │
+│ proj/       ┃                                                      ┃          │
+│ notes.txt   ┃  /home/me/L/proj/                                    ┃          │
+│             ┃  /home/me/L/notes.txt                                ┃          │
+│             ┃  Folders are moved to the trash with ALL of their    ┃          │
+│             ┃  contents: 4 items inside.                           ┃          │
+│             ┃  In total: 4 files, 2 folders, 8 B.                  ┃          │
+│             ┃   No, cancel (n)    Yes, move to trash (y)           ┃          │
+│             ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛          │
+╰──────────────────────────────────────╯└──────────────────────────────────────┘
+  Tab   switch   Space   select   c   copy   m   move   r   rename   d   delete    ?   help
+```
+
+## Contents
+
+- [Features](#features)
+- [Supported platforms](#supported-platforms)
+- [Installation](#installation)
+- [Usage](#usage)
+- [Building from source](#building-from-source)
+- [Project structure](#project-structure)
+- [Releases](#releases)
+- [Troubleshooting](#troubleshooting)
+- [Contributing](#contributing)
+- [License](#license)
+
+## Features
+
+The [user guide](docs/USER_GUIDE.md) describes every feature in detail.
+
+**Browsing**
+- Two independent panels, both starting in your home folder. Tab switches
+  between them, and `=` shows the active folder in the other panel.
+- Sorting by name, size, modification time or type (`s`, reverse with `S`).
+- One switch for hidden files in both panels (`h`).
+- Multi-selection (`Space`, `a`, `u`). The selection is shared when both
+  panels show the same folder.
+- Bookmarks for folders (`B` adds, `b` lists). A missing folder is reported,
+  never replaced by another one.
+- Live filename search below the current folder (`/`), using `fd` or `find`
+  when installed, otherwise a built-in walker. Names only; file contents are
+  not searched.
+
+**File operations**
+- Copy (`c`) and move (`m`) to the other panel, with progress, cancel, and a
+  Skip / Overwrite / Merge choice for every conflict. Moves across
+  filesystems are verified with SHA-256 before the source is removed.
+- Rename (`r`) and bulk rename of several items: find/replace with regular
+  expressions, name patterns, upper/lower case, or editing every name in your
+  editor. Nothing is renamed until you confirm, and nothing is overwritten.
+- Delete (`d`) moves items to the trash on Linux and macOS. **Termux and
+  Windows have no trash: deletes there are permanent.** The dialog then says
+  PERMANENTLY in red, and for folders or several items you must type
+  `delete`. The same applies on Linux to items on another filesystem than
+  the trash (USB drives, tmpfs).
+- Properties (`P`): size, times, owner, symbolic-link target, and permission
+  editing on filesystems that support it.
+
+**Archives**
+- ZIP files (including `.jar`, `.apk` and `.epub`): browse like a folder
+  without extracting, view entries, and extract safely (`x`, `X`). Only
+  "stored" and "deflate" entries can be read; encrypted entries are listed
+  but not extracted.
+- Create archives (`z`): ZIP, TAR, TAR.GZ, TAR.XZ, TAR.ZST, TAR.BZ2, TAR.LZ4,
+  and single-file GZIP, XZ, ZSTD, BZIP2 and LZ4, all built in. 7Z needs an
+  installed 7-Zip (`7zz`, `7z`, `7za` or `7zr`).
+- Only ZIP archives can be opened; the other formats are create-only.
+
+**Viewing, editing and opening**
+- Read-only text viewer (`v`, or `Enter` on a text file) with wrapping, line
+  numbers and search. Binary files and huge files are handled safely.
+- External editor (`e`): `$VISUAL`, then `$EDITOR`, then the first installed
+  editor; `E` chooses among the installed editors. The terminal is handed
+  over and restored cleanly, also when the editor suspends itself. There is
+  no built-in editor.
+- Open in the default app (`o`) or choose an app (`O`): `termux-open` in
+  Termux (including Share), `xdg-open` in a Linux desktop session, `open` on
+  macOS.
+- Storage overview of the current filesystem (`i`), and an action menu (`M`,
+  or a tap on the TwinPane title).
+
+**Keyboard, touch and mouse**
+- A context-aware hint bar, a help screen (`?`) with a live filter (`/`),
+  and scroll indicators on every list.
+- Tap to move the cursor, double tap to open, swipe to scroll, tap hints and
+  dialog buttons. A double tap on a text file asks before starting the
+  editor. Long press and finger dragging are not available, because Termux
+  uses them itself.
+- `--no-mouse` turns touch and mouse input off, so the terminal can select
+  text normally.
+
+Not included: creating folders, content search, configurable keys or themes,
+and editing archives in place.
+
+## Supported platforms
+
+| Platform | Release file | Installer | Status |
+|---|---|---|---|
+| **Android ARM64, Termux** | `twinpane-v<version>-android-arm64.tar.gz` | yes | Primary target. Built with `GOOS=android`; not yet run on a phone by the project |
+| Linux x86_64 | `twinpane-v<version>-linux-amd64.tar.gz` | yes | Covered by the unit and end-to-end tests |
+| Linux ARM64 | `twinpane-v<version>-linux-arm64.tar.gz` | yes | For regular Linux on ARM (Raspberry Pi OS, Ubuntu…), **not Termux**. Started on an ARM64 runner before each release |
+| macOS Apple silicon | `twinpane-v<version>-darwin-arm64.tar.gz` | yes | Started on a macOS runner before each release; the interface is not tested on macOS |
+| macOS Intel | `twinpane-v<version>-darwin-amd64.tar.gz` | yes | Started on a macOS runner before each release; the interface is not tested on macOS |
+| Windows x86_64 | `twinpane-v<version>-windows-amd64.zip` | no | Compiled only, untested |
+
+**Termux needs the android-arm64 build.** The Linux build is compiled for a
+regular Linux system. On Android, Go's Linux runtime can make system calls
+that Android's security filter forbids, and the program is killed with
+`SIGSYS: bad system call`. The `android` build avoids them. The installer
+always picks the right one.
+
+Any terminal with UTF-8 and 256 colours works, at 30×7 characters or more.
+
+## Installation
+
+### Automatic (recommended)
+
+The installer detects your platform, downloads the latest release from
+GitHub, checks its SHA-256 checksum and installs `twinpane`. It uses `curl`
+or `wget` (whichever is installed) and never needs root.
+
+With curl:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/ThatOn3Gu7/TwinPane/main/scripts/install.sh | sh
+```
+
+With wget:
+
+```sh
+wget -qO- https://raw.githubusercontent.com/ThatOn3Gu7/TwinPane/main/scripts/install.sh | sh
+```
+
+> These commands work once the first release has been published on GitHub
+> Releases. Until then the installer stops with "could not download the
+> latest release information".
+
+It installs into:
+
+- **Termux:** `$PREFIX/bin` (already in your `PATH`).
+- **Linux and macOS:** `~/.local/bin`. If that folder is not in your `PATH`,
+  the installer prints the line to add to your shell profile.
+
+Options go after `sh -s --`:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/ThatOn3Gu7/TwinPane/main/scripts/install.sh | sh -s -- --dir "$HOME/bin"
+curl -fsSL https://raw.githubusercontent.com/ThatOn3Gu7/TwinPane/main/scripts/install.sh | sh -s -- --version v0.7.0
+```
+
+| Option | Meaning |
+|---|---|
+| `--dir DIR` | install into `DIR` (created if missing) |
+| `--version vX.Y.Z` | install that release instead of the latest |
+| `--target TARGET` | skip detection: `android-arm64`, `linux-arm64`, `linux-amd64`, `darwin-arm64` or `darwin-amd64` |
+| `--downloader curl\|wget` | force one download tool |
+| `--dry-run` | show what would be installed, download nothing |
+
+To read the script before running it:
+
+```sh
+curl -fsSLO https://raw.githubusercontent.com/ThatOn3Gu7/TwinPane/main/scripts/install.sh
+less install.sh
+sh install.sh --dry-run
+sh install.sh
+```
+
+The installer downloads into a temporary folder and verifies the checksum.
+It then copies the program next to its destination and renames it into
+place, so an existing `twinpane` is only replaced by a complete, verified
+file. It never runs the program it downloads. Running it again updates
+TwinPane.
+
+### Manual download
+
+Download your platform's package and `SHA256SUMS` from the
+[Releases page](https://github.com/ThatOn3Gu7/TwinPane/releases), check the
+checksum, extract the package, and copy `twinpane` into a folder in your
+`PATH`. Replace `v0.7.0` below with the version you want.
+
+**Termux (Android ARM64):**
+
+```sh
+cd ~
+curl -fLO https://github.com/ThatOn3Gu7/TwinPane/releases/download/v0.7.0/twinpane-v0.7.0-android-arm64.tar.gz
+curl -fLO https://github.com/ThatOn3Gu7/TwinPane/releases/download/v0.7.0/SHA256SUMS
+# with wget instead:  wget https://github.com/ThatOn3Gu7/TwinPane/releases/download/v0.7.0/twinpane-v0.7.0-android-arm64.tar.gz
+#                     wget https://github.com/ThatOn3Gu7/TwinPane/releases/download/v0.7.0/SHA256SUMS
+grep ' twinpane-v0.7.0-android-arm64.tar.gz$' SHA256SUMS | sha256sum -c -
+tar -xzf twinpane-v0.7.0-android-arm64.tar.gz
+install -m 755 twinpane-v0.7.0-android-arm64/twinpane "$PREFIX/bin/twinpane"
+twinpane --version
+```
+
+Keep the program in Termux's own folders. Shared storage (`/sdcard`,
+`~/storage/shared`) does not allow running programs.
+
+**Linux** (use `linux-arm64` on ARM machines):
+
+```sh
+curl -fLO https://github.com/ThatOn3Gu7/TwinPane/releases/download/v0.7.0/twinpane-v0.7.0-linux-amd64.tar.gz
+curl -fLO https://github.com/ThatOn3Gu7/TwinPane/releases/download/v0.7.0/SHA256SUMS
+grep ' twinpane-v0.7.0-linux-amd64.tar.gz$' SHA256SUMS | sha256sum -c -
+tar -xzf twinpane-v0.7.0-linux-amd64.tar.gz
+mkdir -p ~/.local/bin
+install -m 755 twinpane-v0.7.0-linux-amd64/twinpane ~/.local/bin/twinpane
+```
+
+**macOS** (use `darwin-amd64` on Intel Macs):
+
+```sh
+curl -fLO https://github.com/ThatOn3Gu7/TwinPane/releases/download/v0.7.0/twinpane-v0.7.0-darwin-arm64.tar.gz
+curl -fLO https://github.com/ThatOn3Gu7/TwinPane/releases/download/v0.7.0/SHA256SUMS
+grep ' twinpane-v0.7.0-darwin-arm64.tar.gz$' SHA256SUMS | shasum -a 256 -c -
+tar -xzf twinpane-v0.7.0-darwin-arm64.tar.gz
+mkdir -p ~/.local/bin
+install -m 755 twinpane-v0.7.0-darwin-arm64/twinpane ~/.local/bin/twinpane
+```
+
+The macOS binaries are not signed. Files downloaded with a web browser get a
+quarantine flag; remove it with
+`xattr -d com.apple.quarantine ~/.local/bin/twinpane`. Files downloaded with
+`curl` don't get that flag.
+
+**Windows (untested):** extract `twinpane-v0.7.0-windows-amd64.zip` and run
+`twinpane.exe` in Windows Terminal. It is compiled for completeness but has
+never been run, and Windows has no trash (deletes are permanent).
+
+### Optional companions
+
+| Tool | Used for | Termux | Debian/Ubuntu |
+|---|---|---|---|
+| `fd` | faster search (else `find`, else built in) | `pkg install fd` | `sudo apt install fd-find` |
+| 7-Zip | creating `.7z` archives | `pkg install 7zip` | `sudo apt install 7zip` |
+| an editor | `e` / `E` | `pkg install neovim` (or `nano`) | already installed |
+| `termux-open` | Open / Share (`o`, `O`) | included in `termux-tools` | `xdg-open` (desktop session) |
+
+In Termux, run `termux-setup-storage` once to reach your phone's shared
+storage at `~/storage/shared`.
+
+### Uninstall
+
+```sh
+rm "$(command -v twinpane)"
+rm -rf ~/.config/twinpane      # bookmarks, if you used them (macOS: ~/Library/Application\ Support/twinpane)
+```
+
+## Usage
+
+```sh
+twinpane                    # both panels open in your home folder
+twinpane --no-mouse         # keyboard only; the terminal can select text
+twinpane --no-editor-tips   # no save/quit card before the editor starts with e
+twinpane --version
+```
+
+| Key | Action | Key | Action |
+|---|---|---|---|
+| `Tab` | switch panel | `c` / `F5` | copy to the other panel |
+| `↑` `↓` / `j` `k` | move | `m` / `F6` | move to the other panel |
+| `Enter` / `→` | open folder, view file, browse ZIP | `r` / `F2` | rename (several: bulk rename) |
+| `Backspace` / `←` | parent folder | `d` / `F8` | delete (trash if available) |
+| `Space` | select | `e` / `E` | edit / edit with… |
+| `a` / `u` | select all / none | `v` / `F3` | view |
+| `/` | find by name | `z` / `x` | compress / extract |
+| `s` / `S` | sort / reverse | `o` / `O` | open / open with… |
+| `h` | hidden files | `P` | properties |
+| `b` / `B` | bookmarks / add | `M` | action menu |
+| `i` | storage | `?` / `F1` | help (with `/` filter) |
+| `~` | home folder | `q` / `F10` | quit |
+
+The [user guide](docs/USER_GUIDE.md#keyboard-controls) lists every key,
+including those of the viewer, dialogs, search and bulk rename.
+
+**Touch (Termux) and mouse:**
+
+| Gesture | Effect |
+|---|---|
+| tap a row | moves the cursor there (never selects or runs anything) |
+| double tap | opens a folder or ZIP; for a text file it asks before the editor starts |
+| swipe / wheel | scrolls the list under your finger |
+| tap a hint or button | same as pressing its key |
+| right click (mouse) | select / deselect |
+
+**Environment variables:** `VISUAL` / `EDITOR` (the editor),
+`TWINPANE_NO_MOUSE=1` (same as `--no-mouse`), `TWINPANE_CONFIG_DIR` (an
+absolute path for the bookmarks file; default `~/.config/twinpane`, on macOS
+`~/Library/Application Support/twinpane`).
+
+## Building from source
+
+**Requirements:** Go 1.23 or newer (from [go.mod](go.mod)) and git. `make` is
+optional. `./build.sh release` also needs GNU tar and zip. There is no C code,
+so no C compiler is needed (`CGO_ENABLED=0`).
+
+```sh
+git clone https://github.com/ThatOn3Gu7/TwinPane.git
+cd TwinPane
+go mod download
+make build                  # creates ./twinpane for this computer
+./twinpane --version
+```
+
+Without make:
+
+```sh
+CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=$(cat VERSION)" -o twinpane ./cmd/twinpane
+```
+
+**In Termux:** `pkg install golang git make`, then the same commands. A
+native build in Termux is automatically the android/arm64 build. Copy the
+result into your `PATH` with `install -m 755 twinpane "$PREFIX/bin/"`.
+
+With `go install`:
+
+```sh
+go install github.com/ThatOn3Gu7/TwinPane/cmd/twinpane@latest
+```
+
+This puts `twinpane` into `$(go env GOPATH)/bin`. It reports its version as
+`dev`, because `go install` doesn't set the version.
+
+**Cross-compiling:**
+
+```sh
+./build.sh            # all targets: dist/twinpane-<os>-<arch>[.exe] + dist/SHA256SUMS
+./build.sh native     # this computer only
+./build.sh release    # release packages in dist/release/ (as published on GitHub)
+```
+
+| Target | `GOOS` | `GOARCH` |
+|---|---|---|
+| Android ARM64 (Termux) | `android` | `arm64` |
+| Linux ARM64 | `linux` | `arm64` |
+| Linux x86_64 | `linux` | `amd64` |
+| macOS Apple silicon | `darwin` | `arm64` |
+| macOS Intel | `darwin` | `amd64` |
+| Windows x86_64 | `windows` | `amd64` |
+
+For a single target:
+`CGO_ENABLED=0 GOOS=android GOARCH=arm64 go build -trimpath -ldflags "-s -w -X main.version=$(cat VERSION)" -o twinpane ./cmd/twinpane`.
+
+**Tests:**
+
+```sh
+make test               # go test ./... (unit, engine and UI model tests)
+go test -race ./...     # the same with the race detector (as CI runs it)
+make test-install       # installer tests against a mock GitHub (needs python3, curl, wget)
+make lint               # gofmt, go vet, shellcheck
+```
+
+The end-to-end tests (`make smoke`, `make phase7-check` and others) drive the
+real program in a terminal and need tmux, python3 with pyte, and some need
+Neovim. See [CONTRIBUTING.md](CONTRIBUTING.md#tests).
+
+## Project structure
+
+```
+TwinPane/
+├── cmd/twinpane/          program entry point (flags, start-up)
+├── internal/
+│   ├── ui/                Bubble Tea model: panels, dialogs, keys, help, touch input
+│   ├── panel/             one panel: listing, cursor, selection, drawing
+│   ├── fsys/              directory listing, sorting, formatting
+│   ├── ops/               copy, move, rename, delete, trash (no UI)
+│   ├── archive/           ZIP browsing, safe extraction, ZIP creation
+│   ├── compress/          TAR and single-file formats, 7-Zip detection
+│   ├── textview/          viewer: bounded loading, binary detection
+│   ├── fileinfo/          Properties: metadata, permission changes
+│   ├── editor/            editor choice and terminal hand-over
+│   ├── opener/            default apps: termux-open, xdg-open, open
+│   ├── search/            filename search with fd, find or built in
+│   ├── bookmarks/         bookmark file
+│   ├── storage/           filesystem capacity and mounts
+│   ├── proc/              starts programs without Android-forbidden system calls
+│   ├── scrollbar/         scroll indicator geometry
+│   └── theme/             colours and styles
+├── scripts/
+│   ├── install.sh         the installer
+│   ├── test_install.sh    installer tests (mock GitHub, fake platforms)
+│   ├── release_notes.sh   release notes from CHANGELOG.md
+│   ├── *_check.sh, tui_smoke*.sh   end-to-end tests in a real terminal
+│   ├── ptyterm.py         pseudo-terminal harness for those tests
+│   └── android_seccomp.py Android-like system-call filter for tests on Linux
+├── assets/                logo, icon and wordmark (SVG sources, PNG exports)
+├── docs/                  user guide, architecture, release process, test log
+├── .github/               CI and release workflows, issue templates
+├── build.sh               builds binaries and release packages (defines the file names)
+├── Makefile               shortcuts for building and testing
+├── VERSION                the current version
+└── CHANGELOG.md, CONTRIBUTING.md, LICENSE
+```
+
+Go tests sit next to the code they test (`*_test.go`).
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) explains the design.
+
+## Releases
+
+Releases are published on
+[GitHub Releases](https://github.com/ThatOn3Gu7/TwinPane/releases) by a
+workflow that runs when a version tag `vMAJOR.MINOR.PATCH` (for example
+`v0.7.0`) is pushed. Each release contains:
+
+- one package per platform, named `twinpane-<tag>-<os>-<arch>.tar.gz`
+  (`.zip` for Windows), holding a folder with `twinpane`, `LICENSE` and
+  `README.md`;
+- `SHA256SUMS`, the SHA-256 checksum of every package.
+
+To verify a download, run the `grep … | sha256sum -c -` line from
+[Manual download](#manual-download); it must print `OK`. The installer does
+this automatically. The release process for maintainers is described in
+[docs/RELEASING.md](docs/RELEASING.md), and the changes in each version are
+in [CHANGELOG.md](CHANGELOG.md).
+
+## Troubleshooting
+
+| Problem | Solution |
+|---|---|
+| `SIGSYS: bad system call` in Termux | You are running a Linux build. Install the android-arm64 build (the installer does this automatically). |
+| `Permission denied` when starting it in Termux | The file is on shared storage or not executable. Keep it in `$PREFIX/bin` or `~` and run `chmod +x`. |
+| `twinpane: command not found` | The install folder is not in `PATH`. Add `export PATH="$HOME/.local/bin:$PATH"` to `~/.profile` (zsh: `~/.zshrc`) and open a new shell. |
+| Installer: `neither curl nor wget is installed` | Termux: `pkg install curl`. Debian/Ubuntu: `sudo apt install curl`. |
+| Installer: `HTTP 403` or `60 requests per hour` | GitHub limits anonymous API requests. Wait, or pass `--version v0.7.0` (this skips the API). |
+| Installer: `checksum mismatch` | The download is incomplete or altered; nothing was installed. Try again later or use another network. |
+| Installer: `could not download the latest release information` | Network problem, or no release is published yet. |
+| macOS: "cannot be opened because the developer cannot be verified" | `xattr -d com.apple.quarantine "$(command -v twinpane)"` |
+| The mouse/touch selects nothing in the terminal | TwinPane uses mouse reporting. Start it with `--no-mouse` to select text. |
+| Boxes or symbols look broken | Use a UTF-8 locale and a font with box-drawing characters. |
+| Build: `go.mod requires go >= 1.23` | Update Go (Termux: `pkg upgrade golang`). |
+| `.7z` is marked unavailable | Install 7-Zip (Termux: `pkg install 7zip`). |
+
+The [known limitations](docs/USER_GUIDE.md#known-limitations) list what
+TwinPane does not do.
+
+## Contributing
+
+Bug reports, ideas and pull requests are welcome.
+
+- **Report a bug:** open an
+  [issue](https://github.com/ThatOn3Gu7/TwinPane/issues/new/choose) with the
+  output of `twinpane --version`, your platform (Termux version, Linux
+  distribution or macOS version), and the steps to reproduce it.
+- **Contribute code:** read [CONTRIBUTING.md](CONTRIBUTING.md). Run
+  `make lint test` before opening a pull request.
+- Issues labelled
+  [good first issue](https://github.com/ThatOn3Gu7/TwinPane/labels/good%20first%20issue)
+  are a good place to start.
+
+## License
+
+TwinPane is released under the [MIT License](LICENSE).
+Copyright (c) 2026 ThatOn3Gu7. The logo files in [assets/](assets/) are
+covered by the same license.
