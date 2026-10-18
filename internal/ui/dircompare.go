@@ -17,15 +17,17 @@ import (
 )
 
 type comparisonView struct {
-	id         int
-	leftPath   string
-	rightPath  string
-	cancel     context.CancelFunc
-	loading    bool
-	hashing    bool
-	cancelling bool
-	err        error
-	result     *dircompare.Result
+	id                    int
+	leftPath              string
+	rightPath             string
+	cancel                context.CancelFunc
+	loading               bool
+	hashing               bool
+	cancelling            bool
+	err                   error
+	result                *dircompare.Result
+	includeGitDirectories bool
+	differencesOnly       bool
 
 	cursor, offset int
 	choices        map[string]dircompare.Direction
@@ -33,6 +35,78 @@ type comparisonView struct {
 	plan           dircompare.Plan
 	planCursor     int
 	planOffset     int
+}
+
+var comparisonHelp = []Binding{
+	{Help: "Workflow", Desc: "D scan; l/r propose; a add one-sided; p review; Enter confirms; overwrites still ask"},
+	{Help: "f", Desc: "show differences and proposed actions only; hide matching rows"},
+	{Help: "g", Desc: "include/exclude exact .git directories; .gitignore/.github remain; changing scope clears proposals"},
+	{Help: "h", Desc: "SHA-256 checks regular files whose size/time match; metadata alone does not prove equal bytes"},
+	{Help: "LEFT/RIGHT ONLY", Desc: "entry exists on just one side; choose the copy direction"},
+	{Help: "SAME META", Desc: "same type/mode/time; size for files, target for links, directory size ignored; file contents may differ"},
+	{Help: "META DIFF", Desc: "one or more compared metadata fields differ"},
+	{Help: "CONTENT DIFF", Desc: "SHA-256 differs; size and modification time matched"},
+	{Help: "IDENTICAL", Desc: "metadata and SHA-256 match"},
+	{Help: "SAME CONTENT", Desc: "SHA-256 matches but metadata differs"},
+	{Help: "TYPE CONFLICT", Desc: "different object types; resolve manually"},
+	{Help: "READ ERROR", Desc: "entry unreadable or changed; rescan before planning"},
+}
+
+// visibleComparisonEntries applies the clutter filter without hiding any
+// outstanding proposal. Metadata matches (and proven identical files after a
+// hash scan) are the only rows removed by differences-only mode; conflicts and
+// errors remain visible for review.
+func visibleComparisonEntries(c *comparisonView) []dircompare.Entry {
+	if c == nil || c.result == nil {
+		return nil
+	}
+	if !c.differencesOnly {
+		return c.result.Entries
+	}
+	out := make([]dircompare.Entry, 0, len(c.result.Entries))
+	for _, entry := range c.result.Entries {
+		if !comparisonEntryMatches(entry) {
+			out = append(out, entry)
+			continue
+		}
+		if _, proposed := c.choices[entry.Rel]; proposed {
+			out = append(out, entry)
+		}
+	}
+	return out
+}
+
+func comparisonEntryMatches(entry dircompare.Entry) bool {
+	return entry.Status == dircompare.StatusMetadataEqual || entry.Status == dircompare.StatusIdentical
+}
+
+func (a *App) toggleComparisonDifferences() {
+	c := a.comparison
+	if c == nil || c.result == nil {
+		return
+	}
+	before := visibleComparisonEntries(c)
+	oldCursor := c.cursor
+	currentRel := ""
+	if oldCursor >= 0 && oldCursor < len(before) {
+		currentRel = before[oldCursor].Rel
+	}
+	c.differencesOnly = !c.differencesOnly
+	after := visibleComparisonEntries(c)
+	c.cursor = min(oldCursor, max(0, len(after)-1))
+	for i, entry := range after {
+		if entry.Rel == currentRel {
+			c.cursor = i
+			break
+		}
+	}
+	c.offset = 0
+	a.keepComparisonCursorVisible()
+	if c.differencesOnly {
+		a.setStatusLevel(fmt.Sprintf("Differences-only filter: %d rows; proposed matches stay visible", len(after)), lvlInfo)
+	} else {
+		a.setStatusLevel(fmt.Sprintf("Showing all %d comparison rows", len(after)), lvlInfo)
+	}
 }
 
 type compareDoneMsg struct {
@@ -111,8 +185,11 @@ func (a *App) startComparisonScan(hash bool) tea.Cmd {
 		a.setStatusLevel("Comparing local directories…", lvlInfo)
 	}
 	left, right := c.leftPath, c.rightPath
+	includeGitDirectories := c.includeGitDirectories
 	return func() tea.Msg {
-		result, err := dircompare.Compare(ctx, left, right, dircompare.Options{HashMatchingFiles: hash})
+		result, err := dircompare.Compare(ctx, left, right, dircompare.Options{
+			HashMatchingFiles: hash, IncludeGitDirectories: includeGitDirectories,
+		})
 		return compareDoneMsg{id: id, result: result, err: err}
 	}
 }
@@ -137,9 +214,11 @@ func (a *App) comparisonDone(msg compareDoneMsg) {
 	result := msg.result
 	c.result = &result
 	c.err = nil
-	if c.cursor >= len(result.Entries) {
-		c.cursor = max(0, len(result.Entries)-1)
+	entries := visibleComparisonEntries(c)
+	if c.cursor >= len(entries) {
+		c.cursor = max(0, len(entries)-1)
 	}
+	a.keepComparisonCursorVisible()
 	if !result.Complete {
 		a.setStatusLevel("Comparison is incomplete; synchronization planning is disabled", lvlWarn)
 	} else if !result.CanSync {
@@ -196,7 +275,22 @@ func (a *App) comparisonKey(msg tea.KeyMsg) tea.Cmd {
 		}
 		return nil
 	}
-	entries := c.result.Entries
+	switch s {
+	case "?":
+		a.openHelp()
+		return nil
+	case "f":
+		a.toggleComparisonDifferences()
+		return nil
+	case "g":
+		hash := c.result.ContentChecked
+		c.includeGitDirectories = !c.includeGitDirectories
+		c.choices = map[string]dircompare.Direction{}
+		c.cursor, c.offset = 0, 0
+		c.result = nil // Never leave old-scope rows visible if this scan is cancelled.
+		return a.startComparisonScan(hash)
+	}
+	entries := visibleComparisonEntries(c)
 	if len(entries) > 0 {
 		switch {
 		case a.keys.Up.Matches(msg):
@@ -475,6 +569,11 @@ func (a *App) keepComparisonCursorVisible() {
 	if c == nil || c.result == nil {
 		return
 	}
+	entries := visibleComparisonEntries(c)
+	if len(entries) == 0 {
+		c.cursor, c.offset = 0, 0
+		return
+	}
 	visible := max(1, a.comparisonListRows(a.height-3))
 	if c.cursor < c.offset {
 		c.offset = c.cursor
@@ -482,7 +581,7 @@ func (a *App) keepComparisonCursorVisible() {
 	if c.cursor >= c.offset+visible {
 		c.offset = c.cursor - visible + 1
 	}
-	maxOffset := max(0, len(c.result.Entries)-visible)
+	maxOffset := max(0, len(entries)-visible)
 	c.offset = max(0, min(c.offset, maxOffset))
 }
 
@@ -503,8 +602,33 @@ func (a *App) keepPlanCursorVisible() {
 	c.planOffset = max(0, min(c.planOffset, maxOffset))
 }
 
+func comparisonTitle(c *comparisonView, width int) string {
+	if c == nil {
+		return "Directory comparison"
+	}
+	filter := "all"
+	if c.differencesOnly {
+		filter = "diff"
+	}
+	git := "off"
+	if c.includeGitDirectories {
+		git = "on"
+	}
+	switch {
+	case width >= 60:
+		if c.includeGitDirectories {
+			return fmt.Sprintf("Directory comparison · f: %s · g: .git included", filter)
+		}
+		return fmt.Sprintf("Directory comparison · f: %s · g: .git excluded", filter)
+	case width >= 40:
+		return fmt.Sprintf("Directory compare · f:%s · g:.git %s", filter, git)
+	default:
+		return fmt.Sprintf("Compare D:scan f:%s g:%s", filter, git)
+	}
+}
+
 func (a *App) comparisonListRows(height int) int {
-	header := 5
+	header := 6
 	if height <= 6 {
 		header = 3
 	}
@@ -532,7 +656,7 @@ func (a *App) comparisonViewRender(height int) string {
 	}
 	width := a.width
 	compact := height <= 6
-	lines := []string{a.theme.HelpTitle.Render("Directory comparison")}
+	lines := []string{a.theme.HelpTitle.Render(fitWidth(comparisonTitle(c, width), width))}
 	if compact {
 		roots := "L " + fsys.SanitizeName(shortPath(c.leftPath)) + " ⇄ R " + fsys.SanitizeName(shortPath(c.rightPath))
 		lines = append(lines, a.theme.DialogHint.Render(fitWidth(roots, width)))
@@ -563,13 +687,18 @@ func (a *App) comparisonViewRender(height int) string {
 		return fixedBody(lines, height, width)
 	}
 	result := c.result
+	entries := visibleComparisonEntries(c)
 	t := result.Totals
 	matchLabel := fmt.Sprintf("metadata match %d", t.MetadataEqual)
 	if result.ContentChecked {
 		matchLabel = fmt.Sprintf("identical %d · same bytes %d", t.Identical, t.SameContent)
 	}
-	totalLine := fmt.Sprintf("%d entries · L-only %d · R-only %d · %s · changed %d · type %d · errors %d",
-		t.Entries, t.LeftOnly, t.RightOnly, matchLabel, t.MetadataDifferent+t.ContentDifferent, t.TypeConflicts, t.Errors)
+	entryLabel := fmt.Sprintf("%d entries", t.Entries)
+	if c.differencesOnly {
+		entryLabel = fmt.Sprintf("%d/%d shown", len(entries), t.Entries)
+	}
+	totalLine := fmt.Sprintf("%s · L-only %d · R-only %d · %s · changed %d · type %d · errors %d",
+		entryLabel, t.LeftOnly, t.RightOnly, matchLabel, t.MetadataDifferent+t.ContentDifferent, t.TypeConflicts, t.Errors)
 	lines = append(lines, a.theme.DialogText.Render(fitWidth(totalLine, width)))
 	if !compact {
 		switch {
@@ -578,23 +707,35 @@ func (a *App) comparisonViewRender(height int) string {
 		case !result.CanSync:
 			lines = append(lines, a.theme.StatusWarn.Render(fitWidth(result.SyncNote, width)))
 		case result.ContentChecked:
-			lines = append(lines, a.theme.DialogHint.Render(fitWidth(fmt.Sprintf("L %s · R %s · content verified", fsys.HumanSize(t.LeftBytes), fsys.HumanSize(t.RightBytes)), width)))
+			lines = append(lines, a.theme.DialogHint.Render(fitWidth(fmt.Sprintf("SHA-256 checked matching files · L %s · R %s", fsys.HumanSize(t.LeftBytes), fsys.HumanSize(t.RightBytes)), width)))
 		default:
-			lines = append(lines, a.theme.DialogHint.Render(fitWidth(fmt.Sprintf("L %s · R %s · metadata only (h hashes matching files)", fsys.HumanSize(t.LeftBytes), fsys.HumanSize(t.RightBytes)), width)))
+			lines = append(lines, a.theme.DialogHint.Render(fitWidth(fmt.Sprintf("SAME META is metadata, not bytes; h checks SHA-256 · L %s · R %s", fsys.HumanSize(t.LeftBytes), fsys.HumanSize(t.RightBytes)), width)))
 		}
+		workflow := "Workflow: D scan → l/r propose · a one-sided → p review → Enter approve"
+		if width < 60 {
+			workflow = "Flow: D scan → l/r copy → p review → Enter approve"
+		}
+		if width < 50 {
+			workflow = "D scan→l/r copy→p plan→Enter"
+		}
+		lines = append(lines, a.theme.DialogHint.Render(fitWidth(workflow, width)))
 	}
 	if len(result.Entries) == 0 {
 		lines = append(lines, a.theme.Empty.Render(fitWidth("No entries in either directory", width)))
+		return fixedBody(lines, height, width)
+	}
+	if len(entries) == 0 {
+		lines = append(lines, a.theme.Empty.Render(fitWidth("No differences or proposals; press f to show matches", width)))
 		return fixedBody(lines, height, width)
 	}
 	rows := a.comparisonListRows(height)
 	if rows == 0 {
 		return fixedBody(lines, height, width)
 	}
-	start := min(c.offset, max(0, len(result.Entries)-rows))
-	end := min(len(result.Entries), start+rows)
+	start := min(c.offset, max(0, len(entries)-rows))
+	end := min(len(entries), start+rows)
 	for i := start; i < end; i++ {
-		entry := result.Entries[i]
+		entry := entries[i]
 		marker := "  "
 		if i == c.cursor {
 			marker = "> "
@@ -793,22 +934,34 @@ func (a *App) comparisonHints() []barItem {
 		return []barItem{item("Enter/e", "approve plan…", "enter"), item("↑↓", "review", ""), item("Esc", "back", "esc")}
 	}
 	if c.err != nil && c.result != nil {
-		return []barItem{item("r", "retry scan", "r"), item("h", "retry content check", "h"), item("Esc", "close", "esc")}
+		return []barItem{item("r", "retry scan", "r"), item("h", "retry content check", "h"), item("?", "keys/statuses", "?"), item("Esc", "close", "esc")}
 	}
 	if c.result == nil {
-		return []barItem{item("r", "retry comparison", "r"), item("Esc", "close", "esc")}
+		return []barItem{item("r", "retry comparison", "r"), item("?", "keys/statuses", "?"), item("Esc", "close", "esc")}
+	}
+	filterAction := "show differences"
+	if c.differencesOnly {
+		filterAction = "show all"
+	}
+	gitAction := "include .git"
+	if c.includeGitDirectories {
+		gitAction = "exclude .git"
+	}
+	if a.width < 40 {
+		return []barItem{
+			item("l/r", "copy", ""), item("p", "plan", "p"), item("?", "help", "?"),
+			item("a", "one-sided", "a"), item("f", filterAction, "f"), item("g", gitAction, "g"),
+			item("Esc", "close", "esc"),
+		}
 	}
 	out := []barItem{
-		item("↑↓", "navigate", ""), item("l", "left → right", "l"), item("r", "right → left", "r"),
-		item("Space", "toggle one-sided", " "), item("a", "add one-sided", "a"),
+		item("l/r", "copy", ""), item("p", "review plan", "p"), item("a", "one-sided", "a"),
+		item("f", filterAction, "f"), item("g", gitAction, "g"), item("↑↓", "move", ""), item("Space", "toggle choice", " "),
 	}
-	if c.result != nil && (!c.result.ContentChecked || !c.result.Complete) {
-		out = append(out, item("h", "hash matching files", "h"))
+	if !c.result.ContentChecked || !c.result.Complete {
+		out = append(out, item("h", "SHA-256 check", "h"))
 	}
-	if c.result != nil {
-		out = append(out, item("p", "review plan", "p"))
-	}
-	out = append(out, item("Esc", "close", "esc"))
+	out = append(out, item("?", "keys/statuses", "?"), item("Esc", "close", "esc"))
 	return out
 }
 

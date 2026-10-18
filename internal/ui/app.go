@@ -359,7 +359,7 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if a.dialog == nil && a.tasks.showing {
 			return a, a.taskViewKey(msg)
 		}
-		if a.dialog == nil && a.comparison != nil {
+		if a.dialog == nil && a.comparison != nil && !a.showHelp {
 			return a, a.comparisonKey(msg)
 		}
 		if a.dialog == nil && msg.String() == "ctrl+c" {

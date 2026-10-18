@@ -591,6 +591,45 @@ shown in the **other panel**.
 - Copy, move and delete clear the selection only after full success, so after a
   partial failure the items that are still there remain selected for a retry.
 
+### Directory comparison (`D`)
+
+Compare the two local folders visible in the panels; archives and cloud
+sources are not included. The scan is read-only and does not follow symlinks.
+It ignores directories named exactly `.git` at any depth by default, while
+keeping `.gitignore`, `.github` and similarly named entries. Press `g` to
+include `.git` directories and rescan; changing this scope clears any current
+copy proposals. The title shows the active Git scope (`g: .git excluded` or
+`g: .git included`).
+
+The comparison keys are shown in the bottom hint bar. The workflow is:
+**scan** (`D`) → **propose** copies (`l` left to right, `r` right to left,
+`a` to add all one-sided entries) → **review** the exact
+plan (`p`) → **approve** it (`Enter`). Existing destinations still prompt
+for explicit overwrite approval. `Space` toggles a proposal for a one-sided
+entry, `u` clears proposals, `f` toggles differences-only mode, `h` performs
+optional SHA-256 checks, and `Esc` closes the view. Differences-only hides
+matching rows but leaves errors, conflicts and already-proposed rows visible;
+the totals still describe the complete scan. Before hashing, this can hide
+files whose bytes differ despite matching metadata; use `h` for the stronger
+check. No delete actions are generated.
+
+| Status | Meaning |
+|---|---|
+| `LEFT ONLY` / `RIGHT ONLY` | Present on only that side; the copy direction must still be chosen. |
+| `SAME META` | Type, mode and modification time match; regular/special entries also match size, symlink targets match, and directory size is ignored. This does **not** prove regular-file contents match. |
+| `META DIFF` | One or more compared metadata fields differ. |
+| `CONTENT DIFF` | SHA-256 found different bytes among files with matching size and modification time. |
+| `IDENTICAL` | Metadata and SHA-256 match. |
+| `SAME CONTENT` | SHA-256 matches, but metadata differs. |
+| `TYPE CONFLICT` | The two sides contain different object types; resolve manually. |
+| `READ ERROR` | An entry could not be read or changed during scanning; rescan before planning. |
+
+`h` hashes regular files only when their size and modification time match.
+Hashing is the stronger content check; without it, `SAME META` means only that
+the recorded metadata matches. Incomplete scans cannot produce plans. Every
+approved action is revalidated before execution; a changed source or target
+stops the plan rather than silently changing it.
+
 ### v0.4.0 (phase 4: usability, touch, polish)
 
 **Scroll indicators**
@@ -937,6 +976,7 @@ v0.3.1; the matching rules below still apply)
 | `Backspace` / `←` | parent directory |
 | `~` | go to home directory |
 | `=` | show the active panel's folder in the other panel |
+| `D` | compare the two local panel directories (see Directory comparison) |
 | `Space` / `Insert` | toggle selection (and move down) |
 | `a` | select all / select none |
 | `u` | clear selection |

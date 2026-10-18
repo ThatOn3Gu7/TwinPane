@@ -153,11 +153,13 @@ type Result struct {
 	rightRootInfo       fs.FileInfo
 }
 
-// Options enables optional streaming SHA-256 checks for regular files whose
-// size and modification time match. Files are revalidated before and after
-// hashing; symlinks are never opened.
+// Options controls optional directory-comparison behavior. HashMatchingFiles
+// enables streaming SHA-256 checks for regular files whose size and modification
+// time match. Files are revalidated before and after hashing; symlinks are never
+// opened. Git directories are excluded unless IncludeGitDirectories is true.
 type Options struct {
-	HashMatchingFiles bool
+	HashMatchingFiles     bool
+	IncludeGitDirectories bool
 }
 
 // filesystem seams are intentionally narrow: tests use them to model
@@ -194,10 +196,10 @@ func Compare(ctx context.Context, leftRoot, rightRoot string, opts Options) (Res
 	leftEntries := make(map[string]Side)
 	rightEntries := make(map[string]Side)
 	var scanErrors []ScanError
-	if err := scanTree(ctx, left, "left", leftEntries, &scanErrors); err != nil {
+	if err := scanTree(ctx, left, "left", opts, leftEntries, &scanErrors); err != nil {
 		return result, err
 	}
-	if err := scanTree(ctx, right, "right", rightEntries, &scanErrors); err != nil {
+	if err := scanTree(ctx, right, "right", opts, rightEntries, &scanErrors); err != nil {
 		return result, err
 	}
 
@@ -327,11 +329,11 @@ func pathContains(parent, child string) bool {
 	return rel == "." || (rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) && !filepath.IsAbs(rel))
 }
 
-func scanTree(ctx context.Context, root, side string, entries map[string]Side, errs *[]ScanError) error {
-	return scanDirectory(ctx, root, root, "", side, entries, errs)
+func scanTree(ctx context.Context, root, side string, opts Options, entries map[string]Side, errs *[]ScanError) error {
+	return scanDirectory(ctx, root, root, "", side, opts, entries, errs)
 }
 
-func scanDirectory(ctx context.Context, root, path, rel, side string, entries map[string]Side, errs *[]ScanError) error {
+func scanDirectory(ctx context.Context, root, path, rel, side string, opts Options, entries map[string]Side, errs *[]ScanError) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -380,6 +382,9 @@ func scanDirectory(ctx context.Context, root, path, rel, side string, entries ma
 			continue
 		}
 		snap := snapshot(info)
+		if name == ".git" && snap.Kind == KindDirectory && !opts.IncludeGitDirectories {
+			continue
+		}
 		if snap.Kind == KindSymlink {
 			target, err := readLink(childPath)
 			if err != nil {
@@ -398,7 +403,7 @@ func scanDirectory(ctx context.Context, root, path, rel, side string, entries ma
 		}
 		entries[childRel] = Side{Snapshot: &snap}
 		if snap.Kind == KindDirectory {
-			if err := scanDirectory(ctx, root, childPath, childRel, side, entries, errs); err != nil {
+			if err := scanDirectory(ctx, root, childPath, childRel, side, opts, entries, errs); err != nil {
 				return err
 			}
 		}

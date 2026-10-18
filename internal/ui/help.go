@@ -54,6 +54,9 @@ type helpEntry struct {
 // does not touch shared data.
 func (a *App) helpColumns() [2][]helpSection {
 	cols := a.keys.helpSections()
+	if a.comparison != nil {
+		cols[1] = append(cols[1], helpSection{"Directory comparison", comparisonHelp})
+	}
 	cols[0] = append(cols[0], helpSection{"Mouse & touch", mouseHelp})
 	cols[1] = append(cols[1], a.editorHelp(), helpSection{"Help & dialogs", helpScreenHelp})
 	return cols
