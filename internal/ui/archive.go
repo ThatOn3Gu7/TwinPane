@@ -17,8 +17,9 @@ import (
 // Archive support (phase 5): browsing a ZIP archive as a virtual, read-only
 // folder in one panel (panel.OpenArchive), extracting all or part of it
 // (archive.Extract) and creating archives (archive.Create). Extraction and
-// creation run as background operations like copy/move: progress box, Esc
-// cancels, the conflict and low-space dialogs are shared.
+// creation run as background tasks like copy/move: progress and outcomes stay
+// in the task view, panel navigation remains available, and conflict / low-
+// space prompts are serialized safely.
 //
 // Inside an archive, panel paths are virtual (".../x.zip/inner/path"), so
 // every operation that would treat them as real paths is refused here with
@@ -26,8 +27,10 @@ import (
 // touched.
 
 type opExtractDoneMsg struct {
-	id  int
-	res archive.ExtractResult
+	id          int
+	res         archive.ExtractResult
+	parent      string
+	parentFocus string
 }
 
 // zipNames are file extensions offered as archives in the hint bar (any
@@ -274,10 +277,6 @@ func (a *App) beginExtract(all bool) tea.Cmd {
 			a.dialog.errLine = "the destination cannot be inside the archive file"
 			return nil
 		}
-		if fi, err := os.Stat(dest); err == nil && !fi.IsDir() {
-			a.dialog.errLine = "that is a file, not a folder"
-			return nil
-		}
 		a.dialog = nil
 		return a.startExtract(srcIdx, archive.ExtractRequest{Archive: t.archive, Members: t.members, Base: t.base, DestDir: dest,
 			SevenZip: t.tool, OutputName: t.single})
@@ -303,68 +302,91 @@ func resolveUserPath(v, base string) (string, error) {
 }
 
 func (a *App) startExtract(srcIdx int, req archive.ExtractRequest) tea.Cmd {
-	s, ctx := a.newSession("Extracting", srcIdx, nil)
+	req.Members = append([]string(nil), req.Members...)
+	req.DestDir = filepath.Clean(req.DestDir)
+	s, ctx := a.newSession("Extracting", srcIdx, []string{req.Archive})
+	s.to = req.DestDir
 	h := a.hooks(ctx, s)
 	go func() {
+		if ctx.Err() != nil {
+			s.events <- opExtractDoneMsg{s.id, archive.ExtractResult{Dest: req.DestDir, Canceled: true}, "", ""}
+			return
+		}
+		parent, parentFocus := missingDestinationParent(req.DestDir)
+		if ctx.Err() != nil {
+			s.events <- opExtractDoneMsg{s.id, archive.ExtractResult{Dest: req.DestDir, Canceled: true}, "", ""}
+			return
+		}
 		res := archive.ExtractAny(ctx, req, h) // ZIP: archive.Extract
-		s.events <- opExtractDoneMsg{s.id, res}
+		if parent != "" {
+			if fi, err := os.Stat(req.DestDir); err != nil || !fi.IsDir() {
+				parent, parentFocus = "", ""
+			}
+		}
+		s.events <- opExtractDoneMsg{s.id, res, parent, parentFocus}
 	}()
 	return a.startCmds(s)
 }
 
-// refreshReal refreshes the panels showing the real filesystem, putting the
-// cursor on focus in the panel that shows dir.
-func (a *App) refreshReal(dir, focus string) tea.Cmd {
-	var cmds []tea.Cmd
-	for _, p := range a.panels {
-		switch {
-		case p.InArchive():
-			cmds = append(cmds, p.Refresh()) // the archive may have been replaced
-		case p.Path() == dir && focus != "":
-			cmds = append(cmds, p.RefreshFocus(focus))
-		default:
-			cmds = append(cmds, p.Refresh())
-		}
+// missingDestinationParent returns the nearest existing directory that would
+// gain a child if extraction creates req.DestDir. Filesystem checks run in the
+// task goroutine so a slow mount never blocks the UI.
+func missingDestinationParent(dest string) (parent, focus string) {
+	if _, err := os.Lstat(dest); err == nil || !os.IsNotExist(err) {
+		return "", ""
 	}
-	return tea.Batch(cmds...)
+	candidate := dest
+	for {
+		up := filepath.Dir(candidate)
+		if up == candidate {
+			return "", ""
+		}
+		if fi, err := os.Stat(up); err == nil && fi.IsDir() {
+			return up, filepath.Base(candidate)
+		} else if err != nil && !os.IsNotExist(err) {
+			return "", ""
+		}
+		candidate = up
+	}
 }
 
-func (a *App) finishExtract(s *opSession, res archive.ExtractResult) tea.Cmd {
-	a.op = nil
-	a.dialog = nil
+func (a *App) finishExtract(s *opSession, res archive.ExtractResult, parent, parentFocus string) tea.Cmd {
 	focus := ""
 	if len(res.Top) > 0 {
 		focus = res.Top[0]
 	}
-	cmds := []tea.Cmd{a.refreshReal(res.Dest, focus)}
-	if dir := filepath.Dir(res.Dest); focus == "" || dir != res.Dest {
-		// extracting into a new folder: show it selected in its parent
-		cmds = append(cmds, a.refreshReal(dir, filepath.Base(res.Dest)))
+	var cmds []tea.Cmd
+	cmds = append(cmds, a.refreshPanelsAt(res.Dest, focus))
+	if parent != "" {
+		cmds = append(cmds, a.refreshPanelsAt(parent, parentFocus))
 	}
 	summary := res.Summary()
 	if res.Unsafe > 0 {
 		summary += fmt.Sprintf(" · %d unsafe archive paths refused", res.Unsafe)
 	}
+	partial := res.Files+res.Dirs > 0
+	details := []string{"Into: " + res.Dest}
+	details = appendTaskDetail(details, "Stopped", res.Fatal)
+	details = append(details, itemErrorDetails(res.Errors)...)
+	if res.Unsafe > 0 {
+		details = append(details, fmt.Sprintf("Refused %d unsafe archive path(s)", res.Unsafe))
+	}
+	if res.Canceled {
+		details = append(details, "Canceled; completed entries were kept, the destination folder may have been created, and the remaining entries were not extracted")
+	}
+	state := taskOutcome(res.Canceled, res.Fatal, len(res.Errors), partial)
 	switch {
 	case res.OK():
 		a.setStatusLevel(summary+" → "+res.Dest, lvlOK)
-		a.panels[s.srcPanel].ClearSelection()
+		if a.sourceSelectionUnchanged(s) {
+			a.panels[s.srcPanel].ClearSelection()
+		}
 	case res.Canceled && res.Fatal == nil && len(res.Errors) == 0:
 		a.setStatusLevel(summary, lvlWarn)
 	default:
 		a.setStatusLevel(summary, lvlErr)
-		var body []dline
-		body = append(body, text(summary), text("Into: "+res.Dest))
-		if res.Fatal != nil {
-			body = append(body, blank(), warn("Stopped: "+errText(res.Fatal)))
-		}
-		if len(res.Errors) > 0 {
-			body = append(body, blank(), warn(fmt.Sprintf("Not extracted (%d):", len(res.Errors))))
-			body = append(body, itemLines(res.Errors)...)
-		}
-		body = append(body, blank(), hint("Files that failed were not written (no partial files are left); everything else was extracted."))
-		a.showReport("Extraction finished with problems", body)
 	}
+	a.finishTask(s, state, summary, details...)
 	return tea.Batch(cmds...)
 }
 

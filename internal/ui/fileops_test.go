@@ -201,9 +201,9 @@ func newOpsApp(t *testing.T, tr ops.Trasher, edEnv *editor.Env) (*harness, *opsE
 	if edEnv == nil {
 		edEnv = &editor.Env{Getenv: func(string) string { return "" }, LookPath: func(n string) (string, error) { return "/bin/" + n, nil }, GOOS: "linux"}
 	}
-	old, oldQuiet := progressDelay, quietAfterEdit
-	progressDelay, quietAfterEdit = 20*time.Millisecond, 0
-	t.Cleanup(func() { progressDelay, quietAfterEdit = old, oldQuiet })
+	oldQuiet := quietAfterEdit
+	quietAfterEdit = 0
+	t.Cleanup(func() { quietAfterEdit = oldQuiet })
 
 	env.env = map[string]string{}
 	env.tools = map[string]bool{}
@@ -271,7 +271,8 @@ func TestCopyWithConflictOverwrite(t *testing.T) {
 	os.WriteFile(filepath.Join(env.dst, "a.txt"), []byte("old-a"), 0o644)
 	h.focus("a.txt")
 	h.press("c")
-	if !h.dialogKind(dlgConfirm) || !strings.Contains(h.view(), `Copy file "a.txt"?`) {
+	h.waitDialog(dlgConfirm)
+	if !strings.Contains(h.view(), `Copy file "a.txt"?`) {
 		t.Fatalf("confirm dialog expected:\n%s", h.view())
 	}
 	h.press("enter")
@@ -303,6 +304,7 @@ func TestConflictDefaultSkipAndApplyAll(t *testing.T) {
 	h.focus("a.txt")
 	h.press("space", "space") // select a.txt and b.txt
 	h.press("c")
+	h.waitDialog(dlgConfirm)
 	if !strings.Contains(h.view(), "Copy 2 files?") {
 		t.Fatalf("expected count in title:\n%s", h.view())
 	}
@@ -330,7 +332,9 @@ func TestCancelAtConflictIsNotReportedAsSuccess(t *testing.T) {
 	h, env := newOpsApp(t, nil, nil)
 	os.WriteFile(filepath.Join(env.dst, "a.txt"), []byte("old"), 0o644)
 	h.focus("a.txt")
-	h.press("space", "space", "c", "enter")
+	h.press("space", "space", "c")
+	h.waitDialog(dlgConfirm)
+	h.press("enter")
 	h.waitDialog(dlgConflict)
 	h.press("esc")
 	h.idle()
@@ -352,10 +356,12 @@ func TestCopyIntoItselfRejectedWithMessage(t *testing.T) {
 	h.until("right panel", func() bool { return strings.HasSuffix(h.a.Panel(1).Path(), "deep") })
 	h.focus("sub")
 	h.press("c")
+	h.idle()
 	if h.a.dialog != nil || !strings.Contains(h.status(), "into itself") || !h.a.statusErr {
 		t.Fatalf("status %q dialog %v", h.status(), h.a.dialog != nil)
 	}
 	h.press("m")
+	h.idle()
 	if h.a.dialog != nil || !strings.Contains(h.status(), "into itself") {
 		t.Fatalf("move status %q", h.status())
 	}
@@ -365,6 +371,7 @@ func TestMoveFolderAndRefresh(t *testing.T) {
 	h, env := newOpsApp(t, nil, nil)
 	h.focus("sub")
 	h.press("m")
+	h.waitDialog(dlgConfirm)
 	if !strings.Contains(h.view(), `Move folder "sub"?`) {
 		t.Fatalf("%s", h.view())
 	}
@@ -385,7 +392,7 @@ func TestMoveFolderAndRefresh(t *testing.T) {
 	}
 }
 
-func TestCopyPartialFailureShowsReport(t *testing.T) {
+func TestCopyPartialFailureIsRetainedInTaskView(t *testing.T) {
 	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
 		t.Skip("needs unix permissions")
 	}
@@ -394,24 +401,24 @@ func TestCopyPartialFailureShowsReport(t *testing.T) {
 	os.Chmod(locked, 0)
 	defer os.Chmod(locked, 0o644)
 	h.focus("a.txt")
-	h.press("space", "space", "c", "enter")
+	h.press("space", "space", "c")
+	h.waitDialog(dlgConfirm)
+	h.press("enter")
 	h.idle()
-	if !h.dialogKind(dlgReport) || h.a.statusLevel != lvlErr {
-		t.Fatalf("report expected, status %q", h.status())
-	}
-	v := h.view()
-	for _, want := range []string{"finished with problems", "Failed (1)", "b.txt", "permission denied"} {
-		if !strings.Contains(v, want) {
-			t.Errorf("report lacks %q:\n%s", want, v)
-		}
+	if h.a.dialog != nil || h.a.statusLevel != lvlErr {
+		t.Fatalf("background failure should not interrupt browsing, status %q", h.status())
 	}
 	if !strings.Contains(h.status(), "Copied 1 file, 1 error") {
 		t.Fatalf("status %q", h.status())
 	}
-	h.press("enter")
-	if h.a.dialog != nil {
-		t.Fatal("report should close")
+	h.press("t")
+	v := h.view()
+	for _, want := range []string{"PARTIAL", "Copied 1 file, 1 error", "b.txt", "permission denied", "From:", "To:"} {
+		if !strings.Contains(v, want) {
+			t.Errorf("task view lacks %q:\n%s", want, v)
+		}
 	}
+	h.press("esc")
 	if fileExists(filepath.Join(env.dst, "b.txt")) || readFile(t, filepath.Join(env.dst, "a.txt")) != "new-a" {
 		t.Fatal("wrong destination state")
 	}
@@ -540,17 +547,18 @@ func TestDeletePartialFailureReport(t *testing.T) {
 	h.typeText("delete", false)
 	h.press("enter")
 	h.idle()
-	if !h.dialogKind(dlgReport) {
-		t.Fatalf("report expected; status %q", h.status())
-	}
-	v := h.view()
-	for _, want := range []string{"Delete finished with problems", "Could not delete (1)", "c.txt", "permission denied"} {
-		if !strings.Contains(v, want) {
-			t.Errorf("report lacks %q:\n%s", want, v)
-		}
+	if h.a.dialog != nil {
+		t.Fatalf("background delete failure should not replace the UI; status %q", h.status())
 	}
 	if st := h.status(); !strings.Contains(st, "Delete incomplete: 1 of 2 items removed, 1 error") {
 		t.Fatalf("status %q", st)
+	}
+	h.press("t")
+	v := h.view()
+	for _, want := range []string{"PARTIAL", "Delete incomplete: 1 of 2 items removed, 1 error", "c.txt", "permission denied"} {
+		if !strings.Contains(v, want) {
+			t.Errorf("task view lacks %q:\n%s", want, v)
+		}
 	}
 	if fileExists(filepath.Join(env.src, "a.txt")) || !fileExists(filepath.Join(deep, "c.txt")) {
 		t.Fatal("unexpected filesystem state")
@@ -681,34 +689,202 @@ func TestEditMissingEditor(t *testing.T) {
 	}
 }
 
-// ---- progress / busy state ----------------------------------------------------------
+// ---- background task view / responsiveness ---------------------------------------
 
-func TestBusyStateIgnoresKeysAndCancels(t *testing.T) {
+func TestLowSpaceDeclineIsRetainedAsCanceledTask(t *testing.T) {
 	h, _ := newOpsApp(t, nil, nil)
-	canceled := false
-	h.a.op = &opSession{id: 99, title: "Copying", cancel: func() { canceled = true }, events: make(chan tea.Msg, 1),
-		prog: ops.Progress{Phase: "copying", Current: "/x/big.iso", DoneItems: 3, TotalItems: 10, DoneBytes: 50 << 20, TotalBytes: 200 << 20, Errors: 1, LastError: "copy /x/y: permission denied"}}
-	h.a.op.visible = true
+	s, ctx := h.a.newSession("Copying", 0, nil)
+	s.kind = ops.Copy
+	t.Cleanup(s.cancel)
+
+	decision := make(chan bool, 1)
+	go func() { decision <- h.a.hooks(ctx, s).LowSpace(1024, 128) }()
+	select {
+	case msg := <-s.events:
+		if _, ok := h.a.handleOpMsg(msg); !ok {
+			t.Fatalf("low-space event was not recognized: %T", msg)
+		}
+		h.a.showNextTaskPrompt()
+	case <-time.After(time.Second):
+		t.Fatal("low-space hook did not request a decision")
+	}
+	h.press("esc")
+	select {
+	case continued := <-decision:
+		if continued || !s.lowSpaceDeclined {
+			t.Fatal("declining the free-space warning should stop the operation")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("low-space hook did not resume after the user declined")
+	}
+
+	cmd := h.a.finishTransfer(s, ops.Result{Kind: ops.Copy, Fatal: errors.New("not enough free space")})
+	h.exec(cmd)
+	h.settle()
+	if s.state != taskCanceled || !strings.Contains(s.summary, "cancelled") || h.a.statusLevel != lvlWarn {
+		t.Fatalf("declined low-space warning should be a canceled task: state=%v summary=%q level=%v", s.state, s.summary, h.a.statusLevel)
+	}
+	h.press("t")
 	v := h.view()
-	for _, want := range []string{"Copying…", "25%", "3 / 10 items", "50 M / 200 M", "/x/big.iso", "1 error so far", "Esc cancel"} {
+	if !strings.Contains(v, "CANCELED") || !strings.Contains(v, "not enough free space") {
+		t.Fatalf("task view lacks the canceled low-space outcome:\n%s", v)
+	}
+}
+
+func TestBackgroundTasksKeepUIResponsiveAndCancelSelectedTask(t *testing.T) {
+	h, _ := newOpsApp(t, nil, nil)
+	cancelled := [2]bool{}
+	first := &opSession{id: 901, title: "Copying", state: taskRunning, cancel: func() { cancelled[0] = true },
+		events: make(chan tea.Msg, 1), from: []string{"/src/first"}, to: "/dst"}
+	second := &opSession{id: 902, title: "Moving", state: taskRunning, cancel: func() { cancelled[1] = true },
+		events: make(chan tea.Msg, 1), from: []string{"/src/big.iso"}, to: "/dst",
+		prog: ops.Progress{Phase: "moving", Current: "/src/big.iso", DoneItems: 3, TotalItems: 10, DoneBytes: 50 << 20, TotalBytes: 200 << 20, Errors: 1, LastError: "move /src/old: permission denied"}}
+	h.a.tasks.add(first)
+	h.a.tasks.add(second)
+
+	// Background work must not lock normal panel navigation.
+	h.a.Update(key("tab"))
+	h.a.Update(key("j"))
+	if h.a.Active() != 1 || h.a.quitting {
+		t.Fatal("panel switching/navigation should continue while tasks run")
+	}
+	// Quitting is guarded until work has completed or been cancelled.
+	h.a.Update(key("q"))
+	if !h.a.tasks.showing || h.a.quitting {
+		t.Fatal("q should open the task view instead of abandoning active work")
+	}
+	v := h.view()
+	for _, want := range []string{"Background tasks", "RUNNING", "25%", "/src/big.iso", "/dst", "permission denied"} {
 		if !strings.Contains(v, want) {
-			t.Errorf("progress lacks %q:\n%s", want, v)
+			t.Errorf("task view lacks %q:\n%s", want, v)
 		}
 	}
-	active := h.a.Active()
-	h.a.Update(key("tab"))
-	h.a.Update(key("q"))
-	if h.a.Active() != active || h.a.quitting {
-		t.Fatal("keys must be ignored while an operation runs")
+	// The newest task is selected; cancellation does not affect its sibling.
+	h.a.Update(key("c"))
+	if !cancelled[1] || cancelled[0] || second.state != taskCanceling || h.a.quitting {
+		t.Fatal("cancel should stop only the selected task and keep the app open")
 	}
-	h.a.Update(key("ctrl+c"))
-	if !canceled || h.a.quitting || !h.a.op.canceling {
-		t.Fatal("ctrl+c should cancel the operation, not quit")
+	if !strings.Contains(h.view(), "STOPPING") || !strings.Contains(h.status(), "Stopping") {
+		t.Fatal("stopping state should remain visible in the task view")
 	}
-	if !strings.Contains(h.view(), "Stopping safely") {
-		t.Fatal("cancelling state not shown")
+	h.a.finishTask(first, taskCompleted, "Copied 1 file")
+	h.a.finishTask(second, taskCanceled, "Move cancelled")
+	if h.a.busy() {
+		t.Fatal("completed history must not count as active work")
 	}
-	h.a.op = nil
+	h.a.Update(key("x"))
+	if len(h.a.tasks.order) != 0 {
+		t.Fatal("x should clear retained completed task history")
+	}
+}
+
+func TestConcurrentTasksSerializeConflictPromptsAndRetainResults(t *testing.T) {
+	h, _ := newOpsApp(t, nil, nil)
+	s1, ctx1 := h.a.newSession("Copying", 0, nil)
+	s2, ctx2 := h.a.newSession("Moving", 0, nil)
+	t.Cleanup(func() {
+		if s1.cancel != nil {
+			s1.cancel()
+		}
+		if s2.cancel != nil {
+			s2.cancel()
+		}
+	})
+	h.exec(h.a.startCmds(s1))
+	h.exec(h.a.startCmds(s2))
+	decisions := []chan ops.Decision{make(chan ops.Decision, 1), make(chan ops.Decision, 1)}
+	go func() {
+		decisions[0] <- h.a.hooks(ctx1, s1).Conflict(ops.Conflict{Src: "/src/one", Dst: "/dst/one"})
+	}()
+	go func() {
+		decisions[1] <- h.a.hooks(ctx2, s2).Conflict(ops.Conflict{Src: "/src/two", Dst: "/dst/two"})
+	}()
+	h.until("two concurrent conflict decisions", func() bool {
+		return h.a.dialog != nil && h.a.dialog.kind == dlgConflict && h.a.tasks.activePrompt != 0 && len(h.a.tasks.prompts) == 1
+	})
+	firstPrompt := h.a.tasks.activePrompt
+	if firstPrompt != s1.id && firstPrompt != s2.id {
+		t.Fatalf("unexpected active task prompt #%d", firstPrompt)
+	}
+	if h.a.tasks.activeCount() != 2 {
+		t.Fatalf("both tasks should remain active, got %d", h.a.tasks.activeCount())
+	}
+
+	h.press("s") // safely skip the first task's conflict
+	h.until("second conflict prompt", func() bool {
+		return h.a.dialog != nil && h.a.dialog.kind == dlgConflict && h.a.tasks.activePrompt != firstPrompt
+	})
+	h.press("s") // and the other task's prompt
+	for i := range decisions {
+		select {
+		case d := <-decisions[i]:
+			if d.Action != ops.Skip {
+				t.Fatalf("task %d decision = %v, want Skip", i+1, d.Action)
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatalf("task %d conflict hook did not resume", i+1)
+		}
+	}
+
+	// Completion events are independent: neither task replaces the other's
+	// record, and finished results remain available in the task view.
+	s1.events <- opTransferDoneMsg{id: s1.id, res: ops.Result{Kind: ops.Copy, Files: 1}}
+	s2.events <- opTransferDoneMsg{id: s2.id, res: ops.Result{Kind: ops.Move, Files: 1}}
+	h.until("both tasks to finish", func() bool { return !s1.active() && !s2.active() })
+	if len(h.a.tasks.order) != 2 || h.a.tasks.activeCount() != 0 {
+		t.Fatalf("task history lost a result: order=%v active=%d", h.a.tasks.order, h.a.tasks.activeCount())
+	}
+	h.a.openTasks()
+	v := h.view()
+	if !strings.Contains(v, "DONE") || !strings.Contains(v, "Moved 1 file") {
+		t.Fatalf("completed tasks should remain visible:\n%s", v)
+	}
+}
+
+func TestTaskRefreshUsesCapturedPanelPaths(t *testing.T) {
+	h, env := newOpsApp(t, nil, nil)
+	s, _ := h.a.newSession("Copying", 0, []string{filepath.Join(env.src, "a.txt")})
+	s.kind, s.to = ops.Copy, env.dst
+	h.exec(h.a.startCmds(s))
+
+	// While the copy runs, browsing remains available and the source panel
+	// can leave the directory captured by the task.
+	elsewhere := filepath.Join(env.root, "elsewhere")
+	if err := os.Mkdir(elsewhere, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	h.exec(h.a.panels[0].Load(elsewhere, "", panel.LoadNavigate))
+	h.until("source panel navigation", func() bool { return h.a.panels[0].Path() == elsewhere && !h.a.panels[0].Loading() })
+	if err := os.WriteFile(filepath.Join(env.dst, "arrived.txt"), []byte("done"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s.events <- opTransferDoneMsg{id: s.id, res: ops.Result{Kind: ops.Copy, Files: 1}}
+	h.until("destination refresh without resetting the source panel", func() bool {
+		return !s.active() && panelHas(h.a.panels[1], "arrived.txt")
+	})
+	if h.a.panels[0].Path() != elsewhere || h.a.panels[0].Loading() {
+		t.Fatalf("completion refreshed a panel that no longer shows the source: path=%q loading=%v", h.a.panels[0].Path(), h.a.panels[0].Loading())
+	}
+}
+
+func TestBackgroundCompletionPreservesNewPanelSelection(t *testing.T) {
+	h, env := newOpsApp(t, nil, nil)
+	h.focus("a.txt")
+	s, _ := h.a.newSession("Copying", 0, []string{filepath.Join(env.src, "a.txt")})
+	s.kind, s.to = ops.Copy, env.dst
+	h.exec(h.a.startCmds(s))
+
+	// A selection made while the background copy is running belongs to the
+	// current browsing session and must not be cleared by its completion.
+	h.a.panels[0].ToggleSelect()
+	if !h.a.panels[0].IsSelected("a.txt") {
+		t.Fatal("test setup: expected a selection made after task start")
+	}
+	s.events <- opTransferDoneMsg{id: s.id, res: ops.Result{Kind: ops.Copy, Files: 1}}
+	h.until("task completion", func() bool { return !s.active() })
+	if !h.a.panels[0].IsSelected("a.txt") {
+		t.Fatal("background completion cleared a selection created after the task started")
+	}
 }
 
 func TestRealCancelDuringLargeCopy(t *testing.T) {
@@ -722,6 +898,7 @@ func TestRealCancelDuringLargeCopy(t *testing.T) {
 	h.press("ctrl+l")
 	h.focus("big")
 	h.press("c")
+	h.waitDialog(dlgConfirm)
 	h.send(key("enter"))                 // starts the copy
 	h.send(tea.KeyMsg{Type: tea.KeyEsc}) // cancel immediately, before it can finish
 	h.idle()
@@ -746,21 +923,22 @@ func TestRealCancelDuringLargeCopy(t *testing.T) {
 
 func TestDeletePlanningCanBeCancelled(t *testing.T) {
 	h, env := newOpsApp(t, nil, nil)
-	h.focus("a.txt")
-	h.a.Update(key("d")) // planning started, result not yet processed
-	if h.a.planning == nil {
-		t.Fatal("planning expected")
-	}
+	path := filepath.Join(env.src, "a.txt")
+	s, _ := h.a.newSession("Checking delete", 0, []string{path})
+	s.isDelete, s.state = true, taskPlanning
 	h.a.Update(tea.KeyMsg{Type: tea.KeyEsc})
-	if h.a.busy() || !strings.Contains(h.status(), "nothing was deleted") {
-		t.Fatal("esc should cancel planning")
+	if !s.canceling || !h.a.busy() {
+		t.Fatal("Esc should cancel the active delete scan without locking the UI")
 	}
-	// a late plan result is ignored
-	h.a.Update(deletePlannedMsg{id: h.a.opSeq, plan: ops.DeletePlan{Paths: []string{filepath.Join(env.src, "a.txt")}}})
+	h.a.Update(deletePlannedMsg{id: s.id, err: context.Canceled})
+	if s.active() || h.a.busy() || !strings.Contains(h.status(), "nothing was deleted") {
+		t.Fatal("canceled scan should finish as a retained task")
+	}
+	// A late plan result must not resurrect the cancelled confirmation.
+	h.a.Update(deletePlannedMsg{id: s.id, plan: ops.DeletePlan{Paths: []string{path}}})
 	if h.a.dialog != nil {
 		t.Fatal("stale plan opened a dialog")
 	}
-	_ = context.Background
 }
 
 // ---- layout ---------------------------------------------------------------------------
@@ -771,7 +949,7 @@ func TestFooterAndHelpShowOperationKeys(t *testing.T) {
 	h.focus("a.txt") // the hints follow the cursor: file operations need a target
 	v := h.view()
 	footer := v[strings.LastIndex(v, "\n")+1:]
-	for _, want := range []string{"copy", "move", "rename", "delete", "edit", "select", "help"} {
+	for _, want := range []string{"copy", "move", "rename", "delete", "edit", "select", "tasks", "help"} {
 		if !strings.Contains(footer, want) {
 			t.Errorf("footer lacks %q: %s", want, footer)
 		}
@@ -785,7 +963,7 @@ func TestFooterAndHelpShowOperationKeys(t *testing.T) {
 	h.send(tea.WindowSizeMsg{Width: 80, Height: 24})
 	h.press("?")
 	v = h.view()
-	for _, want := range []string{"Navigation", "File operations", "c/F5", "m/F6", "r/F2", "d/F8/Del", "e/F4", "Esc", "^L", "quit", "close help"} {
+	for _, want := range []string{"Navigation", "File operations", "c/F5", "m/F6", "r/F2", "d/F8/Del", "e/F4", "background tasks", "Esc", "^L", "quit", "close help"} {
 		if !strings.Contains(v, want) {
 			t.Errorf("help at 80x24 lacks %q:\n%s", want, v)
 		}

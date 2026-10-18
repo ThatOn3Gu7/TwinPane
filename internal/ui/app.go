@@ -101,14 +101,13 @@ type App struct {
 	showHelp      bool
 	quitting      bool
 
-	// phase 2: file operations
-	dialog   *dialog
-	op       *opSession
-	planning *planState
-	opSeq    int
-	trasher  ops.Trasher
-	edEnv    editor.Env
-	execFn   ExecFunc
+	// phase 2 / 12: file operations and retained background task history
+	dialog  *dialog
+	tasks   taskManager
+	opSeq   int
+	trasher ops.Trasher
+	edEnv   editor.Env
+	execFn  ExecFunc
 
 	// phase 3
 	editing    bool      // the external editor owns the terminal
@@ -155,7 +154,7 @@ func New(opts Options) *App {
 	if opts.StartDir == "" {
 		opts.StartDir = fsys.HomeDir()
 	}
-	a := &App{opts: opts, keys: DefaultKeys(), theme: theme.Default()}
+	a := &App{opts: opts, keys: DefaultKeys(), theme: theme.Default(), tasks: newTaskManager()}
 	a.trasher = opts.Trasher
 	if a.trasher == nil {
 		a.trasher = ops.DefaultTrasher()
@@ -224,7 +223,7 @@ func (a *App) setStatusLevel(msg string, lvl int) {
 	a.status, a.statusErr, a.statusLevel = msg, lvl == lvlErr, lvl
 }
 
-// Busy reports whether a file operation is running (used by tests).
+// Busy reports whether any background file operation is still active.
 func (a *App) Busy() bool { return a.busy() }
 
 // DialogOpen reports whether a modal dialog is shown (used by tests).
@@ -233,6 +232,9 @@ func (a *App) DialogOpen() bool { return a.dialog != nil }
 // Update handles messages.
 func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	m, cmd := a.update(msg)
+	if !a.quitting {
+		a.showNextTaskPrompt()
+	}
 	if a.dialog != a.seenDialog {
 		// a dialog opened (or was replaced): mouse clicks on it are ignored
 		// for a moment so a double tap cannot press one of its buttons
@@ -348,8 +350,17 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if a.dialog != nil && a.dialog.input != nil {
 			return a, a.dialogKey(msg)
 		}
+		if a.dialog == nil && a.tasks.showing {
+			return a, a.taskViewKey(msg)
+		}
+		if a.dialog == nil && msg.String() == "ctrl+c" {
+			if s := a.tasks.latestActive(); s != nil {
+				a.cancelTask(s.id)
+				return a, nil
+			}
+		}
 		// So does the help screen's filter field while it has the focus.
-		if a.showHelp && a.help.typing && a.dialog == nil && !a.busy() && msg.String() != "ctrl+c" {
+		if a.showHelp && a.help.typing && a.dialog == nil && msg.String() != "ctrl+c" {
 			return a, a.helpKey(msg)
 		}
 		// Overlays with their own key handling (search results, bulk
@@ -358,7 +369,7 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if a.dialog == nil && a.props != nil && !a.showHelp {
 			return a, a.propsKey(msg)
 		}
-		if a.dialog == nil && a.viewer != nil && !a.showHelp && !a.busy() {
+		if a.dialog == nil && a.viewer != nil && !a.showHelp {
 			return a, a.viewerKey(msg)
 		}
 		if a.dialog == nil && a.search != nil {
@@ -408,25 +419,33 @@ type uiState struct {
 	dialog                                  *dialog
 	search                                  *searchView
 	bulk                                    *bulkRename
+	tasks                                   bool
 	busy, quitting, editing, help, inputBox bool
 	viewer                                  *viewer
 	props                                   *propsView
 }
 
 func (a *App) uiState() uiState {
-	return uiState{a.dialog, a.search, a.bulk, a.busy(), a.quitting, a.editing, a.showHelp,
-		a.dialog != nil && a.dialog.input != nil, a.viewer, a.props}
+	return uiState{
+		dialog: a.dialog, search: a.search, bulk: a.bulk, tasks: a.tasks.showing,
+		busy: a.busy(), quitting: a.quitting, editing: a.editing, help: a.showHelp,
+		inputBox: a.dialog != nil && a.dialog.input != nil, viewer: a.viewer, props: a.props,
+	}
 }
 
 func (a *App) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	k := a.keys
-	if a.dialog != nil && (msg.String() != "ctrl+c" || a.op != nil) {
+	if a.dialog != nil {
 		return a, a.dialogKey(msg)
 	}
-	if a.busy() {
-		return a, a.busyKey(msg)
+	if a.tasks.showing {
+		return a, a.taskViewKey(msg)
 	}
 	if msg.String() == "ctrl+c" {
+		if s := a.tasks.latestActive(); s != nil {
+			a.cancelTask(s.id)
+			return a, nil
+		}
 		a.quitting = true
 		return a, tea.Quit
 	}
@@ -443,7 +462,14 @@ func (a *App) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 	switch {
+	case k.Tasks.Matches(msg):
+		a.openTasks()
 	case k.Quit.Matches(msg):
+		if s := a.tasks.latestActive(); s != nil {
+			a.openTasks()
+			a.setStatusLevel("Background operations are still running; wait or cancel them in the task view before quitting", lvlWarn)
+			return a, nil
+		}
 		a.quitting = true
 		return a, tea.Quit
 	case k.Help.Matches(msg):
@@ -563,6 +589,10 @@ func (a *App) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if p.Loading() && p.CancelLoad() {
 			return a, nil // the cancelled load reports itself
 		}
+		if s := a.tasks.latestActive(); s != nil {
+			a.cancelTask(s.id)
+			return a, nil
+		}
 		if p.InArchive() {
 			return a, p.LeaveArchive()
 		}
@@ -599,6 +629,8 @@ func (a *App) View() string {
 	switch {
 	case a.showHelp:
 		body = a.helpView(a.height - 3)
+	case a.tasks.showing:
+		body = a.taskViewRender(a.height - 3)
 	case a.viewer != nil:
 		body = a.viewerRender(a.height - 3)
 	case a.search != nil:
@@ -614,11 +646,8 @@ func (a *App) View() string {
 	if a.props != nil && !a.showHelp {
 		screen = overlay(screen, a.renderProps(), a.width, a.height, a.theme.Backdrop)
 	}
-	switch {
-	case a.dialog != nil:
+	if a.dialog != nil {
 		return overlay(screen, a.renderDialog(a.dialog), a.width, a.height, a.theme.Backdrop)
-	case a.op != nil && a.op.visible:
-		return overlay(screen, a.renderProgress(a.op), a.width, a.height, a.theme.Backdrop)
 	}
 	return screen
 }
@@ -663,8 +692,8 @@ func (a *App) statusView() string {
 		st = a.theme.StatusWarn
 		text = "! " + text
 	}
-	if a.op != nil && text == "" {
-		text = a.op.title + "… (Esc to cancel)"
+	if text == "" {
+		text = a.taskCountText()
 	}
 	if a.viewer != nil && text == "" {
 		text = a.viewerPosition()

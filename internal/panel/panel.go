@@ -269,6 +269,16 @@ func (p *Panel) Selection() []fsys.Entry {
 	return out
 }
 
+// SelectedNames returns a copy of the selection set, including names that
+// may currently be hidden or absent from the displayed listing.
+func (p *Panel) SelectedNames() []string {
+	names := make([]string, 0, len(p.sel.m))
+	for name := range p.sel.m {
+		names = append(names, name)
+	}
+	return names
+}
+
 // Targets returns the entries a file operation should act on: the selection
 // if there is one, otherwise the entry under the cursor (never "..").
 func (p *Panel) Targets() []fsys.Entry {

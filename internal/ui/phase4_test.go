@@ -295,11 +295,18 @@ func TestHintBarPanelErrorAndBusy(t *testing.T) {
 	if f := h.footer(); !strings.Contains(f, "⌫  parent") || !strings.Contains(f, "^L  retry") || strings.Contains(f, "copy") {
 		t.Fatalf("error hints: %q", f)
 	}
-	h.a.planning = &planState{cancel: func() {}}
-	if f := h.footer(); !strings.Contains(f, "Esc  cancel operation") || strings.Contains(f, "help") {
-		t.Fatalf("busy hints: %q", f)
+	task := &opSession{id: 990, title: "Checking delete", state: taskPlanning, events: make(chan tea.Msg, 1)}
+	h.a.tasks.add(task)
+	if f := h.footer(); !strings.Contains(f, "tasks") || !strings.Contains(f, "retry") {
+		t.Fatalf("background work should keep normal error-panel hints: %q", f)
 	}
-	h.a.planning = nil
+	h.a.tasks.showing = true
+	if f := h.footer(); !strings.Contains(f, "cancel selected") || !strings.Contains(f, "clear finished") {
+		t.Fatalf("task view hints: %q", f)
+	}
+	h.a.tasks.showing = false
+	h.a.finishTask(task, taskCanceled, "cancelled")
+	h.a.tasks.clearFinished()
 }
 
 func TestHelpMatchesBindings(t *testing.T) {
@@ -544,6 +551,7 @@ func TestHintBarTapsActAsKeys(t *testing.T) {
 	h, env, clock := p4App(t, nil)
 	h.focus("a.txt")
 	h.tapHint("c")
+	h.waitDialog(dlgConfirm)
 	if !h.dialogKind(dlgConfirm) {
 		t.Fatal("tapping 'c copy' must open the copy confirmation")
 	}

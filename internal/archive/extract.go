@@ -120,6 +120,10 @@ func (r *reporter) report(force bool) {
 //     0644 / 0755 (no set-id bits, no world-writable files).
 func Extract(ctx context.Context, req ExtractRequest, hooks ops.Hooks) ExtractResult {
 	res := ExtractResult{Dest: req.DestDir}
+	if ctx.Err() != nil {
+		res.Canceled = true
+		return res
+	}
 	rep := &reporter{hooks: hooks, p: ops.Progress{Phase: "scanning"}}
 	dest, err := prepareDest(req.DestDir)
 	res.Dest = dest

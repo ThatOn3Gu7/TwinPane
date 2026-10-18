@@ -78,7 +78,7 @@ func (a *App) beginZip() tea.Cmd {
 		st.base = targets[0].Name
 		if !targets[0].IsDir {
 			st.base = stem(st.base)
-			if fi, err := os.Stat(targets[0].Path); err == nil && fi.Mode().IsRegular() {
+			if targets[0].Mode.IsRegular() {
 				st.sel.SingleFile = true
 				st.single = targets[0].Name
 			}
@@ -183,10 +183,6 @@ func (a *App) beginZip() tea.Cmd {
 			a.dialog.errLine = errText(err)
 			return nil
 		}
-		if di, err := os.Stat(filepath.Dir(out)); err != nil || !di.IsDir() {
-			a.dialog.errLine = "the folder " + filepath.Dir(out) + " does not exist"
-			return nil
-		}
 		for _, s := range sources {
 			if out == s {
 				a.dialog.errLine = "the new file cannot replace one of the items being added"
@@ -285,12 +281,14 @@ func (a *App) zipOverwriteDialog(srcIdx int, req compress.Request, size int64) {
 }
 
 func (a *App) startZip(srcIdx int, req compress.Request) tea.Cmd {
+	req.Sources = append([]string(nil), req.Sources...)
 	f, _ := compress.Lookup(req.Format)
 	title := "Creating " + f.Name
 	if f.Kind == compress.Single {
 		title = "Compressing (" + f.Name + ")"
 	}
-	s, ctx := a.newSession(title, srcIdx, nil)
+	s, ctx := a.newSession(title, srcIdx, req.Sources)
+	s.to = req.Output
 	h := a.hooks(ctx, s)
 	go func() {
 		res := compress.Create(ctx, req, h)
@@ -300,42 +298,34 @@ func (a *App) startZip(srcIdx int, req compress.Request) tea.Cmd {
 }
 
 func (a *App) finishZip(s *opSession, res compress.Result) tea.Cmd {
-	a.op = nil
-	a.dialog = nil
 	focus := ""
+	var cmd tea.Cmd
 	if res.Created() {
 		focus = filepath.Base(res.Output)
+		cmd = a.refreshPanelsAt(filepath.Dir(res.Output), focus)
 	}
-	cmd := a.refreshReal(filepath.Dir(res.Output), focus)
 	summary := res.Summary()
-	what := res.Format.Name + " archive"
-	if res.Format.Kind == compress.Single {
-		what = res.Format.Name + " file"
+	details := appendTaskDetail(nil, "Stopped", res.Fatal)
+	details = append(details, itemErrorDetails(res.Errors)...)
+	for _, excluded := range res.Excluded {
+		details = append(details, "Not included: "+excluded)
 	}
+	state := taskOutcome(res.Canceled, res.Fatal, len(res.Errors), res.Created() && (res.Files+res.Dirs+res.Links > 0))
 	switch {
 	case res.OK():
 		a.setStatusLevel(summary, lvlOK)
-		if src := a.panels[s.srcPanel]; !src.InArchive() {
+		if src := a.panels[s.srcPanel]; !src.InArchive() && a.sourceSelectionUnchanged(s) {
 			src.ClearSelection()
 		}
 	case res.Canceled:
 		a.setStatusLevel(summary, lvlWarn)
 	default:
-		lvl := lvlErr
-		title := what + " not created"
+		level := lvlErr
 		if res.Created() {
-			lvl, title = lvlWarn, what+" created with items left out"
+			level = lvlWarn
 		}
-		a.setStatusLevel(summary, lvl)
-		body := []dline{text(summary)}
-		if res.Fatal != nil {
-			body = append(body, blank(), warn("Stopped: "+errText(res.Fatal)), hint("Nothing was written."))
-		}
-		if len(res.Errors) > 0 {
-			body = append(body, blank(), warn(fmt.Sprintf("Left out (%d):", len(res.Errors))))
-			body = append(body, itemLines(res.Errors)...)
-		}
-		a.showReport(title, body)
+		a.setStatusLevel(summary, level)
 	}
+	a.finishTask(s, state, summary, details...)
 	return cmd
 }
