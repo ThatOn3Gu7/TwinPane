@@ -405,15 +405,19 @@ func (a *App) beginMkdir() tea.Cmd {
 	d.input, d.inputLabel = newLineInput(""), "Folder name:"
 	d.footer = "Enter create · Esc cancel"
 	d.onSubmit = func(a *App, v string) tea.Cmd {
-		if err := cloud.CheckName(v); err != nil {
-			a.dialog.errLine = err.Error()
-			return nil
-		}
 		if p.InRemote() {
+			if err := cloud.CheckName(v); err != nil {
+				a.dialog.errLine = err.Error()
+				return nil
+			}
 			a.dialog = nil
 			return a.startCloudOp(idx, "Creating folder", v, "Created folder", func(ctx context.Context) error {
 				return p.Source().Client.Mkdir(ctx, where, v)
 			})
+		}
+		if err := ops.ValidateName(v); err != nil {
+			a.dialog.errLine = errText(err)
+			return nil
 		}
 		target := filepath.Join(p.Path(), v)
 		if _, err := os.Lstat(target); err == nil {

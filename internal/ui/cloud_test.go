@@ -230,6 +230,44 @@ func TestCloudTransfersBothWays(t *testing.T) { // REAL rclone
 	}
 }
 
+// Local folder creation validates names like rename does (control
+// characters, overlong names): refused in the dialog, nothing created.
+// No rclone is involved: this is the local path of the same dialog.
+func TestLocalMkdirNameValidation(t *testing.T) {
+	h, env := newOpsApp(t, nil, nil)
+	h.press("n")
+	if !h.dialogKind(dlgMkdir) {
+		t.Fatalf("new folder prompt:\n%s", h.view())
+	}
+	// a name with a control character, as a hostile paste could carry it
+	h.a.dialog.input = newLineInput("bad\x01name")
+	h.press("enter")
+	if !h.dialogKind(dlgMkdir) {
+		t.Fatalf("a name with a control character was accepted and the dialog closed")
+	}
+	if !strings.Contains(h.a.dialog.errLine, "control") {
+		t.Fatalf("a name with a control character must be refused: %q", h.a.dialog.errLine)
+	}
+	if ents, _ := os.ReadDir(env.src); len(ents) != 3 { // a.txt b.txt sub
+		t.Fatalf("nothing may be created: %v", ents)
+	}
+	// an overlong name
+	h.press("ctrl+u")
+	h.typeText(strings.Repeat("a", 256), false)
+	h.press("enter")
+	if !h.dialogKind(dlgMkdir) || !strings.Contains(h.a.dialog.errLine, "255") {
+		t.Fatalf("an overlong name must be refused: %q", h.a.dialog.errLine)
+	}
+	// a valid name still works
+	h.press("ctrl+u")
+	h.typeText("New Folder #1", false)
+	h.press("enter")
+	h.idle()
+	if fi, err := os.Stat(filepath.Join(env.src, "New Folder #1")); err != nil || !fi.IsDir() {
+		t.Fatalf("mkdir locally: %v (status %q)", err, h.status())
+	}
+}
+
 func TestCloudMkdirRenameDelete(t *testing.T) { // REAL rclone
 	h, env := newCloudApp(t)
 	h.openRemote("box")
