@@ -248,8 +248,9 @@ level, and the destination path can be edited:
   as for copies. 7-Zip is started directly, without a shell (file names are
   passed after `--`, with `-spd` so `*`, `?` and `@` stay literal), and
   cancelling stops its whole process group.
-- Only ZIP archives can be **browsed and extracted** by TwinPane. The other
-  formats can be created but not opened.
+- Only ZIP archives can be **browsed** and extracted entry by entry. The
+  other formats can be created and extracted as a whole (`x`, since
+  v0.8.0), never browsed or partially extracted.
 
 #### Bookmarks (`B` add, `b` list)
 
@@ -1131,8 +1132,9 @@ including the end-to-end test scripts, are in
 - Properties: no recursive folder size (by design: storage analysis is out
   of scope). No chown/chgrp, and no ACLs or extended attributes. Permissions
   apply to one item at a time.
-- Compression: only ZIP archives can be browsed/extracted; the other formats
-  are create-only. 7Z needs an installed 7-Zip; creating and extracting 7Z
+- Compression: only ZIP archives can be browsed; the other formats can be
+  created and extracted as a whole, never browsed or extracted partially.
+  7Z needs an installed 7-Zip; creating and extracting 7Z
   were tested on Linux x86_64 with 7-Zip 21.07, 22.01, 23.01, 25.01, 26.04
   and p7zip 16.02 (not with Termux's `7zip` package on a phone). XZ has a single
   setting (the Go library has no levels). Encryption/passwords and split

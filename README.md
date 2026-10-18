@@ -103,7 +103,10 @@ The [user guide](docs/USER_GUIDE.md) describes every feature in detail.
 - Create archives (`z`): ZIP, TAR, TAR.GZ, TAR.XZ, TAR.ZST, TAR.BZ2, TAR.LZ4,
   and single-file GZIP, XZ, ZSTD, BZIP2 and LZ4, all built in. 7Z needs an
   installed 7-Zip (`7zz`, `7z`, `7za` or `7zr`).
-- Only ZIP archives can be opened; the other formats are create-only.
+- Only ZIP archives can be browsed and extracted entry by entry. TAR,
+  compressed TAR, single compressed files, and 7Z and RAR (with an
+  installed 7-Zip) can be extracted as a whole with `x`, never browsed or
+  partially extracted.
 
 **Viewing, editing and opening**
 - Read-only text viewer (`v`, or `Enter` on a text file) with wrapping, line
@@ -566,10 +569,10 @@ in [CHANGELOG.md](CHANGELOG.md).
 | Built it, but no binary to be found | `make build` writes `./twinpane`; `./build.sh` writes `dist/twinpane-<os>-<arch>` next to `build.sh`, and `dist/` is hidden by editors that hide git-ignored files. See [Where the binaries go](#where-the-binaries-go). |
 | Build: `go.mod requires go >= 1.23` | Update Go (Termux: `pkg upgrade golang`). |
 | `.7z` is marked unavailable | Install 7-Zip (Termux: `pkg install 7zip`). |
-| Cloud (`master`): "rclone is not installed" | Install rclone (Termux: `pkg install rclone`), add a remote with `rclone config`, press `Ctrl+R` again. |
-| Cloud (`master`): "the login has expired or was refused" | Run the `rclone config reconnect NAME:` command shown in the message, then try again. |
-| Cloud (`master`): "the configuration is encrypted" | TwinPane cannot type the rclone config password. Set `RCLONE_CONFIG_PASS` in the shell that starts TwinPane, or use an unencrypted config. |
-| Cloud (`master`): a listing takes long | `Esc` cancels it; the panel stays where it was. |
+| Cloud: "rclone is not installed" | Install rclone (Termux: `pkg install rclone`), add a remote with `rclone config`, press `Ctrl+R` again. |
+| Cloud: "the login has expired or was refused" | Run the `rclone config reconnect NAME:` command shown in the message, then try again. |
+| Cloud: "the configuration is encrypted" | TwinPane cannot type the rclone config password. Set `RCLONE_CONFIG_PASS` in the shell that starts TwinPane, or use an unencrypted config. |
+| Cloud: a listing takes long | `Esc` cancels it; the panel stays where it was. |
 
 The [known limitations](docs/USER_GUIDE.md#known-limitations) list what
 TwinPane does not do.
