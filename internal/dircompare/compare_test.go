@@ -95,6 +95,38 @@ func TestCompareNestedEntriesAndMetadata(t *testing.T) {
 	}
 }
 
+func TestCompareExcludesGitDirectoriesByDefaultIncludingNestedRepositories(t *testing.T) {
+	left, right := t.TempDir(), t.TempDir()
+	writeFile(t, filepath.Join(left, ".git", "config"), "root repository metadata")
+	writeFile(t, filepath.Join(left, "nested", ".git", "HEAD"), "nested repository metadata")
+	writeFile(t, filepath.Join(right, "nested", ".git", "HEAD"), "other nested metadata")
+	writeFile(t, filepath.Join(left, ".gitignore"), "build/\n")
+	writeFile(t, filepath.Join(left, ".github", "workflows", "ci.yml"), "name: test\n")
+
+	result := scan(t, left, right, Options{})
+	for _, entry := range result.Entries {
+		for _, component := range strings.Split(entry.Rel, "/") {
+			if component == ".git" {
+				t.Fatalf("default scan included Git internals: %q", entry.Rel)
+			}
+		}
+	}
+	for _, rel := range []string{".gitignore", ".github", ".github/workflows", ".github/workflows/ci.yml"} {
+		entryAt(t, result, rel)
+	}
+}
+
+func TestCompareCanIncludeRootAndNestedGitDirectories(t *testing.T) {
+	left, right := t.TempDir(), t.TempDir()
+	writeFile(t, filepath.Join(left, ".git", "config"), "root repository metadata")
+	writeFile(t, filepath.Join(left, "nested", ".git", "HEAD"), "nested repository metadata")
+
+	result := scan(t, left, right, Options{IncludeGitDirectories: true})
+	for _, rel := range []string{".git", ".git/config", "nested", "nested/.git", "nested/.git/HEAD"} {
+		entryAt(t, result, rel)
+	}
+}
+
 func TestOptionalContentComparisonFindsSameMetadataDifferentBytes(t *testing.T) {
 	left, right := t.TempDir(), t.TempDir()
 	when := time.Date(2026, 2, 3, 4, 5, 6, 0, time.UTC)

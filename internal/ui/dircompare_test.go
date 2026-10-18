@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ThatOn3Gu7/TwinPane/internal/dircompare"
 	tea "github.com/charmbracelet/bubbletea"
@@ -151,7 +152,129 @@ func TestDirectoryComparisonFitsSmallTerminal(t *testing.T) {
 	h.send(tea.WindowSizeMsg{Width: 30, Height: 7})
 	fitsScreen(t, h, "directory comparison")
 	view := h.view()
-	if !strings.Contains(view, "Directory comparison") || ansi.StringWidth(strings.Split(view, "\n")[3]) != 30 {
-		t.Fatalf("small comparison view is not usable:\n%s", view)
+	if !strings.Contains(view, "D:scan") || !strings.Contains(view, "l/r") || !strings.Contains(view, "plan") || ansi.StringWidth(strings.Split(view, "\n")[3]) != 30 {
+		t.Fatalf("small comparison view is not usable or lacks workflow hints:\n%s", view)
+	}
+}
+
+func visibleHas(c *comparisonView, rel string) bool {
+	for _, entry := range visibleComparisonEntries(c) {
+		if entry.Rel == rel {
+			return true
+		}
+	}
+	return false
+}
+
+func resultHas(c *comparisonView, rel string) bool {
+	if c == nil || c.result == nil {
+		return false
+	}
+	for _, entry := range c.result.Entries {
+		if entry.Rel == rel {
+			return true
+		}
+	}
+	return false
+}
+
+func TestDirectoryComparisonDifferencesFilterHidesMatchesButKeepsProposals(t *testing.T) {
+	h, env := newOpsApp(t, nil, nil)
+	when := time.Date(2026, 6, 7, 8, 9, 10, 0, time.UTC)
+	for _, path := range []string{filepath.Join(env.src, "match.txt"), filepath.Join(env.dst, "match.txt")} {
+		if err := os.WriteFile(path, []byte("same bytes"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chtimes(path, when, when); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	h.press("D")
+	waitComparison(t, h)
+	if !visibleHas(h.a.comparison, "match.txt") {
+		t.Fatal("unfiltered comparison should show matching entries")
+	}
+	allRows := h.a.comparison.result.Totals.Entries
+	h.press("f")
+	if !h.a.comparison.differencesOnly || visibleHas(h.a.comparison, "match.txt") {
+		t.Fatal("differences-only filter should hide a matching metadata row")
+	}
+	if !visibleHas(h.a.comparison, "a.txt") || h.a.comparison.result.Totals.Entries != allRows {
+		t.Fatal("filter should preserve actionable rows and full comparison totals")
+	}
+	view := h.view()
+	if !strings.Contains(view, "f: diff") || !strings.Contains(view, "show all") {
+		t.Fatalf("active filter or its toggle hint is not visible:\n%s", view)
+	}
+
+	h.press("f") // restore all rows
+	h.a.comparison.cursor = comparisonIndex(t, h, "match.txt")
+	h.press("l") // a matching file may still be explicitly proposed for copying
+	h.press("f")
+	if !visibleHas(h.a.comparison, "match.txt") {
+		t.Fatal("differences-only mode must keep an explicitly proposed matching row visible")
+	}
+}
+
+func TestDirectoryComparisonGitToggleRescansAndClearsProposals(t *testing.T) {
+	h, env := newOpsApp(t, nil, nil)
+	for _, path := range []string{
+		filepath.Join(env.src, ".git", "config"),
+		filepath.Join(env.src, "nested", ".git", "HEAD"),
+	} {
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("metadata"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	h.press("D")
+	waitComparison(t, h)
+	if resultHas(h.a.comparison, ".git") || resultHas(h.a.comparison, ".git/config") || resultHas(h.a.comparison, "nested/.git/HEAD") {
+		t.Fatal("Git directories should be excluded by default")
+	}
+	h.a.comparison.cursor = comparisonIndex(t, h, "a.txt")
+	h.press("l")
+	if len(h.a.comparison.choices) != 1 {
+		t.Fatal("expected a proposal before toggling Git metadata")
+	}
+	h.press("g")
+	waitComparison(t, h)
+	if !h.a.comparison.includeGitDirectories {
+		t.Fatal("g should enable Git directory scanning")
+	}
+	if len(h.a.comparison.choices) != 0 {
+		t.Fatal("changing comparison scope must clear prior proposals")
+	}
+	for _, rel := range []string{".git", ".git/config", "nested/.git", "nested/.git/HEAD"} {
+		if !resultHas(h.a.comparison, rel) {
+			t.Errorf("including Git metadata omitted %q", rel)
+		}
+	}
+	if !strings.Contains(h.view(), "g: .git included") {
+		t.Fatalf("active Git scope is not visible:\n%s", h.view())
+	}
+}
+
+func TestDirectoryComparisonHelpExplainsWorkflowAndStatuses(t *testing.T) {
+	h, _ := newOpsApp(t, nil, nil)
+	h.press("D")
+	waitComparison(t, h)
+	h.press("?")
+	if !h.a.showHelp || h.a.comparison == nil {
+		t.Fatal("? should open comparison help without closing the comparison")
+	}
+	h.press("/")
+	h.typeText("SAME META", false)
+	if !strings.Contains(h.view(), "contents may differ") {
+		t.Fatalf("help does not explain metadata-only matches:\n%s", h.view())
+	}
+	h.press("esc")
+	h.press("esc")
+	if h.a.showHelp || h.a.comparison == nil {
+		t.Fatal("closing help should return to the comparison view")
 	}
 }

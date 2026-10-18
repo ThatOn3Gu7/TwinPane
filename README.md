@@ -95,6 +95,13 @@ The [user guide](docs/USER_GUIDE.md) describes every feature in detail.
 - Properties (`P`): size, times, owner, symbolic-link target, and permission
   editing on filesystems that support it.
 
+**Directory comparison**
+- Compare the two local panel folders (`D`), ignoring exact `.git` directories
+  by default (`g` includes them). `f` hides matching rows; `h` can verify
+  matching metadata with SHA-256. Propose copy actions, review the full plan,
+  then explicitly approve it; overwrite prompts remain, and no deletions are
+  generated. See the [directory comparison guide](docs/USER_GUIDE.md#directory-comparison-d).
+
 **Archives**
 - ZIP files (including `.jar`, `.apk` and `.epub`): browse like a folder
   without extracting, view entries, and extract safely (`x`, `X`). Only
