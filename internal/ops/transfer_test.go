@@ -47,6 +47,45 @@ func TestCopyFilesAndNestedDirs(t *testing.T) {
 	noTemps(t, root)
 }
 
+func TestReviewedTransferGuardStopsBeforeReplacingDestination(t *testing.T) {
+	root := t.TempDir()
+	srcDir, dstDir := filepath.Join(root, "src"), filepath.Join(root, "dst")
+	if err := os.MkdirAll(srcDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(dstDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	src, dst := filepath.Join(srcDir, "file.txt"), filepath.Join(dstDir, "file.txt")
+	if err := os.WriteFile(src, []byte("incoming"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(dst, []byte("reviewed"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	calls := 0
+	req := Request{
+		Kind: Copy, Sources: []string{src}, DestDir: dstDir,
+		BeforeTransfer: func(_, _ string) error {
+			calls++
+			if calls == 2 { // after the conflict decision, before writing
+				return errors.New("stale destination")
+			}
+			return nil
+		},
+	}
+	res := Run(context.Background(), req, Hooks{Conflict: func(Conflict) Decision {
+		return Decision{Action: Overwrite}
+	}})
+	if res.Fatal == nil || !strings.Contains(res.Fatal.Error(), "stale destination") {
+		t.Fatalf("guard result = %+v, want stale-plan failure", res)
+	}
+	got, err := os.ReadFile(dst)
+	if err != nil || string(got) != "reviewed" {
+		t.Fatalf("stale destination was replaced: %q, %v", got, err)
+	}
+}
+
 func TestConflictDefaultIsSkip(t *testing.T) {
 	root := t.TempDir()
 	write(t, filepath.Join(root, "src", "f.txt"), "new")
