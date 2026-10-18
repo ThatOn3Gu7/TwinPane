@@ -463,6 +463,11 @@ func run7z(ctx context.Context, tool, src, staging string, info Info, rep *repor
 	if perr != nil {
 		return l, fmt.Errorf("cannot read the list of files in the %s archive (%v); nothing was extracted", info.Name(), perr)
 	}
+	if l.ambiguous {
+		// The names in the listing cannot be trusted, so a link could be
+		// hidden from the exclusion below: fail closed (see sevenzip_list.go).
+		return l, fmt.Errorf("the list of files in the %s archive could not be read safely (its entries did not parse unambiguously); nothing was extracted", info.Name())
+	}
 	if len(l.links) > 0 && l.version < min7zipForLinks {
 		return l, fmt.Errorf("the %s archive contains %s, and this 7-Zip (%s) is too old to leave them out safely; "+
 			"nothing was extracted. Install 7-Zip %d or newer (Termux: pkg install 7zip)",
