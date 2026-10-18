@@ -1155,5 +1155,5 @@ including the end-to-end test scripts, are in
 - Storage: one filesystem at a time (the active panel's, plus the other
   panel's if different); no recursive folder sizes and no list of all
   mounts.
-- Not included: creating folders, content search, configurable keys/themes,
-  recursive storage analysis.
+- Not included: content search, configurable keys/themes, recursive
+  storage analysis.
