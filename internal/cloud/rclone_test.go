@@ -336,6 +336,46 @@ func TestRealConflicts(t *testing.T) {
 	}
 }
 
+// A folder merged into a local destination whose entry of that name is a
+// symbolic link must be refused: the files may not end up where the link
+// points. A real folder of the same name still merges normally.
+func TestRealMergeRefusesSymlinkDestination(t *testing.T) {
+	b := realBed(t)
+	ctx := context.Background()
+	write(t, filepath.Join(b.cloud, "photos", "a.txt"), "A")
+	write(t, filepath.Join(b.cloud, "photos", "sub", "b.txt"), "B")
+	down := filepath.Join(b.root, "down")
+	outside := filepath.Join(b.root, "outside")
+	os.MkdirAll(down, 0o755)
+	os.MkdirAll(outside, 0o755)
+	if err := os.Symlink(outside, filepath.Join(down, "photos")); err != nil {
+		t.Skip("symlinks unsupported:", err)
+	}
+	res := b.c.Transfer(ctx, TransferRequest{Kind: ops.Copy, Dest: Local(down),
+		Items: []TransferItem{{Src: b.box.Join("photos"), IsDir: true}}}, ops.Hooks{})
+	if len(res.Errors) != 1 || !strings.Contains(res.Errors[0].Err.Error(), "symbolic link") {
+		t.Fatalf("the merge through a link must be refused: %+v", res)
+	}
+	if got := tree(t, outside); got != "" {
+		t.Fatalf("files were written through the link: %q", got)
+	}
+	fi, err := os.Lstat(filepath.Join(down, "photos"))
+	if err != nil || fi.Mode()&os.ModeSymlink == 0 {
+		t.Fatalf("the link must be untouched: %v %v", fi, err)
+	}
+	// a real folder of that name merges as before
+	os.Remove(filepath.Join(down, "photos"))
+	os.MkdirAll(filepath.Join(down, "photos"), 0o755)
+	write(t, filepath.Join(down, "photos", "old.txt"), "O")
+	var asked []string
+	res = b.c.Transfer(ctx, TransferRequest{Kind: ops.Copy, Dest: Local(down),
+		Items: []TransferItem{{Src: b.box.Join("photos"), IsDir: true}}},
+		ops.Hooks{Conflict: answers(&asked, ops.Overwrite)})
+	if !res.OK() || tree(t, filepath.Join(down, "photos")) != "a.txt old.txt sub/ sub/b.txt" {
+		t.Fatalf("a real folder must still merge: %+v asked %q tree %q", res, asked, tree(t, filepath.Join(down, "photos")))
+	}
+}
+
 func TestRealTransferCancel(t *testing.T) {
 	b := realBed(t)
 	local := filepath.Join(b.root, "local")

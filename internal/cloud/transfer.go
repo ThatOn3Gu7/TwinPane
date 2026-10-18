@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -192,6 +193,11 @@ func (x *xfer) run() {
 		switch {
 		case !clash:
 			x.transferOne(it, dst, false)
+		case ex.IsLink && it.IsDir:
+			// A folder is never merged through a symbolic link in the
+			// destination: the files would be written where the link
+			// points, outside the chosen folder.
+			x.fail(it.Src, fmt.Errorf("a symbolic link named %q is in the destination: refusing to merge the folder through it", name))
 		case ex.IsDir != it.IsDir:
 			what := "file"
 			if ex.IsDir {
@@ -260,15 +266,18 @@ func (x *xfer) destIndex() (map[string]Item, error) {
 			return nil, err
 		}
 		for _, de := range des {
-			fi, err := os.Stat(d.Join(de.Name()).Path) // a link to a folder counts as a folder
+			p := d.Join(de.Name()).Path
+			li, lerr := os.Lstat(p) // inspect the entry itself, without following a link
+			link := lerr == nil && li.Mode()&fs.ModeSymlink != 0
+			fi, err := os.Stat(p) // a link to a folder counts as a folder
 			if err != nil {
-				fi, err = de.Info()
+				fi, err = li, lerr
 			}
 			if err != nil {
-				idx[de.Name()] = Item{Name: de.Name()}
+				idx[de.Name()] = Item{Name: de.Name(), IsLink: link}
 				continue
 			}
-			idx[de.Name()] = Item{Name: de.Name(), Size: fi.Size(), ModTime: fi.ModTime(), IsDir: fi.IsDir()}
+			idx[de.Name()] = Item{Name: de.Name(), Size: fi.Size(), ModTime: fi.ModTime(), IsDir: fi.IsDir(), IsLink: link}
 		}
 		return idx, nil
 	}
@@ -327,6 +336,9 @@ func (x *xfer) transferOne(it TransferItem, dst Path, overwrite bool) {
 // merge puts a folder into an existing folder of the same name.
 func (x *xfer) merge(it TransferItem, dst Path) {
 	src, err := x.c.ListFiles(x.ctx, it.Src)
+	if err == nil && dst.IsLocal() {
+		err = checkLocalMergeDirs(dst, src)
+	}
 	if err == nil {
 		var have []Item
 		if have, err = x.c.ListFiles(x.ctx, dst); err == nil {
@@ -339,6 +351,55 @@ func (x *xfer) merge(it TransferItem, dst Path) {
 		return
 	}
 	x.fail(it.Src, err)
+}
+
+func checkLocalMergeDirs(dst Path, src []Item) error {
+	root, err := os.Lstat(dst.Path)
+	if err != nil {
+		return fmt.Errorf("cannot safely inspect the local merge destination %s: %w", dst.Display(), err)
+	}
+	if root.Mode()&fs.ModeSymlink != 0 {
+		return fmt.Errorf("the local merge destination %s is a symbolic link: refusing to merge through it", dst.Display())
+	}
+	for _, f := range src {
+		if f.Path == "" {
+			return fmt.Errorf("cannot safely merge path %q into the local destination", f.Path)
+		}
+		for _, part := range strings.Split(f.Path, "/") {
+			if part == ".." {
+				return fmt.Errorf("cannot safely merge path %q into the local destination", f.Path)
+			}
+		}
+		rel := filepath.Clean(filepath.FromSlash(f.Path))
+		if filepath.IsAbs(rel) || rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
+			return fmt.Errorf("cannot safely merge path %q into the local destination", f.Path)
+		}
+		dir := filepath.Dir(rel)
+		if dir == "." {
+			continue
+		}
+		p := dst.Path
+		for _, part := range strings.Split(dir, string(os.PathSeparator)) {
+			if part == "" || part == "." {
+				continue
+			}
+			p = filepath.Join(p, part)
+			fi, err := os.Lstat(p)
+			if errors.Is(err, fs.ErrNotExist) {
+				break // the remaining directories will be newly created
+			}
+			if err != nil {
+				return fmt.Errorf("cannot safely inspect local merge path %q: %w", p, err)
+			}
+			if fi.Mode()&fs.ModeSymlink != 0 {
+				return fmt.Errorf("a symbolic link directory is in the local merge path %q: refusing to merge through it", p)
+			}
+			if !fi.IsDir() {
+				break // an ordinary file blocks this path; rclone will report the conflict
+			}
+		}
+	}
+	return nil
 }
 
 func (x *xfer) mergeFiles(it TransferItem, dst Path, src, have []Item) {
@@ -378,6 +439,12 @@ func (x *xfer) mergeFiles(it TransferItem, dst Path, src, have []Item) {
 	if x.req.Kind == ops.Move {
 		args = append(args, "--delete-empty-src-dirs")
 	}
+	if dst.IsLocal() {
+		if err := checkLocalMergeDirs(dst, src); err != nil {
+			x.fail(it.Src, err)
+			return
+		}
+	}
 	fresh := x.bytes[key] - replaceBytes - keptBytes
 	if _, err := x.rclone(args, it.Src, dst, fresh); err != nil {
 		if KindOf(err) == KindCanceled {
@@ -406,6 +473,12 @@ func (x *xfer) mergeFiles(it TransferItem, dst Path, src, have []Item) {
 		args := []string{verb, "--ignore-times", "--files-from-raw", list.Name()}
 		if x.req.Kind == ops.Move {
 			args = append(args, "--delete-empty-src-dirs")
+		}
+		if dst.IsLocal() {
+			if err := checkLocalMergeDirs(dst, src); err != nil {
+				x.fail(it.Src, err)
+				return
+			}
 		}
 		if _, err := x.rclone(args, it.Src, dst, replaceBytes); err != nil {
 			if KindOf(err) == KindCanceled {
