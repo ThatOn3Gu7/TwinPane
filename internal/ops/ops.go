@@ -58,6 +58,12 @@ type Request struct {
 	Kind    Kind
 	Sources []string // absolute paths
 	DestDir string   // absolute path of an existing directory
+
+	// BeforeTransfer, when non-nil, is called before resolving a destination
+	// conflict, before starting a transfer, and again immediately before
+	// placing the result. Reviewed higher-level plans use it to fail closed if
+	// either path changed after approval. It must not modify the filesystem.
+	BeforeTransfer func(src, dst string) error
 }
 
 // Action is the answer to a destination conflict.

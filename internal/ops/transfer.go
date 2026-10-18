@@ -172,6 +172,27 @@ func (e *engine) fail(path, op string, err error) {
 	e.report(true)
 }
 
+func (e *engine) checkBeforeTransfer(src, dst string) bool {
+	if e.checkCanceled() {
+		return false
+	}
+	if e.req.BeforeTransfer == nil {
+		return true
+	}
+	if err := e.req.BeforeTransfer(src, dst); err != nil {
+		if e.ctx.Err() != nil || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			e.res.Canceled = true
+			return false
+		}
+		e.res.Fatal = fmt.Errorf("transfer stopped because a reviewed path changed: %w", err)
+		e.prog.Errors++
+		e.prog.LastError = e.res.Fatal.Error()
+		e.report(true)
+		return false
+	}
+	return true
+}
+
 func (e *engine) leftover(src string, err error) {
 	ie := ItemError{Path: src, Op: "remove source after verified copy", Err: err}
 	e.res.Leftovers = append(e.res.Leftovers, ie)
@@ -214,6 +235,9 @@ func (e *engine) transfer(src, dst string, top bool) bool {
 
 	overwrite := false
 	di, err := os.Lstat(dst)
+	if !e.checkBeforeTransfer(src, dst) {
+		return false
+	}
 	switch {
 	case err == nil:
 		if os.SameFile(si, di) {
@@ -238,6 +262,9 @@ func (e *engine) transfer(src, dst string, top bool) bool {
 	case errors.Is(err, fs.ErrNotExist):
 	default:
 		e.fail(dst, "check destination", err)
+		return false
+	}
+	if !e.checkBeforeTransfer(src, dst) {
 		return false
 	}
 
@@ -354,6 +381,10 @@ func (e *engine) transferLink(src, dst string, overwrite bool) bool {
 	}
 	if err := os.Symlink(target, tmp); err != nil {
 		e.fail(dst, "create link", err)
+		return false
+	}
+	if !e.checkBeforeTransfer(src, dst) {
+		_ = os.Remove(tmp)
 		return false
 	}
 	if err := placeFile(tmp, dst, overwrite); err != nil {
@@ -486,6 +517,12 @@ func (e *engine) copyFile(src, dst string, si fs.FileInfo, overwrite, verify boo
 		if !bytes.Equal(got, h.Sum(nil)) {
 			return n, errors.New("verification failed: the copy differs from the source")
 		}
+	}
+	if !e.checkBeforeTransfer(src, dst) {
+		if e.res.Fatal != nil {
+			return n, e.res.Fatal
+		}
+		return n, context.Canceled
 	}
 	if err := placeFile(tmpName, dst, overwrite); err != nil {
 		return n, err

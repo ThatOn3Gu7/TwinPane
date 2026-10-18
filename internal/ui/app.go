@@ -102,20 +102,22 @@ type App struct {
 	quitting      bool
 
 	// phase 2 / 12: file operations and retained background task history
-	dialog  *dialog
-	tasks   taskManager
-	opSeq   int
-	trasher ops.Trasher
-	edEnv   editor.Env
-	execFn  ExecFunc
+	dialog        *dialog
+	tasks         taskManager
+	opSeq         int
+	comparisonSeq int
+	trasher       ops.Trasher
+	edEnv         editor.Env
+	execFn        ExecFunc
 
 	// phase 3
 	editing    bool      // the external editor owns the terminal
 	quietUntil time.Time // ignore keys until then (late terminal replies)
 	now        func() time.Time
-	spinning   bool        // a spinner tick is scheduled (only while a panel loads)
-	search     *searchView // recursive search overlay
-	bulk       *bulkRename // bulk rename overlay
+	spinning   bool            // a spinner tick is scheduled (only while a panel loads)
+	search     *searchView     // recursive search overlay
+	bulk       *bulkRename     // bulk rename overlay
+	comparison *comparisonView // local directory comparison and reviewed plan
 
 	// phase 4
 	showHidden     bool        // one setting for both panels (h / H / .)
@@ -307,6 +309,10 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case searchMsg:
 		return a, a.searchUpdate(msg)
 
+	case compareDoneMsg:
+		a.comparisonDone(msg)
+		return a, nil
+
 	case bulkDoneMsg:
 		return a, a.bulkDone(msg)
 
@@ -352,6 +358,9 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if a.dialog == nil && a.tasks.showing {
 			return a, a.taskViewKey(msg)
+		}
+		if a.dialog == nil && a.comparison != nil {
+			return a, a.comparisonKey(msg)
 		}
 		if a.dialog == nil && msg.String() == "ctrl+c" {
 			if s := a.tasks.latestActive(); s != nil {
@@ -423,13 +432,14 @@ type uiState struct {
 	busy, quitting, editing, help, inputBox bool
 	viewer                                  *viewer
 	props                                   *propsView
+	comparison                              *comparisonView
 }
 
 func (a *App) uiState() uiState {
 	return uiState{
 		dialog: a.dialog, search: a.search, bulk: a.bulk, tasks: a.tasks.showing,
 		busy: a.busy(), quitting: a.quitting, editing: a.editing, help: a.showHelp,
-		inputBox: a.dialog != nil && a.dialog.input != nil, viewer: a.viewer, props: a.props,
+		inputBox: a.dialog != nil && a.dialog.input != nil, viewer: a.viewer, props: a.props, comparison: a.comparison,
 	}
 }
 
@@ -523,6 +533,8 @@ func (a *App) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return a, other.Load(p.RealDir(), filepath.Base(p.Archive().Path), panel.LoadNavigate)
 		}
 		return a, other.Load(p.Path(), focus, panel.LoadNavigate)
+	case k.Compare.Matches(msg):
+		return a, a.beginDirectoryCompare()
 	case k.Select.Matches(msg):
 		p.ToggleSelect()
 	case k.SelectAll.Matches(msg):
@@ -637,6 +649,8 @@ func (a *App) View() string {
 		body = a.searchViewRender(a.height - 3)
 	case a.bulk != nil:
 		body = a.bulkView(a.height - 3)
+	case a.comparison != nil:
+		body = a.comparisonViewRender(a.height - 3)
 	default:
 		body = lipgloss.JoinHorizontal(lipgloss.Top,
 			a.panels[0].View(a.theme, a.active == 0),

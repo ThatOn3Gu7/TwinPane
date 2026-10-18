@@ -141,6 +141,9 @@ func (a *App) menuEntries() (title string, entries []menuEntry) {
 		}
 	}
 	add(menuEntry{label: "New folder", key: "n", send: "n"})
+	if a.canComparePanels() {
+		add(menuEntry{label: "Compare directories", key: "D", send: "D"})
+	}
 	add(menuEntry{label: "Sources…", detail: "local / cloud", key: "^R", send: "ctrl+r"})
 	if dir := p.Path(); a.isBookmarked(dir) {
 		add(menuEntry{label: "Remove this folder's bookmark", key: "B", run: a.unbookmarkHere})

@@ -106,6 +106,8 @@ func (a *App) handleMouse(m tea.MouseMsg) tea.Cmd {
 		return a.searchMouse(ev)
 	case a.bulk != nil:
 		return a.bulkMouse(ev)
+	case a.comparison != nil:
+		return a.comparisonMouse(ev)
 	}
 	// A tap on the TwinPane badge (title row) opens the action menu: it
 	// is visible at any width, unlike the "M menu" chip.

@@ -27,7 +27,7 @@ func (b Binding) Matches(msg tea.KeyMsg) bool {
 // on the selection if there is one, otherwise on the entry under the cursor.
 type KeyMap struct {
 	Up, Down, PageUp, PageDown, Top, Bottom Binding
-	Open, Parent, Home, SyncOther           Binding
+	Open, Parent, Home, SyncOther, Compare  Binding
 	Select, SelectAll, Unselect             Binding
 	Switch, Hidden, Sort, Reverse, Refresh  Binding
 	Search                                  Binding
@@ -61,6 +61,7 @@ func DefaultKeys() KeyMap {
 		Parent:    Binding{[]string{"backspace", "left"}, "⌫/←", "parent directory"},
 		Home:      Binding{[]string{"~"}, "~", "go to home directory"},
 		SyncOther: Binding{[]string{"="}, "=", "same dir in other panel"},
+		Compare:   Binding{[]string{"D"}, "D", "compare local directories"},
 		Select:    Binding{[]string{" ", "insert"}, "Space/Ins", "toggle selection"},
 		SelectAll: Binding{[]string{"a"}, "a", "select all / none"},
 		Unselect:  Binding{[]string{"u"}, "u", "clear selection"},
@@ -115,10 +116,11 @@ func (k KeyMap) helpSections() [2][]helpSection {
 		},
 		{
 			{"File operations", []Binding{k.Copy, k.Move, k.Rename, k.Delete, k.Edit, k.EditWith, k.Properties, k.Cancel}},
-			{"View & general", []Binding{k.View, k.Search, k.Hidden, k.Sort, k.Reverse, k.Refresh, k.Tasks, k.Help, k.Quit}},
+			{"View & general", []Binding{k.View, k.Search, k.Hidden, k.Sort, k.Reverse, k.Refresh, k.Tasks, k.Quit, k.Help}},
 			{"Folders & cloud (rclone)", []Binding{k.Mkdir, k.Sources,
 				{Help: "c / m", Desc: "upload / download"},
 				{Help: "Esc", Desc: "stop a slow listing"}}},
+			{"Directory comparison", []Binding{k.Compare}},
 		},
 	}
 }

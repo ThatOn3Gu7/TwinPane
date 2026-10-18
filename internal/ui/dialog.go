@@ -38,8 +38,9 @@ const (
 	dlgRunWith   // "Run a program…" prompt
 
 	// phase 9
-	dlgSources // Sources picker (Ctrl+R): local files or an rclone remote
-	dlgMkdir   // new folder name prompt
+	dlgSources     // Sources picker (Ctrl+R): local files or an rclone remote
+	dlgMkdir       // new folder name prompt
+	dlgSyncConfirm // final approval for a reviewed directory plan
 )
 
 // dlgCompress is the compression dialog (z). It kept the kind of the

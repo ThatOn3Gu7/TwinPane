@@ -372,6 +372,11 @@ func (a *App) handleOpMsg(msg tea.Msg) (tea.Cmd, bool) {
 			return a.finishTransfer(s, m.res), true
 		}
 		return nil, true
+	case syncDoneMsg:
+		if s := lookup(m.id); s != nil && s.active() {
+			return a.finishSync(s, m.result, m.plan), true
+		}
+		return nil, true
 	case opDeleteDoneMsg:
 		if s := lookup(m.id); s != nil && s.active() {
 			return a.finishDelete(s, m.res), true

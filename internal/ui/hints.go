@@ -46,6 +46,8 @@ func (a *App) hints() (items []barItem, pinned *barItem) {
 		return a.searchHints(), nil
 	case a.bulk != nil:
 		return a.bulkHints(), nil
+	case a.comparison != nil:
+		return a.comparisonHints(), nil
 	}
 	help := item("?", "help", "?")
 	return a.browseHints(), &help
@@ -73,7 +75,7 @@ func (a *App) browseHints() []barItem {
 	targets := p.Targets()
 	nsel := len(p.Selection())
 
-	out := []barItem{item("Tab", "switch", "tab"), item("t", "tasks", "t")}
+	out := []barItem{item("Tab", "switch", "tab")}
 	if ok && cur.IsDir && nsel == 0 {
 		out = append(out, item("⏎", "open", "enter"))
 	}
@@ -105,6 +107,7 @@ func (a *App) browseHints() []barItem {
 			out = append(out, item("e/E", "edit", "e"))
 		}
 	}
+	out = append(out, item("t", "tasks", "t"))
 	// phase 5: files open in the viewer, ZIP archives are browsed
 	if ok && !cur.IsDir && !cur.IsParent && nsel == 0 {
 		if isZip {
@@ -126,9 +129,6 @@ func (a *App) browseHints() []barItem {
 	if ok && !cur.IsParent {
 		out = append(out, item("P", "properties", "P"))
 	}
-	if len(targets) > 0 {
-		out = append(out, item("z", "compress", "z"))
-	}
 	out = append(out, item("q", "quit", "q"))
 	// phase 6, after everything that was there before so those keep their
 	// place: the action menu (also reachable by tapping the TwinPane
@@ -138,6 +138,9 @@ func (a *App) browseHints() []barItem {
 		out = append(out, item("o/O", "open with", "O"))
 	}
 	out = append(out, item("b", "bookmarks", "b"), item("i", "storage", "i"))
+	if len(targets) > 0 {
+		out = append(out, item("z", "compress", "z"))
+	}
 	// phase 9, again after everything that was there before
 	out = append(out, item("^R", "sources", "ctrl+r"), item("n", "new folder", "n"))
 	return out
