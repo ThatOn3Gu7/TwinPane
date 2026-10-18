@@ -263,6 +263,37 @@ func TestExtract7zOldWithLinksRefused(t *testing.T) {
 	}
 }
 
+// A listing that cannot be parsed unambiguously must fail closed: a crafted
+// name can hide a link from the exclusion, so nothing may be extracted and
+// 7-Zip may only be asked for the listing, never for extraction.
+func TestExtract7zAmbiguousListingRefused(t *testing.T) {
+	for name, entries := range map[string][]string{
+		"blocks with different keys": {
+			"Path = a\nSize = 5\nAttributes = A -rw-r--r--",
+			"Path = b\nSize = 6",
+		},
+		"repeated key hides the entry's shape": {
+			"Path = safe.txt\nSize = 5\nAttributes = A -rw-r--r--\nPath = mylink",
+		},
+		"line without Key = Value": {
+			"Path = a\nSize = 5\ninjected by a name\nAttributes = A -rw-r--r--",
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			f := newFake7z(t, listing("7-Zip (z) 23.01 (x64) : Copyright", entries...))
+			res := f.run()
+			if res.Fatal == nil || !strings.Contains(res.Fatal.Error(), "could not be read safely") ||
+				!strings.Contains(res.Fatal.Error(), "nothing was extracted") {
+				t.Fatalf("an ambiguous listing must refuse extraction: %v", res.Fatal)
+			}
+			if calls := f.calls(t); len(calls) != 1 {
+				t.Fatalf("7-Zip may only list, never extract: %q", calls)
+			}
+			emptyDir(t, f.dest, "nothing may be extracted")
+		})
+	}
+}
+
 func TestExtract7zListingFails(t *testing.T) {
 	f := newFake7z(t, "7-Zip (z) 23.01\n")
 	t.Setenv("TP_FAKE7Z_LIST_ERR", "ERROR: t.7z : Can not open encrypted archive. Wrong password?")
