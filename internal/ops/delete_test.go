@@ -62,6 +62,32 @@ func TestPlanDeleteCounts(t *testing.T) {
 	}
 }
 
+// An item that vanishes between CheckDeletable and the measuring look must
+// not crash the planner: the plan is reported as incomplete and the item is
+// not counted.
+func TestPlanDeleteVanishingItem(t *testing.T) {
+	root := t.TempDir()
+	p := filepath.Join(root, "gone.txt")
+	write(t, p, "x")
+	setSeam(t, &planLstatFn, func(name string) (os.FileInfo, error) {
+		os.Remove(name) // the item vanishes after CheckDeletable validates it
+		return nil, os.ErrNotExist
+	})
+	plan, err := PlanDelete(context.Background(), []string{p}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !plan.Incomplete {
+		t.Fatalf("a vanishing item must mark the plan incomplete: %+v", plan)
+	}
+	if plan.TopFiles != 0 || plan.Files != 0 || plan.TopDirs != 0 {
+		t.Fatalf("a vanished item cannot be counted: %+v", plan)
+	}
+	if len(plan.Paths) != 1 {
+		t.Fatalf("the path stays in the plan so the deletion can report it: %+v", plan)
+	}
+}
+
 func TestPermanentDeleteDoesNotFollowSymlinks(t *testing.T) {
 	root := t.TempDir()
 	outside := filepath.Join(root, "outside")

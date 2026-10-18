@@ -16,6 +16,10 @@ var homeDirFn = func() string {
 	return h
 }
 
+// planLstatFn looks at an item during planning (test seam: a test can make
+// an item vanish after CheckDeletable has validated it).
+var planLstatFn = os.Lstat
+
 // DeletePlan is the result of inspecting what a deletion would affect. The
 // UI shows it to the user before anything is removed.
 type DeletePlan struct {
@@ -74,8 +78,12 @@ func PlanDelete(ctx context.Context, paths []string, trash Trasher) (DeletePlan,
 		}
 		p = filepath.Clean(p)
 		plan.Paths = append(plan.Paths, p)
-		fi, _ := os.Lstat(p)
-		if fi.IsDir() {
+		if fi, err := planLstatFn(p); err != nil {
+			// the item vanished (or cannot be looked at) between the
+			// check above and here: count nothing, report the plan as
+			// incomplete, and let the walk below see it too
+			plan.Incomplete = true
+		} else if fi.IsDir() {
 			plan.TopDirs++
 		} else {
 			plan.TopFiles++
