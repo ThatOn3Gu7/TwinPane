@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ThatOn3Gu7/TwinPane/internal/ops"
 	"github.com/ThatOn3Gu7/TwinPane/internal/proc"
 )
 
@@ -75,6 +76,13 @@ func fakeRclone(mode string, args []string) int {
 			return code
 		}
 		return 2
+	case "transfer":
+		// lsjson prints $FAKE_LIST; copy/move succeed (and are logged)
+		if len(args) > 0 && args[0] == "lsjson" {
+			fmt.Println(os.Getenv("FAKE_LIST"))
+			return 0
+		}
+		return 0
 	case "hang", "stubborn":
 		ch := make(chan os.Signal, 1)
 		signal.Notify(ch, os.Interrupt)
@@ -298,6 +306,96 @@ func TestFakeListParsesAndFilters(t *testing.T) {
 	l, err = c.List(context.Background(), On("gd", ""), fsysOpts(true))
 	if err != nil || l.Entries[0].IsParent || len(l.Entries) != 3 {
 		t.Fatalf("root listing: %+v %v", l.Entries, err)
+	}
+}
+
+// A folder transfer must be refused when a symbolic link of that name sits
+// in the local destination: nothing may be written through the link, and
+// no copy or move may even be started (only the listing of the source).
+func TestTransferRefusesMergingIntoSymlink(t *testing.T) {
+	log := filepath.Join(t.TempDir(), "log")
+	c := fakeClient(t, "transfer",
+		"FAKE_LOG="+log,
+		`FAKE_LIST=[{"Path":"x.txt","Name":"x.txt","Size":3,"ModTime":"2026-01-02T03:04:05Z","IsDir":false}]`)
+	root := t.TempDir()
+	dest := filepath.Join(root, "dest")
+	outside := filepath.Join(root, "outside")
+	for _, d := range []string{dest, outside} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.Symlink(outside, filepath.Join(dest, "photos")); err != nil {
+		t.Skip("symlinks unsupported:", err)
+	}
+	res := c.Transfer(context.Background(), TransferRequest{Kind: ops.Copy, Dest: Local(dest),
+		Items: []TransferItem{{Src: On("fake", "photos"), IsDir: true}}}, ops.Hooks{})
+	if len(res.Errors) != 1 || !strings.Contains(res.Errors[0].Err.Error(), "symbolic link") ||
+		!strings.Contains(res.Errors[0].Err.Error(), "refusing") {
+		t.Fatalf("the merge through a link must be refused: %+v", res)
+	}
+	if ents, _ := os.ReadDir(outside); len(ents) != 0 {
+		t.Fatalf("files were written through the link: %v", ents)
+	}
+	if ents, _ := os.ReadDir(dest); len(ents) != 1 || ents[0].Name() != "photos" {
+		t.Fatalf("the destination must only hold the link: %v", ents)
+	}
+	fi, err := os.Lstat(filepath.Join(dest, "photos"))
+	if err != nil || fi.Mode()&os.ModeSymlink == 0 {
+		t.Fatalf("the link must be untouched: %v %v", fi, err)
+	}
+	b, _ := os.ReadFile(log)
+	for _, line := range strings.Split(strings.TrimSpace(string(b)), "\n") {
+		if line == "" {
+			continue
+		}
+		if cmd := strings.Split(line, "\x1f")[0]; cmd != "lsjson" {
+			t.Fatalf("no transfer may start after the refusal, got %q: %q", cmd, line)
+		}
+	}
+}
+
+// Existing real merge directories can also contain a symlinked subdirectory.
+// If any source path would descend through it, refuse before starting a
+// transfer, even if the top-level merge target is a real directory.
+func TestTransferRefusesNestedSymlinkMerge(t *testing.T) {
+	log := filepath.Join(t.TempDir(), "log")
+	c := fakeClient(t, "transfer",
+		"FAKE_LOG="+log,
+		`FAKE_LIST=[{"Path":"sub/file.txt","Name":"file.txt","Size":3,"ModTime":"2026-01-02T03:04:05Z","IsDir":false}]`)
+	root := t.TempDir()
+	dest := filepath.Join(root, "dest")
+	outside := filepath.Join(root, "outside")
+	if err := os.MkdirAll(filepath.Join(dest, "photos"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(outside, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(dest, "photos", "sub")); err != nil {
+		t.Skip("symlinks unsupported:", err)
+	}
+	res := c.Transfer(context.Background(), TransferRequest{Kind: ops.Copy, Dest: Local(dest),
+		Items: []TransferItem{{Src: On("fake", "photos"), IsDir: true}}},
+		ops.Hooks{Conflict: func(ops.Conflict) ops.Decision { return ops.Decision{Action: ops.Overwrite} }})
+	if len(res.Errors) != 1 || !strings.Contains(res.Errors[0].Err.Error(), "symbolic link directory") {
+		t.Fatalf("the nested merge through a link must be refused: %+v", res)
+	}
+	if ents, _ := os.ReadDir(outside); len(ents) != 0 {
+		t.Fatalf("files were written through the link: %v", ents)
+	}
+	fi, err := os.Lstat(filepath.Join(dest, "photos", "sub"))
+	if err != nil || fi.Mode()&os.ModeSymlink == 0 {
+		t.Fatalf("the nested link must be untouched: %v %v", fi, err)
+	}
+	b, _ := os.ReadFile(log)
+	for _, line := range strings.Split(strings.TrimSpace(string(b)), "\n") {
+		if line == "" {
+			continue
+		}
+		if cmd := strings.Split(line, "\x1f")[0]; cmd != "lsjson" {
+			t.Fatalf("no transfer may start after the refusal, got %q: %q", cmd, line)
+		}
 	}
 }
 

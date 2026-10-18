@@ -20,6 +20,9 @@ type Item struct {
 	Size    int64     `json:"Size"`
 	ModTime time.Time `json:"ModTime"`
 	IsDir   bool      `json:"IsDir"`
+	// IsLink marks a symbolic link in a local destination folder (set by
+	// Transfer's own listing of the destination, never by rclone).
+	IsLink bool `json:"-"`
 }
 
 // lsjson runs rclone lsjson on p with extra flags.
