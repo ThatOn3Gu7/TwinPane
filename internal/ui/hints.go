@@ -34,8 +34,8 @@ func (a *App) hints() (items []barItem, pinned *barItem) {
 		return nil, nil // the editor owns the terminal
 	case a.dialog != nil:
 		return a.dialogHints(a.dialog), nil
-	case a.planning != nil || a.op != nil:
-		return []barItem{item("Esc", "cancel operation", "esc")}, nil
+	case a.tasks.showing:
+		return a.taskFooterHints(), nil
 	case a.showHelp:
 		return a.helpHints(), nil
 	case a.props != nil:
@@ -58,10 +58,10 @@ func (a *App) browseHints() []barItem {
 	if p.Err() != nil {
 		if p.InRemote() {
 			return []barItem{item("^L", "retry", "ctrl+l"), item("^R", "sources", "ctrl+r"),
-				item("Tab", "switch", "tab"), item("~", "local home", "~"), item("q", "quit", "q")}
+				item("Tab", "switch", "tab"), item("t", "tasks", "t"), item("~", "local home", "~"), item("q", "quit", "q")}
 		}
 		return []barItem{item("⌫", "parent", "backspace"), item("^L", "retry", "ctrl+l"),
-			item("Tab", "switch", "tab"), item("~", "home", "~"), item("q", "quit", "q"), item("^R", "sources", "ctrl+r")}
+			item("Tab", "switch", "tab"), item("t", "tasks", "t"), item("~", "home", "~"), item("q", "quit", "q"), item("^R", "sources", "ctrl+r")}
 	}
 	if p.InArchive() {
 		return a.archiveHints()
@@ -73,7 +73,7 @@ func (a *App) browseHints() []barItem {
 	targets := p.Targets()
 	nsel := len(p.Selection())
 
-	out := []barItem{item("Tab", "switch", "tab")}
+	out := []barItem{item("Tab", "switch", "tab"), item("t", "tasks", "t")}
 	if ok && cur.IsDir && nsel == 0 {
 		out = append(out, item("⏎", "open", "enter"))
 	}
@@ -149,7 +149,7 @@ func (a *App) remoteHints() []barItem {
 	p := a.ActivePanel()
 	cur, ok := p.Current()
 	nsel := len(p.Selection())
-	out := []barItem{item("Tab", "switch", "tab")}
+	out := []barItem{item("Tab", "switch", "tab"), item("t", "tasks", "t")}
 	if ok && cur.IsDir && nsel == 0 {
 		out = append(out, item("⏎", "open", "enter"))
 	}
@@ -185,7 +185,7 @@ func (a *App) archiveHints() []barItem {
 	p := a.ActivePanel()
 	cur, ok := p.Current()
 	nsel := len(p.Selection())
-	out := []barItem{item("Tab", "switch", "tab")}
+	out := []barItem{item("Tab", "switch", "tab"), item("t", "tasks", "t")}
 	if ok && nsel == 0 {
 		switch {
 		case cur.IsParent && p.ArchiveInner() == "":

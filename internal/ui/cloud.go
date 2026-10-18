@@ -23,8 +23,9 @@ import (
 // remote configured in rclone (Ctrl+R opens the Sources picker). Remote
 // folders are listed with rclone in the background (Esc cancels a slow
 // listing); copy and move between the panels, new folder, rename and delete
-// work on remotes and run as background operations like their local
-// versions (progress box, Esc cancels, the same conflict dialog). Actions
+// work on remotes and run as background tasks like local operations. Progress,
+// completion and errors stay in the task view, and conflict prompts are
+// serialized safely. Actions
 // that need a real local file (view, edit, open, properties, compress,
 // extract, find, bookmarks) explain that the item must be copied to a local
 // panel first. TwinPane never asks for, sees or stores credentials: rclone
@@ -370,11 +371,13 @@ func cloudTitle(kind ops.Kind, fromRemote, toRemote bool) string {
 }
 
 func (a *App) startCloudTransfer(c *cloud.Client, srcIdx int, title string, req cloud.TransferRequest) tea.Cmd {
+	req.Items = append([]cloud.TransferItem(nil), req.Items...)
 	s, ctx := a.newSession(title, srcIdx, nil)
-	s.kind = req.Kind
+	s.kind, s.to = req.Kind, req.Dest.Display()
 	for i, it := range req.Items {
 		n := it.Src.Base()
 		s.names[n] = true
+		s.from = append(s.from, it.Src.Display())
 		if i == 0 {
 			s.first = n
 		}
@@ -411,8 +414,9 @@ func (a *App) beginMkdir() tea.Cmd {
 				return nil
 			}
 			a.dialog = nil
-			return a.startCloudOp(idx, "Creating folder", v, "Created folder", func(ctx context.Context) error {
-				return p.Source().Client.Mkdir(ctx, where, v)
+			client := p.Source().Client
+			return a.startCloudOp(idx, "Creating folder", v, "Created folder", where.Display(), where.Join(v).Display(), func(ctx context.Context) error {
+				return client.Mkdir(ctx, where, v)
 			})
 		}
 		if err := ops.ValidateName(v); err != nil {
@@ -440,11 +444,15 @@ func (a *App) beginMkdir() tea.Cmd {
 	return nil
 }
 
-// startCloudOp runs one remote operation in the background (progress box
-// after a moment, Esc cancels).
-func (a *App) startCloudOp(idx int, title, name, what string, run func(ctx context.Context) error) tea.Cmd {
+// startCloudOp runs one remote operation as a retained background task.
+func (a *App) startCloudOp(idx int, title, name, what, from, to string, run func(ctx context.Context) error) tea.Cmd {
 	s, ctx := a.newSession(title, idx, nil)
 	s.prog = ops.Progress{Phase: "working", TotalItems: 1, Current: name}
+	if from != "" {
+		s.from = []string{from}
+	}
+	s.to = to
+	s.names[name], s.first = true, name
 	go func() {
 		err := run(ctx)
 		s.events <- opCloudDoneMsg{id: s.id, what: what, focus: name, err: err}
@@ -453,21 +461,37 @@ func (a *App) startCloudOp(idx int, title, name, what string, run func(ctx conte
 }
 
 func (a *App) finishCloudOp(s *opSession, m opCloudDoneMsg) tea.Cmd {
-	a.op = nil
-	a.dialog = nil
-	p, other := a.panels[s.srcPanel], a.panels[1-s.srcPanel]
+	var summary string
+	var level int
+	var state taskState
+	var details []string
 	switch {
 	case errors.Is(m.err, cloud.ErrNoEmptyFolders):
-		a.setStatusLevel(fmt.Sprintf("%q: %v", m.focus, m.err), lvlWarn)
+		summary, level = fmt.Sprintf("%q: %v", m.focus, m.err), lvlWarn
+		state = taskOutcome(false, m.err, 1, false)
+		details = append(details, summary)
 	case cloud.KindOf(m.err) == cloud.KindCanceled:
-		a.setStatusLevel("cancelled — rclone was stopped", lvlWarn)
+		summary, level = "cancelled — rclone was stopped", lvlWarn
+		state = taskOutcome(true, m.err, 0, true)
+		details = append(details, "The remote may have completed the action before cancellation was acknowledged")
 	case m.err != nil:
-		a.setStatusLevel("failed: "+errText(m.err), lvlErr)
-		return tea.Batch(p.Refresh(), other.Refresh())
+		summary, level = "failed: "+errText(m.err), lvlErr
+		state = taskOutcome(false, m.err, 1, false)
+		details = append(details, errText(m.err))
 	default:
-		a.setStatusLevel(fmt.Sprintf("%s %q", m.what, m.focus), lvlOK)
+		summary, level = fmt.Sprintf("%s %q", m.what, m.focus), lvlOK
+		state = taskCompleted
 	}
-	return tea.Batch(p.RefreshFocus(m.focus), other.Refresh())
+	if state == taskCompleted && m.what == "Renamed to" {
+		p := a.panels[s.srcPanel]
+		if a.sourceSelectionUnchanged(s) {
+			p.ClearSelection()
+		}
+	}
+	cmd := a.refreshPanelsAt(s.panelPaths[s.srcPanel], m.focus)
+	a.finishTask(s, state, summary, details...)
+	a.setStatusLevel(summary, level)
+	return cmd
 }
 
 // ---- rename on a remote ----------------------------------------------------------
@@ -481,6 +505,7 @@ func (a *App) renameRemote(targets []fsys.Entry) tea.Cmd {
 	idx := a.active
 	e := targets[0]
 	loc := cloudPath(p, e.Path)
+	client := p.Source().Client
 	old := e.Name
 	in := newLineInput(old)
 	if ext := filepath.Ext(old); !e.IsDir && ext != "" && ext != old {
@@ -501,11 +526,8 @@ func (a *App) renameRemote(targets []fsys.Entry) tea.Cmd {
 			return nil
 		}
 		a.dialog = nil
-		if p.IsSelected(old) {
-			p.ClearSelection()
-		}
-		return a.startCloudOp(idx, "Renaming", v, "Renamed to", func(ctx context.Context) error {
-			return p.Source().Client.Rename(ctx, loc, v)
+		return a.startCloudOp(idx, "Renaming", v, "Renamed to", loc.Display(), loc.Dir().Join(v).Display(), func(ctx context.Context) error {
+			return client.Rename(ctx, loc, v)
 		})
 	}
 	a.dialog = d
@@ -587,6 +609,7 @@ func (a *App) beginCloudDelete() tea.Cmd {
 
 func (a *App) startCloudDelete(idx int, c *cloud.Client, p *panel.Panel, targets []fsys.Entry) tea.Cmd {
 	s, ctx := a.newSession("Deleting", idx, nil)
+	s.to = "Remote provider deletion"
 	for i, e := range targets {
 		s.names[e.Name] = true
 		if i == 0 {
@@ -600,7 +623,9 @@ func (a *App) startCloudDelete(idx int, c *cloud.Client, p *panel.Panel, targets
 	}
 	jobs := make([]job, len(targets))
 	for i, e := range targets {
-		jobs[i] = job{cloudPath(p, e.Path), e.IsDir}
+		loc := cloudPath(p, e.Path)
+		jobs[i] = job{loc, e.IsDir}
+		s.from = append(s.from, loc.Display())
 	}
 	go func() {
 		var res cloudDeleteResult
@@ -639,32 +664,33 @@ func (a *App) startCloudDelete(idx int, c *cloud.Client, p *panel.Panel, targets
 }
 
 func (a *App) finishCloudDelete(s *opSession, res cloudDeleteResult) tea.Cmd {
-	a.op = nil
-	a.dialog = nil
-	p, other := a.panels[s.srcPanel], a.panels[1-s.srcPanel]
+	p := a.panels[s.srcPanel]
 	ok := !res.canceled && res.fatal == nil && len(res.errors) == 0
-	if ok {
-		p.ClearSelection()
+	focus := ""
+	if p.Path() == s.panelPaths[s.srcPanel] {
+		focus = p.NextFocus(s.names)
+		if ok && a.sourceSelectionUnchanged(s) {
+			p.ClearSelection()
+		}
 	}
-	cmds := []tea.Cmd{p.RefreshFocus(p.NextFocus(s.names)), other.Refresh()}
+	cmd := a.refreshPanelsAt(s.panelPaths[s.srcPanel], focus)
 	summary := "Deleted " + plural(res.deleted, "item")
+	details := itemErrorDetails(res.errors)
+	details = appendTaskDetail(details, "Stopped", res.fatal)
+	state := taskOutcome(res.canceled, res.fatal, len(res.errors), res.deleted > 0)
 	switch {
 	case ok:
 		a.setStatusLevel(summary, lvlOK)
 	case res.canceled && len(res.errors) <= 1 && res.fatal == nil:
-		a.setStatusLevel(summary+" — cancelled, the rest was not deleted", lvlWarn)
-		if len(res.errors) == 1 {
-			a.showReport("Delete cancelled", append([]dline{text(summary + "; the rest was not deleted.")}, itemLines(res.errors)...))
-		}
+		summary += " — cancelled, the rest was not deleted"
+		a.setStatusLevel(summary, lvlWarn)
 	default:
-		a.setStatusLevel(fmt.Sprintf("%s, %s", summary, plural(len(res.errors), "error")), lvlErr)
-		body := []dline{text(summary)}
-		if res.fatal != nil {
-			body = append(body, blank(), warn("Stopped: "+errText(res.fatal)))
+		summary = fmt.Sprintf("%s, %s", summary, plural(len(res.errors), "error"))
+		if res.canceled {
+			summary += " — cancelled"
 		}
-		body = append(body, blank(), warn(fmt.Sprintf("Not deleted (%d):", len(res.errors))))
-		body = append(body, itemLines(res.errors)...)
-		a.showReport("Delete finished with problems", body)
+		a.setStatusLevel(summary, lvlErr)
 	}
-	return tea.Batch(cmds...)
+	a.finishTask(s, state, summary, details...)
+	return cmd
 }

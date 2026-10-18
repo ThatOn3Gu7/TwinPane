@@ -298,6 +298,9 @@ func TestExtractDamagedAndCanceled(t *testing.T) {
 	if !res.Canceled || res.Files != 0 {
 		t.Fatalf("cancelled: %+v", res)
 	}
+	if _, err := os.Stat(filepath.Join(root, "c")); !os.IsNotExist(err) {
+		t.Fatalf("cancelled extraction created its destination: %v", err)
+	}
 
 	// unsupported
 	txt := writeFile(t, filepath.Join(root, "t.txt"), []byte("text"))

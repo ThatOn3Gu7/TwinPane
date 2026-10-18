@@ -444,6 +444,9 @@ func TestExtractCancelAndDestinationErrors(t *testing.T) {
 	if !res.Canceled || res.Files != 0 {
 		t.Fatalf("cancelled: %+v", res)
 	}
+	if _, err := os.Stat(dest); !os.IsNotExist(err) {
+		t.Fatalf("cancelled extraction created its destination: %v", err)
+	}
 	file := filepath.Join(dir, "file")
 	os.WriteFile(file, nil, 0o644)
 	if res := Extract(context.Background(), ExtractRequest{Archive: p, DestDir: file}, ops.Hooks{}); res.Fatal == nil {

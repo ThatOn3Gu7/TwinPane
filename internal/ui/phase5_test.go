@@ -24,6 +24,21 @@ import (
 
 // ---- helpers ------------------------------------------------------------------------
 
+func TestMissingDestinationParent(t *testing.T) {
+	root := t.TempDir()
+	parent, focus := missingDestinationParent(filepath.Join(root, "new", "nested"))
+	if parent != root || focus != "new" {
+		t.Fatalf("nearest existing ancestor = (%q, %q), want (%q, %q)", parent, focus, root, "new")
+	}
+	existing := filepath.Join(root, "present")
+	if err := os.Mkdir(existing, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if parent, focus = missingDestinationParent(existing); parent != "" || focus != "" {
+		t.Fatalf("existing destination should not refresh a parent, got (%q, %q)", parent, focus)
+	}
+}
+
 // writeZip creates a ZIP file; names ending in "/" are folders.
 func writeZip(t *testing.T, path string, entries map[string]string) {
 	t.Helper()
@@ -682,12 +697,24 @@ func TestCreateZipExcludesItselfAndAsksBeforeOverwrite(t *testing.T) {
 	if a, err := archive.Open(filepath.Join(env.dst, "a.zip")); err != nil || a.Files != 1 {
 		t.Fatalf("overwrite: %v", err)
 	}
-	// invalid destination folder
+	// A slow or missing destination mount is checked by the background task,
+	// not synchronously while the archive dialog is open.
 	h.press("z", "ctrl+u")
 	h.typeText(filepath.Join(env.root, "nope", "x.zip"), true)
 	h.press("enter")
-	if !h.dialogKind(dlgZip) || !strings.Contains(h.a.dialog.errLine, "does not exist") {
-		t.Fatal("missing folder accepted")
+	h.idle()
+	if h.a.dialog != nil {
+		t.Fatal("archive dialog should close when the background task starts")
+	}
+	items := h.a.tasks.newest()
+	if len(items) == 0 || items[0].state != taskFailed || !strings.Contains(items[0].summary, "destination folder") {
+		t.Fatalf("missing destination was not retained as a task failure: %+v", items)
+	}
+	h.a.tasks.selected = items[0].id
+	h.press("t")
+	v := h.view()
+	if !strings.Contains(v, "FAILED") || !strings.Contains(v, "destination folder") {
+		t.Fatalf("task view should show the missing-destination failure:\n%s", v)
 	}
 }
 

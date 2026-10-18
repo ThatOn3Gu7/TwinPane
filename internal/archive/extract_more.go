@@ -28,9 +28,15 @@ import (
 // files appear only when complete, links and special files are never
 // created, permissions are reduced to 0644 / 0755.
 func ExtractAny(ctx context.Context, req ExtractRequest, hooks ops.Hooks) ExtractResult {
+	if ctx.Err() != nil {
+		return ExtractResult{Dest: req.DestDir, Canceled: true}
+	}
 	info, err := Detect(req.Archive)
 	if err != nil {
 		return ExtractResult{Dest: req.DestDir, Fatal: err}
+	}
+	if ctx.Err() != nil {
+		return ExtractResult{Dest: req.DestDir, Canceled: true}
 	}
 	switch info.Format {
 	case FormatZIP:
@@ -100,6 +106,11 @@ func lowSpace(dest string, need int64, hooks ops.Hooks) bool {
 
 func extractTar(ctx context.Context, req ExtractRequest, codec Codec, hooks ops.Hooks) ExtractResult {
 	res := ExtractResult{}
+	if ctx.Err() != nil {
+		res.Canceled = true
+		res.Dest = req.DestDir
+		return res
+	}
 	rep := &reporter{hooks: hooks, p: ops.Progress{Phase: "extracting", ByteOnly: true}}
 	dest, err := prepareDest(req.DestDir)
 	res.Dest = dest
@@ -262,6 +273,11 @@ func (s singleInfo) Sys() any           { return nil }
 
 func extractSingle(ctx context.Context, req ExtractRequest, codec Codec, hooks ops.Hooks) ExtractResult {
 	res := ExtractResult{}
+	if ctx.Err() != nil {
+		res.Canceled = true
+		res.Dest = req.DestDir
+		return res
+	}
 	rep := &reporter{hooks: hooks, p: ops.Progress{Phase: "decompressing", TotalItems: 1, ByteOnly: true}}
 	dest, err := prepareDest(req.DestDir)
 	res.Dest = dest
@@ -315,6 +331,11 @@ var ErrNeeds7zip = errors.New("extracting 7Z and RAR archives needs 7-Zip (7zz, 
 
 func extract7z(ctx context.Context, req ExtractRequest, info Info, hooks ops.Hooks) ExtractResult {
 	res := ExtractResult{}
+	if ctx.Err() != nil {
+		res.Canceled = true
+		res.Dest = req.DestDir
+		return res
+	}
 	rep := &reporter{hooks: hooks, p: ops.Progress{Phase: "unpacking", ByteOnly: true}}
 	if req.SevenZip == "" || !filepath.IsAbs(req.SevenZip) {
 		res.Dest, res.Fatal = req.DestDir, ErrNeeds7zip

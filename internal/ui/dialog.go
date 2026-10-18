@@ -199,7 +199,7 @@ func (d *dialog) cancel(a *App) tea.Cmd {
 func (a *App) dialogKey(msg tea.KeyMsg) tea.Cmd {
 	d := a.dialog
 	s := msg.String()
-	if s == "esc" || (s == "ctrl+c" && a.op != nil) {
+	if s == "esc" || s == "ctrl+c" {
 		return d.cancel(a)
 	}
 	for _, sel := range d.selectors {

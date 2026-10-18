@@ -15,10 +15,6 @@ import (
 	"github.com/ThatOn3Gu7/TwinPane/internal/ops"
 )
 
-// progressDelay is how long an operation runs before the progress box is
-// shown (quick operations finish without flicker).
-var progressDelay = 300 * time.Millisecond
-
 // listCap is the maximum number of paths listed in confirmation dialogs.
 const listCap = 5
 
@@ -41,6 +37,13 @@ type opLowSpaceMsg struct {
 	reply      chan bool
 }
 
+type opTransferValidatedMsg struct {
+	id      int
+	req     ops.Request
+	targets []fsys.Entry
+	err     error
+}
+
 type opTransferDoneMsg struct {
 	id  int
 	res ops.Result
@@ -51,30 +54,42 @@ type opDeleteDoneMsg struct {
 	res ops.DeleteResult
 }
 
-type opRevealMsg struct{ id int }
-
 type deletePlannedMsg struct {
 	id   int
 	plan ops.DeletePlan
 	err  error
 }
 
-// opSession is a running copy / move / delete.
+// opSession is the complete retained record for one background file task.
 type opSession struct {
-	id        int
-	title     string
-	cancel    context.CancelFunc
-	events    chan tea.Msg
-	prog      ops.Progress
-	canceling bool
-	visible   bool
+	id               int
+	title            string
+	state            taskState
+	waitingFor       string
+	cancel           context.CancelFunc
+	events           chan tea.Msg
+	prog             ops.Progress
+	canceling        bool
+	lowSpaceDeclined bool
+	started          time.Time
+	finished         time.Time
+	summary          string
+	details          []string
 
-	srcPanel int
-	names    map[string]bool // top-level names in the source panel
-	first    string          // first top-level name (focused in the destination)
-	kind     ops.Kind
-	isDelete bool
-	plan     ops.DeletePlan
+	srcPanel   int
+	panelPaths [2]string // panel locations captured when the task starts
+	from       []string
+	to         string
+	names      map[string]bool // top-level names in the source panel
+	selection  map[string]bool // selected source names captured when the task starts
+	first      string          // first top-level name (focused in the destination)
+	kind       ops.Kind
+	isDelete   bool
+	plan       ops.DeletePlan
+}
+
+func (s *opSession) active() bool {
+	return s != nil && s.state <= taskWaiting
 }
 
 func (s *opSession) listen() tea.Cmd {
@@ -82,53 +97,38 @@ func (s *opSession) listen() tea.Cmd {
 	return func() tea.Msg { return <-ch }
 }
 
-// planState is an in-progress delete measurement (cancellable with Esc).
-type planState struct {
-	id      int
-	cancel  context.CancelFunc
-	panel   int
-	targets []fsys.Entry
-}
-
-// busy reports whether an operation or delete scan is running.
-func (a *App) busy() bool { return a.op != nil || a.planning != nil }
-
-// busyKey handles keys while an operation runs: only cancel is accepted.
-func (a *App) busyKey(msg tea.KeyMsg) tea.Cmd {
-	s := msg.String()
-	if s != "esc" && s != "ctrl+c" {
-		return nil
-	}
-	if a.planning != nil {
-		a.planning.cancel()
-		a.planning = nil
-		a.setStatusLevel("Delete cancelled — nothing was deleted", lvlWarn)
-		return nil
-	}
-	if a.op != nil && !a.op.canceling {
-		a.op.canceling = true
-		a.op.cancel()
-		a.op.visible = true
-	}
-	return nil
-}
+// busy is retained as a query for tests and status consumers. It no longer
+// gates input: active operations are background work, not a UI lock.
+func (a *App) busy() bool { return a.tasks.activeCount() > 0 }
 
 func (a *App) newSession(title string, srcPanel int, targets []string) (*opSession, context.Context) {
 	ctx, cancel := context.WithCancel(context.Background())
 	a.opSeq++
 	s := &opSession{
-		id: a.opSeq, title: title, cancel: cancel,
-		events:   make(chan tea.Msg, 32),
-		srcPanel: srcPanel, names: map[string]bool{},
+		id: a.opSeq, title: title, state: taskRunning, cancel: cancel,
+		events: make(chan tea.Msg, 32), srcPanel: srcPanel, names: map[string]bool{}, selection: map[string]bool{},
+		started: a.now(),
+	}
+	for i, p := range a.panels {
+		if p != nil {
+			s.panelPaths[i] = p.Path()
+		}
+	}
+	if srcPanel >= 0 && srcPanel < len(a.panels) && a.panels[srcPanel] != nil {
+		for _, name := range a.panels[srcPanel].SelectedNames() {
+			s.selection[name] = true
+		}
 	}
 	for i, p := range targets {
-		n := filepath.Base(p)
+		path := filepath.Clean(p)
+		s.from = append(s.from, path)
+		n := filepath.Base(path)
 		s.names[n] = true
 		if i == 0 {
 			s.first = n
 		}
 	}
-	a.op = s
+	a.tasks.add(s)
 	return s, ctx
 }
 
@@ -163,6 +163,9 @@ func (a *App) hooks(ctx context.Context, s *opSession) ops.Hooks {
 			}
 			select {
 			case ok := <-reply:
+				if !ok {
+					s.lowSpaceDeclined = true
+				}
 				return ok
 			case <-ctx.Done():
 				return false
@@ -171,82 +174,255 @@ func (a *App) hooks(ctx context.Context, s *opSession) ops.Hooks {
 	}
 }
 
-func (a *App) startCmds(s *opSession) tea.Cmd {
-	id := s.id
-	return tea.Batch(s.listen(), tea.Tick(progressDelay, func(time.Time) tea.Msg { return opRevealMsg{id} }))
+func (a *App) startCmds(s *opSession) tea.Cmd { return s.listen() }
+
+func (a *App) finishTask(s *opSession, state taskState, summary string, details ...string) {
+	if s == nil || !s.active() {
+		return
+	}
+	s.state, s.waitingFor = state, ""
+	s.summary = summary
+	s.finished = a.now()
+	if len(details) > maxTaskDetails {
+		keep := maxTaskDetails - 1
+		s.details = append(append([]string(nil), details[:keep]...), fmt.Sprintf("… %d more details omitted", len(details)-keep))
+	} else {
+		s.details = append([]string(nil), details...)
+	}
+	if s.cancel != nil {
+		s.cancel()
+		s.cancel = nil
+	}
 }
 
-// handleOpMsg processes messages from operations. ok=false if msg isn't one.
-func (a *App) handleOpMsg(msg tea.Msg) (tea.Cmd, bool) {
-	cur := func(id int) bool { return a.op != nil && a.op.id == id }
-	switch m := msg.(type) {
-	case opRevealMsg:
-		if cur(m.id) {
-			a.op.visible = true
+func taskOutcome(canceled bool, fatal error, errors int, partial bool) taskState {
+	if canceled {
+		if partial || errors > 0 {
+			return taskPartial
 		}
-		return nil, true
+		return taskCanceled
+	}
+	if fatal != nil || errors > 0 {
+		if partial {
+			return taskPartial
+		}
+		return taskFailed
+	}
+	return taskCompleted
+}
+
+func itemErrorDetails(items []ops.ItemError) []string {
+	limit := min(len(items), maxTaskDetails-1)
+	out := make([]string, 0, limit+1)
+	for _, item := range items[:limit] {
+		out = append(out, item.Error())
+	}
+	if len(items) > limit {
+		out = append(out, fmt.Sprintf("… %d more errors omitted", len(items)-limit))
+	}
+	return out
+}
+
+func appendTaskDetail(details []string, label string, err error) []string {
+	if err != nil {
+		return append(details, label+": "+errText(err))
+	}
+	return details
+}
+
+func (a *App) enqueueTaskPrompt(p taskPrompt) {
+	s := a.tasks.get(p.taskID)
+	if s == nil || !s.active() {
+		return
+	}
+	s.state = taskWaiting
+	s.waitingFor = map[taskPromptKind]string{
+		promptConflict:        "conflict decision",
+		promptLowSpace:        "free-space decision",
+		promptDeleteConfirm:   "delete confirmation",
+		promptTransferConfirm: "copy / move confirmation",
+	}[p.kind]
+	a.tasks.queuePrompt(p)
+}
+
+// showNextTaskPrompt arbitrates the single terminal dialog among concurrent
+// tasks and any ordinary dialog already open.
+func (a *App) showNextTaskPrompt() {
+	if a.dialog != nil || a.tasks.activePrompt != 0 {
+		return
+	}
+	for len(a.tasks.prompts) > 0 {
+		p := a.tasks.prompts[0]
+		a.tasks.prompts = a.tasks.prompts[1:]
+		s := a.tasks.get(p.taskID)
+		if s == nil || !s.active() || s.canceling {
+			continue
+		}
+		a.tasks.activePrompt = p.taskID
+		s.state = taskWaiting
+		switch p.kind {
+		case promptConflict:
+			a.conflictDialog(s, p.conflict)
+		case promptLowSpace:
+			a.lowSpaceDialog(s, p.lowSpace)
+		case promptDeleteConfirm:
+			a.deleteDialog(s, p.plan)
+		case promptTransferConfirm:
+			a.transferDialog(s, p.transfer, p.targets)
+		}
+		return
+	}
+}
+
+func (a *App) finishTaskPrompt(s *opSession, resume bool) {
+	if s != nil && a.tasks.activePrompt == s.id {
+		a.tasks.activePrompt = 0
+	}
+	if s != nil && resume && s.active() {
+		s.state, s.waitingFor = taskRunning, ""
+	}
+}
+
+func (a *App) cancelTask(id int) bool {
+	s := a.tasks.get(id)
+	if s == nil || !s.active() || s.canceling {
+		return false
+	}
+	if a.tasks.activePrompt == id {
+		// The modal owns the current decision; its Esc action replies safely.
+		return false
+	}
+	s.canceling = true
+	s.state = taskCanceling
+	a.tasks.removePrompts(id)
+	if s.cancel != nil {
+		s.cancel()
+	}
+	switch s.waitingFor {
+	case "delete confirmation":
+		a.finishTask(s, taskCanceled, "Delete cancelled — nothing was deleted")
+		a.setStatusLevel("Delete cancelled — nothing was deleted", lvlWarn)
+	case "copy / move confirmation":
+		summary := capitalize(s.kind.String()) + " cancelled — nothing was transferred"
+		a.finishTask(s, taskCanceled, summary)
+		a.setStatusLevel(summary, lvlWarn)
+	default:
+		a.setStatusLevel("Stopping "+s.title+" safely…", lvlWarn)
+	}
+	return true
+}
+
+// handleOpMsg processes messages from background tasks. ok=false if msg
+// isn't one of the task messages.
+func (a *App) handleOpMsg(msg tea.Msg) (tea.Cmd, bool) {
+	lookup := func(id int) *opSession { return a.tasks.get(id) }
+	switch m := msg.(type) {
 	case opProgressMsg:
-		if !cur(m.id) {
+		s := lookup(m.id)
+		if s == nil || !s.active() {
 			return nil, true
 		}
-		a.op.prog = m.p
-		return a.op.listen(), true
+		s.prog = m.p
+		return s.listen(), true
 	case opConflictMsg:
-		if !cur(m.id) {
+		s := lookup(m.id)
+		if s == nil || !s.active() {
 			m.reply <- ops.Decision{Action: ops.Cancel}
 			return nil, true
 		}
-		a.conflictDialog(a.op, m)
-		return a.op.listen(), true
+		if s.canceling {
+			m.reply <- ops.Decision{Action: ops.Cancel}
+			return s.listen(), true
+		}
+		a.enqueueTaskPrompt(taskPrompt{taskID: s.id, kind: promptConflict, conflict: m})
+		return s.listen(), true
 	case opLowSpaceMsg:
-		if !cur(m.id) {
+		s := lookup(m.id)
+		if s == nil || !s.active() {
 			m.reply <- false
 			return nil, true
 		}
-		a.lowSpaceDialog(m)
-		return a.op.listen(), true
-	case opTransferDoneMsg:
-		if !cur(m.id) {
+		if s.canceling {
+			m.reply <- false
+			return s.listen(), true
+		}
+		a.enqueueTaskPrompt(taskPrompt{taskID: s.id, kind: promptLowSpace, lowSpace: m})
+		return s.listen(), true
+	case opTransferValidatedMsg:
+		s := lookup(m.id)
+		if s == nil || !s.active() {
 			return nil, true
 		}
-		return a.finishTransfer(a.op, m.res), true
-	case opDeleteDoneMsg:
-		if !cur(m.id) {
+		if s.canceling {
+			summary := capitalize(s.kind.String()) + " cancelled — nothing was transferred"
+			a.finishTask(s, taskCanceled, summary)
+			a.setStatusLevel(summary, lvlWarn)
 			return nil, true
 		}
-		return a.finishDelete(a.op, m.res), true
-	case opExtractDoneMsg:
-		if !cur(m.id) {
-			return nil, true
-		}
-		return a.finishExtract(a.op, m.res), true
-	case opZipDoneMsg:
-		if !cur(m.id) {
-			return nil, true
-		}
-		return a.finishZip(a.op, m.res), true
-	case opCloudDoneMsg:
-		if !cur(m.id) {
-			return nil, true
-		}
-		return a.finishCloudOp(a.op, m), true
-	case opCloudDeleteDoneMsg:
-		if !cur(m.id) {
-			return nil, true
-		}
-		return a.finishCloudDelete(a.op, m.res), true
-	case deletePlannedMsg:
-		if a.planning == nil || a.planning.id != m.id {
-			return nil, true // cancelled or superseded
-		}
-		st := a.planning
-		a.planning = nil
 		if m.err != nil {
-			a.setStatus("cannot delete: "+errText(m.err), true)
+			summary := fmt.Sprintf("cannot %s: %s", s.kind, errText(m.err))
+			a.finishTask(s, taskFailed, summary, summary)
+			a.setStatusLevel(summary, lvlErr)
 			return nil, true
 		}
-		a.setStatus("", false)
-		a.deleteDialog(m.plan, st)
+		a.enqueueTaskPrompt(taskPrompt{taskID: s.id, kind: promptTransferConfirm, transfer: m.req, targets: m.targets})
+		return nil, true
+	case opTransferDoneMsg:
+		if s := lookup(m.id); s != nil && s.active() {
+			return a.finishTransfer(s, m.res), true
+		}
+		return nil, true
+	case opDeleteDoneMsg:
+		if s := lookup(m.id); s != nil && s.active() {
+			return a.finishDelete(s, m.res), true
+		}
+		return nil, true
+	case opExtractDoneMsg:
+		if s := lookup(m.id); s != nil && s.active() {
+			return a.finishExtract(s, m.res, m.parent, m.parentFocus), true
+		}
+		return nil, true
+	case opZipDoneMsg:
+		if s := lookup(m.id); s != nil && s.active() {
+			return a.finishZip(s, m.res), true
+		}
+		return nil, true
+	case opCloudDoneMsg:
+		if s := lookup(m.id); s != nil && s.active() {
+			return a.finishCloudOp(s, m), true
+		}
+		return nil, true
+	case opCloudDeleteDoneMsg:
+		if s := lookup(m.id); s != nil && s.active() {
+			return a.finishCloudDelete(s, m.res), true
+		}
+		return nil, true
+	case deletePlannedMsg:
+		s := lookup(m.id)
+		if s == nil || !s.active() || !s.isDelete {
+			return nil, true
+		}
+		if s.canceling {
+			a.finishTask(s, taskCanceled, "Delete cancelled — nothing was deleted")
+			a.setStatusLevel("Delete cancelled — nothing was deleted", lvlWarn)
+			return nil, true
+		}
+		if m.err != nil {
+			state := taskOutcome(false, m.err, 0, false)
+			summary := "cannot delete: " + errText(m.err)
+			a.finishTask(s, state, summary, summary)
+			a.setStatusLevel(summary, lvlErr)
+			return nil, true
+		}
+		s.plan = m.plan
+		if m.plan.UseTrash {
+			s.to = "Trash (" + m.plan.TrashName + ")"
+		} else {
+			s.to = "Permanent deletion"
+		}
+		s.state = taskWaiting
+		s.waitingFor = "delete confirmation"
+		a.enqueueTaskPrompt(taskPrompt{taskID: s.id, kind: promptDeleteConfirm, plan: m.plan})
 		return nil, true
 	}
 	return nil, false
@@ -276,31 +452,62 @@ func (a *App) beginTransfer(kind ops.Kind) tea.Cmd {
 		return nil
 	}
 	paths := pathsOf(targets)
-	req := ops.Request{Kind: kind, Sources: paths, DestDir: dst.Path()}
-	if err := ops.Validate(req); err != nil {
-		a.setStatus(fmt.Sprintf("cannot %s: %s", kind, errText(err)), true)
-		return nil
-	}
-	verb := capitalize(kind.String())
+	req := ops.Request{Kind: kind, Sources: append([]string(nil), paths...), DestDir: filepath.Clean(dst.Path())}
+	// Validate before presenting the confirmation, but keep filesystem access
+	// in the task goroutine. ops.Run validates once more just before touching
+	// any path in case a source or destination changes while the dialog is open.
+	s, _ := a.newSession("Checking "+kind.String(), srcIdx, paths)
+	s.kind, s.to = kind, req.DestDir
+	s.state = taskPlanning
+	s.prog = ops.Progress{Phase: "validating", TotalItems: len(paths)}
+	a.setStatus("Checking "+kind.String()+" paths…", false)
+	targets = append([]fsys.Entry(nil), targets...)
+	go func() {
+		err := ops.Validate(req)
+		s.events <- opTransferValidatedMsg{s.id, req, targets, err}
+	}()
+	return a.startCmds(s)
+}
+
+func (a *App) transferDialog(s *opSession, req ops.Request, targets []fsys.Entry) {
+	verb := capitalize(req.Kind.String())
 	d := &dialog{kind: dlgConfirm, title: fmt.Sprintf("%s %s?", verb, describe(targets))}
-	d.body = append(d.body, text("From:"), path(src.Path()), text("To:"), path(dst.Path()), blank())
+	d.body = append(d.body, text("From:"), path(s.panelPaths[s.srcPanel]), text("To:"), path(req.DestDir), blank())
 	d.body = append(d.body, nameList(targets)...)
-	if kind == ops.Move {
+	if req.Kind == ops.Move {
 		d.body = append(d.body, blank(), hint("Items are removed from the source only after they have been moved (across filesystems: copied and verified first)."))
 	}
 	d.body = append(d.body, blank(), hint("Existing items in the destination are never overwritten without asking."))
-	d.buttons = []button{
-		{label: verb + " (Enter)", run: func(a *App) tea.Cmd { a.dialog = nil; return a.startTransfer(kind, srcIdx, req) }},
-		{label: "Cancel (Esc)", run: func(a *App) tea.Cmd { a.dialog = nil; return nil }},
+	cancelTransfer := func(a *App) tea.Cmd {
+		a.dialog = nil
+		a.finishTaskPrompt(s, false)
+		summary := verb + " cancelled — nothing was transferred"
+		a.finishTask(s, taskCanceled, summary)
+		a.setStatusLevel(summary, lvlWarn)
+		return nil
 	}
+	d.buttons = []button{
+		{label: verb + " (Enter)", run: func(a *App) tea.Cmd {
+			a.dialog = nil
+			a.finishTaskPrompt(s, true)
+			return a.startTransfer(s, req)
+		}},
+		{label: "Cancel (Esc)", run: cancelTransfer},
+	}
+	d.onEsc = cancelTransfer
 	d.footer = "Enter confirm · Esc cancel · ←/→ choose"
 	a.dialog = d
-	return nil
 }
 
-func (a *App) startTransfer(kind ops.Kind, srcIdx int, req ops.Request) tea.Cmd {
-	s, ctx := a.newSession(kind.Verb(), srcIdx, req.Sources)
-	s.kind = kind
+func (a *App) startTransfer(s *opSession, req ops.Request) tea.Cmd {
+	req.Sources = append([]string(nil), req.Sources...)
+	req.DestDir = filepath.Clean(req.DestDir)
+	if s.cancel != nil {
+		s.cancel() // end the completed validation context before transferring
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	s.cancel, s.title, s.kind, s.to = cancel, req.Kind.Verb(), req.Kind, req.DestDir
+	s.state, s.waitingFor = taskRunning, ""
 	h := a.hooks(ctx, s)
 	go func() {
 		res := ops.Run(ctx, req, h)
@@ -322,7 +529,10 @@ func (a *App) conflictDialog(s *opSession, m opConflictMsg) {
 			a.dialog = nil
 			if act == ops.Cancel {
 				s.canceling = true
-				s.visible = true
+				s.state = taskCanceling
+				a.finishTaskPrompt(s, false)
+			} else {
+				a.finishTaskPrompt(s, true)
 			}
 			m.reply <- ops.Decision{Action: act, ApplyAll: all}
 			return nil
@@ -364,13 +574,14 @@ func (a *App) conflictDialog(s *opSession, m opConflictMsg) {
 	a.dialog = d
 }
 
-func (a *App) lowSpaceDialog(m opLowSpaceMsg) {
+func (a *App) lowSpaceDialog(s *opSession, m opLowSpaceMsg) {
 	done := false
 	answer := func(ok bool) func(*App) tea.Cmd {
 		return func(a *App) tea.Cmd {
 			if !done {
 				done = true
 				a.dialog = nil
+				a.finishTaskPrompt(s, true)
 				m.reply <- ok
 			}
 			return nil
@@ -391,47 +602,49 @@ func (a *App) lowSpaceDialog(m opLowSpaceMsg) {
 }
 
 func (a *App) finishTransfer(s *opSession, res ops.Result) tea.Cmd {
-	a.op = nil
-	a.dialog = nil
-	src, dst := a.panels[s.srcPanel], a.panels[1-s.srcPanel]
-	if res.OK() {
+	src := a.panels[s.srcPanel]
+	if res.OK() && a.sourceSelectionUnchanged(s) {
 		src.ClearSelection()
 	}
-	srcFocus := ""
+	var cmds []tea.Cmd
 	if s.kind == ops.Move {
-		srcFocus = src.NextFocus(s.names)
+		focus := ""
+		if src.Path() == s.panelPaths[s.srcPanel] {
+			focus = src.NextFocus(s.names)
+		}
+		cmds = append(cmds, a.refreshPanelAt(s.srcPanel, s.panelPaths[s.srcPanel], focus))
 	}
-	cmds := []tea.Cmd{src.RefreshFocus(srcFocus), dst.RefreshFocus(s.first)}
+	dstIdx := 1 - s.srcPanel
+	cmds = append(cmds, a.refreshPanelAt(dstIdx, s.panelPaths[dstIdx], s.first))
 
 	summary := res.Summary()
+	details := appendTaskDetail(nil, "Stopped", res.Fatal)
+	for _, item := range res.Leftovers {
+		details = append(details, "Copied and verified, but source not removed: "+item.Error())
+	}
+	for _, item := range res.Errors {
+		details = append(details, "Failed: "+item.Error())
+	}
+	if res.Canceled {
+		details = append(details, "Canceled safely; remaining items were not processed")
+	}
+	partial := res.Files+res.Dirs > 0 || len(res.Leftovers) > 0
+	state := taskOutcome(res.Canceled, res.Fatal, len(res.Errors)+len(res.Leftovers), partial)
+	if s.lowSpaceDeclined && res.Fatal != nil {
+		summary = fmt.Sprintf("%s cancelled — not enough free space", capitalize(s.kind.String()))
+		state = taskCanceled
+		details = append(details, "No items were processed because the free-space check did not permit continuing")
+	}
+	a.finishTask(s, state, summary, details...)
 	switch {
+	case s.lowSpaceDeclined:
+		a.setStatusLevel(summary, lvlWarn)
 	case res.OK():
 		a.setStatusLevel(summary, lvlOK)
-	case res.Fatal == nil && len(res.Errors) == 0 && len(res.Leftovers) == 0: // cancelled cleanly
+	case res.Fatal == nil && len(res.Errors) == 0 && len(res.Leftovers) == 0:
 		a.setStatusLevel(summary, lvlWarn)
 	default:
 		a.setStatusLevel(summary, lvlErr)
-		title := capitalize(s.kind.String()) + " finished with problems"
-		if res.Fatal != nil {
-			title = capitalize(s.kind.String()) + " stopped"
-		}
-		var body []dline
-		body = append(body, text(summary))
-		if res.Fatal != nil {
-			body = append(body, blank(), warn("Stopped: "+errText(res.Fatal)))
-		}
-		if len(res.Leftovers) > 0 {
-			body = append(body, blank(), warn(fmt.Sprintf("Copied and verified, but the source could NOT be removed (%d) — the data now exists in both places:", len(res.Leftovers))))
-			body = append(body, itemLines(res.Leftovers)...)
-		}
-		if len(res.Errors) > 0 {
-			body = append(body, blank(), warn(fmt.Sprintf("Failed (%d) — these items were not %s:", len(res.Errors), strings.ToLower(s.kind.Past()))))
-			body = append(body, itemLines(res.Errors)...)
-		}
-		if res.Canceled {
-			body = append(body, blank(), hint("The operation was cancelled; remaining items were not processed."))
-		}
-		a.showReport(title, body)
 	}
 	return tea.Batch(cmds...)
 }
@@ -451,20 +664,21 @@ func (a *App) beginDelete() tea.Cmd {
 		a.setStatus("nothing to delete: put the cursor on an item or select items with Space", true)
 		return nil
 	}
-	paths := pathsOf(targets)
-	ctx, cancel := context.WithCancel(context.Background())
-	a.opSeq++
-	id := a.opSeq
-	a.planning = &planState{id: id, cancel: cancel, panel: a.active, targets: targets}
-	a.setStatus("Checking what will be deleted… (Esc to cancel)", false)
+	paths := append([]string(nil), pathsOf(targets)...)
+	s, ctx := a.newSession("Checking delete", a.active, paths)
+	s.isDelete = true
+	s.state = taskPlanning
+	s.prog = ops.Progress{Phase: "scanning", TotalItems: len(paths)}
+	a.setStatus("Checking what will be deleted…", false)
 	tr := a.trasher
-	return func() tea.Msg {
+	go func() {
 		plan, err := ops.PlanDelete(ctx, paths, tr)
-		return deletePlannedMsg{id, plan, err}
-	}
+		s.events <- deletePlannedMsg{s.id, plan, err}
+	}()
+	return a.startCmds(s)
 }
 
-func (a *App) deleteDialog(plan ops.DeletePlan, st *planState) {
+func (a *App) deleteDialog(s *opSession, plan ops.DeletePlan) {
 	n := len(plan.Paths)
 	what := countPhrase(plan.TopDirs, plan.TopFiles)
 	typed := !plan.UseTrash && (plan.TopDirs > 0 || n > 1)
@@ -480,9 +694,6 @@ func (a *App) deleteDialog(plan ops.DeletePlan, st *planState) {
 		if i == listCap {
 			d.body = append(d.body, hint(fmt.Sprintf("… and %d more", n-listCap)))
 			break
-		}
-		if fi, err := os.Lstat(p); err == nil && fi.IsDir() {
-			p += string(filepath.Separator)
 		}
 		d.body = append(d.body, path(p))
 	}
@@ -513,12 +724,15 @@ func (a *App) deleteDialog(plan ops.DeletePlan, st *planState) {
 
 	cancelDel := func(a *App) tea.Cmd {
 		a.dialog = nil
+		a.finishTaskPrompt(s, false)
+		a.finishTask(s, taskCanceled, "Delete cancelled — nothing was deleted")
 		a.setStatusLevel("Delete cancelled — nothing was deleted", lvlWarn)
 		return nil
 	}
 	start := func(a *App) tea.Cmd {
 		a.dialog = nil
-		return a.startDelete(plan, st)
+		a.finishTaskPrompt(s, true)
+		return a.startDelete(s, plan)
 	}
 	d.onEsc = cancelDel
 	if typed {
@@ -549,13 +763,21 @@ func (a *App) deleteDialog(plan ops.DeletePlan, st *planState) {
 	a.dialog = d
 }
 
-func (a *App) startDelete(plan ops.DeletePlan, st *planState) tea.Cmd {
-	title := "Deleting"
+func (a *App) startDelete(s *opSession, plan ops.DeletePlan) tea.Cmd {
+	s.title = "Deleting"
 	if plan.UseTrash {
-		title = "Moving to trash"
+		s.title = "Moving to trash"
+		s.to = "Trash (" + plan.TrashName + ")"
+	} else {
+		s.to = "Permanent deletion"
 	}
-	s, ctx := a.newSession(title, st.panel, plan.Paths)
+	s.state, s.waitingFor = taskRunning, ""
 	s.isDelete, s.plan = true, plan
+	if s.cancel != nil {
+		s.cancel() // end the completed planning context before starting deletion
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	s.cancel = cancel
 	h := a.hooks(ctx, s)
 	tr := a.trasher
 	go func() {
@@ -566,14 +788,16 @@ func (a *App) startDelete(plan ops.DeletePlan, st *planState) tea.Cmd {
 }
 
 func (a *App) finishDelete(s *opSession, res ops.DeleteResult) tea.Cmd {
-	a.op = nil
-	a.dialog = nil
-	p, other := a.panels[s.srcPanel], a.panels[1-s.srcPanel]
+	p := a.panels[s.srcPanel]
 	n := len(s.plan.Paths)
-	if res.OK() {
+	if res.OK() && a.sourceSelectionUnchanged(s) {
 		p.ClearSelection()
 	}
-	cmds := []tea.Cmd{p.RefreshFocus(p.NextFocus(s.names)), other.Refresh()}
+	focus := ""
+	if p.Path() == s.panelPaths[s.srcPanel] {
+		focus = p.NextFocus(s.names)
+	}
+	cmd := a.refreshPanelsAt(s.panelPaths[s.srcPanel], focus)
 
 	var summary string
 	removed := fmt.Sprintf("%d of %d items", res.Removed, n)
@@ -582,6 +806,15 @@ func (a *App) finishDelete(s *opSession, res ops.DeleteResult) tea.Cmd {
 	} else {
 		summary = fmt.Sprintf("Deleted %s (%s, %s)", plural(res.Removed, "item"), plural(res.Files, "file"), plural(res.Dirs, "folder"))
 	}
+	partial := res.Removed > 0 || res.Files+res.Dirs > 0
+	details := itemErrorDetails(res.Failed)
+	if res.Canceled && partial && !res.UseTrash {
+		details = append(details, fmt.Sprintf("Deleted so far: %s, %s; a folder in progress may be partly emptied", plural(res.Files, "file"), plural(res.Dirs, "folder")))
+	}
+	if len(res.Failed) > 0 && !res.UseTrash {
+		details = append(details, "Folders that still contain undeletable items were kept")
+	}
+	state := taskOutcome(res.Canceled, nil, len(res.Failed), partial)
 	switch {
 	case res.OK():
 		a.setStatusLevel(summary, lvlOK)
@@ -590,25 +823,18 @@ func (a *App) finishDelete(s *opSession, res ops.DeleteResult) tea.Cmd {
 		if !res.UseTrash && res.Files+res.Dirs > 0 {
 			msg += fmt.Sprintf(" (%s, %s deleted — a folder in progress may be partly emptied)", plural(res.Files, "file"), plural(res.Dirs, "folder"))
 		}
+		summary = msg
 		a.setStatusLevel(msg, lvlWarn)
 	default:
 		msg := fmt.Sprintf("Delete incomplete: %s removed, %s", removed, plural(len(res.Failed), "error"))
 		if res.Canceled {
 			msg += ", cancelled"
 		}
+		summary = msg
 		a.setStatusLevel(msg, lvlErr)
-		body := []dline{text(msg)}
-		if !res.UseTrash {
-			body = append(body, text(fmt.Sprintf("Deleted so far: %s, %s.", plural(res.Files, "file"), plural(res.Dirs, "folder"))))
-		}
-		body = append(body, blank(), warn(fmt.Sprintf("Could not delete (%d):", len(res.Failed))))
-		body = append(body, itemLines(res.Failed)...)
-		if !res.UseTrash {
-			body = append(body, blank(), hint("Folders that still contain undeletable items were kept."))
-		}
-		a.showReport("Delete finished with problems", body)
 	}
-	return tea.Batch(cmds...)
+	a.finishTask(s, state, summary, details...)
+	return cmd
 }
 
 // ---- rename ------------------------------------------------------------------
@@ -660,48 +886,6 @@ func (a *App) showReport(title string, body []dline) {
 		buttons: []button{{label: "OK (Enter)", run: func(a *App) tea.Cmd { a.dialog = nil; return nil }}},
 		footer:  "↑/↓ PgUp/PgDn scroll · Enter/Esc close",
 	}
-}
-
-// ---- progress rendering ----------------------------------------------------------
-
-func (a *App) renderProgress(s *opSession) string {
-	th := a.theme
-	p := s.prog
-	w := boxWidth(60, a.width)
-	d := &dialog{title: s.title + "…", width: 60}
-	if s.canceling {
-		d.title = "Cancelling…"
-	}
-	if p.Phase == "scanning" || (p.TotalItems == 0 && p.DoneItems == 0 && !p.ByteOnly) {
-		d.body = append(d.body, text(fmt.Sprintf("Scanning… %d items found", p.TotalItems)))
-	} else {
-		f := p.Fraction()
-		filled := int(f * float64(w))
-		bar := th.ProgressFill.Render(strings.Repeat("█", filled)) + th.ProgressEmpty.Render(strings.Repeat("░", w-filled))
-		d.body = append(d.body, dline{kind: lnRaw, text: bar})
-		counts := fmt.Sprintf("%d / %d items", p.DoneItems, p.TotalItems)
-		if p.ByteOnly {
-			counts = plural(p.TotalItems, "item")
-		}
-		if p.TotalBytes > 0 {
-			counts += fmt.Sprintf(" · %s / %s", fsys.HumanSize(p.DoneBytes), fsys.HumanSize(p.TotalBytes))
-		}
-		d.body = append(d.body, text(fmt.Sprintf("%3.0f%%  %s", f*100, counts)))
-	}
-	if p.Current != "" {
-		d.body = append(d.body, path(p.Current))
-	} else {
-		d.body = append(d.body, blank())
-	}
-	if p.Errors > 0 {
-		d.body = append(d.body, warn(fmt.Sprintf("%s so far — last: %s", plural(p.Errors, "error"), p.LastError)))
-	}
-	if s.canceling {
-		d.footer = "Stopping safely after the current item…"
-	} else {
-		d.footer = "Esc cancel"
-	}
-	return a.renderDialog(d)
 }
 
 // ---- helpers -----------------------------------------------------------------

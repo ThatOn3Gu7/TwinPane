@@ -566,7 +566,8 @@ func TestCloudCancelTransfer(t *testing.T) { // REAL rclone, slowed down with RC
 	h.focus("big.bin")
 	h.press("c", "enter")
 	h.until("transfer running", func() bool {
-		return h.a.op != nil && h.a.op.prog.DoneBytes > 0
+		s := h.a.tasks.latestActive()
+		return s != nil && s.prog.DoneBytes > 0
 	})
 	start := time.Now()
 	h.press("esc")

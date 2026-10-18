@@ -28,9 +28,8 @@ import (
 //     then reset so a third tap is not another double tap;
 //   - buttons and hint-bar items act on release, only if the press was on
 //     the same item, and not during dialogGuard after a dialog opened;
-//   - nothing happens while the editor runs, during the quiet period after
-//     it, or (except for the hint bar's "Esc cancel") while an operation
-//     runs.
+//   - nothing happens while the editor runs or during the quiet period
+//     after it; background file operations do not lock panel navigation.
 
 var (
 	doubleTapWindow = 450 * time.Millisecond
@@ -95,8 +94,8 @@ func (a *App) handleMouse(m tea.MouseMsg) tea.Cmd {
 	switch {
 	case a.dialog != nil:
 		return a.dialogMouse(a.dialog, ev)
-	case a.busy():
-		return nil
+	case a.tasks.showing:
+		return a.taskViewMouse(ev)
 	case a.showHelp:
 		return a.helpMouse(ev) // help.go: wheel scrolls, a tap closes
 	case a.props != nil:
