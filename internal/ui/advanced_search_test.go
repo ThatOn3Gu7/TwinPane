@@ -178,7 +178,7 @@ func TestAdvancedSearchEmptyAndNarrowLayouts(t *testing.T) {
 			t.Fatalf("invalid view at %dx%d: %q", tc.width, tc.height, view)
 		}
 		if got := ansi.StringWidth(strings.Split(view, "\n")[1]); got > tc.width {
-			t.Errorf("line width %d exceeds %d at %dx%d", got, tc.width, tc.height)
+			t.Errorf("line width %d exceeds %d at %dx%d", got, tc.width, tc.width, tc.height)
 		}
 	}
 	h.press("esc")
