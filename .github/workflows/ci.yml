@@ -70,7 +70,22 @@ jobs:
       - name: Unit and UI tests
         env:
           TWINPANE_REQUIRE_TOOLS: "1"
-        run: go test -race -count=1 ./...
+        run: |
+          log="$RUNNER_TEMP/go-test.log"
+          set +e
+          go test -race -count=1 ./... >"$log" 2>&1
+          status=$?
+          set -e
+          cat "$log"
+          if [ "$status" -ne 0 ]; then
+            python3 - "$log" <<'PYLOG'
+          import pathlib, sys
+          text = "\n".join(pathlib.Path(sys.argv[1]).read_text(errors="replace").splitlines()[-60:])
+          text = text.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+          print(f"::error title=Go test output::{text}")
+          PYLOG
+          fi
+          exit "$status"
 
       - name: Archive tests with the latest 7-Zip
         if: ${{ !cancelled() && env.SEVENZIP_LATEST != '' }}
