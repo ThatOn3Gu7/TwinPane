@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -257,15 +258,22 @@ func TestAdvancedSearchPreviewIsAsynchronousAndBounded(t *testing.T) {
 	if err := os.WriteFile(path, []byte("preview text\n"+strings.Repeat("x", 1<<20)), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	h.press("/")
-	h.press("ctrl+g")
-	v := h.a.advancedSearch
+	// Keep the test focused on preview loading instead of racing the live
+	// indexer's initial preview of the same file.
+	ctx, cancel := context.WithCancel(context.Background())
+	v := &advancedSearchView{
+		id: 1, root: env.src, mode: advancedFilenameMode, input: newLineInput(""),
+		ctx: ctx, cancel: cancel, events: make(chan advancedSearchEvent, 16),
+	}
+	h.a.advancedSearch = v
+	defer h.a.closeAdvancedSearch()
 	entry, ok := search.NewEntry(v.root, path)
 	if !ok {
 		t.Fatal("could not create test result")
 	}
 	v.entries = []search.Entry{entry}
 	v.filenameResults = []int{0}
+	h.exec(v.listen())
 	h.a.refreshAdvancedPreview()
 	if !v.previewLoading {
 		t.Fatal("preview was not scheduled asynchronously")
