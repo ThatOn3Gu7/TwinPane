@@ -155,6 +155,7 @@ func TestRunContentCancellationAndRootErrors(t *testing.T) {
 		}
 	}
 	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	out := make(chan ContentUpdate, 1)
 	done := make(chan struct{})
 	go func() {
@@ -167,20 +168,27 @@ func TestRunContentCancellationAndRootErrors(t *testing.T) {
 		t.Fatalf("search completed before cancellation: %+v", first)
 	}
 	cancel()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("content scan did not stop after cancellation")
+	}
 	var final *ContentUpdate
-	for u := range out {
-		if u.Done {
-			copy := u
+	for update := range out {
+		if update.Done {
+			copy := update
 			final = &copy
 		}
 	}
-	<-done
-	if final == nil || (!final.Canceled && final.ScannedFiles < 64) {
+	// RunContent may omit the final cancellation update when its output buffer
+	// is full; completion must still be prompt, and any delivered final must
+	// report either cancellation or a complete scan.
+	if final != nil && !final.Canceled && final.ScannedFiles < 64 {
 		t.Fatalf("scan did not stop or complete cleanly after cancellation: %+v (first update %+v)", final, first)
 	}
 
 	missing := filepath.Join(t.TempDir(), "not-a-directory")
-	updates := runContentForTest(context.Background(), missing, "needle", ContentOptions{})
+	updates = runContentForTest(context.Background(), missing, "needle", ContentOptions{})
 	finalUpdate := lastContentUpdate(t, updates)
 	if finalUpdate.Err == nil {
 		t.Fatalf("missing root was not reported: %+v", finalUpdate)

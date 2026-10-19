@@ -157,16 +157,28 @@ func TestDuplicateDirectoryIdentityIsNotTraversedTwice(t *testing.T) {
 		}
 	}
 	writeSizedFile(t, real, "data", 9)
-	writeSizedFile(t, alias, "duplicate-data", 9)
-	aliasInfo, err := os.Lstat(real)
+	realInfo, err := os.Lstat(real)
 	if err != nil {
 		t.Fatal(err)
 	}
-	filesystem := &overrideFS{osFileSystem: osFileSystem{}, lstat: map[string]fs.FileInfo{alias: aliasInfo}}
+	if directoryIdentity(realInfo, real) != directoryIdentity(realInfo, alias) {
+		t.Skip("directory identity is path-based on this platform")
+	}
+
+	// Model two paths to the same directory consistently: both Lstat and
+	// OpenDir (including paths below the alias) resolve to the real directory.
+	// The filesystem may return either name first, so accept either as the
+	// one scanned and require the other to be skipped as a duplicate.
+	filesystem := directoryAliasFS{osFileSystem: osFileSystem{}, alias: alias, target: real}
 	result := Scan(context.Background(), root, Options{FileSystem: filesystem, SameFilesystem: allowSameFilesystem}, nil)
-	aliasNode := findNode(result.Root, "alias")
-	if result.Status != StatusComplete || result.DuplicatesSkipped != 1 || aliasNode == nil || aliasNode.Status != StatusDuplicateSkipped {
-		t.Fatalf("duplicate result = status %s, skipped %d, alias %+v", result.Status, result.DuplicatesSkipped, aliasNode)
+	realNode, aliasNode := findNode(result.Root, "real"), findNode(result.Root, "alias")
+	if result.Status != StatusComplete || result.DuplicatesSkipped != 1 || realNode == nil || aliasNode == nil {
+		t.Fatalf("duplicate result = status %s, skipped %d, real %+v, alias %+v", result.Status, result.DuplicatesSkipped, realNode, aliasNode)
+	}
+	realSkipped := realNode.Status == StatusDuplicateSkipped
+	aliasSkipped := aliasNode.Status == StatusDuplicateSkipped
+	if realSkipped == aliasSkipped {
+		t.Fatalf("exactly one duplicate directory should be skipped: real %+v, alias %+v", realNode, aliasNode)
 	}
 	if result.Root.Files != 1 || result.Root.ApparentBytes != 9 {
 		t.Fatalf("duplicate directory was counted twice: files=%d bytes=%d", result.Root.Files, result.Root.ApparentBytes)
@@ -424,6 +436,28 @@ func TestCancellationWaitsForInFlightReadAndCleansUp(t *testing.T) {
 	if filesystem.opened != filesystem.closed {
 		t.Fatalf("directory handles: opened %d, closed %d", filesystem.opened, filesystem.closed)
 	}
+}
+
+type directoryAliasFS struct {
+	osFileSystem
+	alias  string
+	target string
+}
+
+func (f directoryAliasFS) resolve(path string) string {
+	rel, err := filepath.Rel(f.alias, path)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return path
+	}
+	return filepath.Join(f.target, rel)
+}
+
+func (f directoryAliasFS) Lstat(path string) (fs.FileInfo, error) {
+	return f.osFileSystem.Lstat(f.resolve(path))
+}
+
+func (f directoryAliasFS) OpenDir(path string) (Directory, error) {
+	return f.osFileSystem.OpenDir(f.resolve(path))
 }
 
 type overrideFS struct {
