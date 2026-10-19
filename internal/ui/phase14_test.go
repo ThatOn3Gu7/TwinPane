@@ -83,15 +83,15 @@ func TestTARArchiveBrowseAndSelectiveExtraction(t *testing.T) {
 
 	h.focus("readme.txt")
 	h.press("x")
-	if !h.dialogKind(dlgExtract) || h.a.dialog.input.Value() != env.dst {
+	if !h.dialogKind(dlgExtract) || h.a.dialog.input.Value() != env.src {
 		t.Fatalf("selective TAR extraction prompt: %v", h.a.dialog)
 	}
 	h.press("enter")
 	h.idle()
-	if got := readFile(t, filepath.Join(env.dst, "readme.txt")); got != "read from the virtual TAR\n" {
+	if got := readFile(t, filepath.Join(env.src, "readme.txt")); got != "read from the virtual TAR\n" {
 		t.Fatalf("selected TAR entry content %q", got)
 	}
-	if _, err := os.Stat(filepath.Join(env.dst, "root.txt")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(env.src, "root.txt")); !os.IsNotExist(err) {
 		t.Fatalf("unselected TAR entry was extracted: %v", err)
 	}
 	if !p.InArchive() {
@@ -99,7 +99,7 @@ func TestTARArchiveBrowseAndSelectiveExtraction(t *testing.T) {
 	}
 
 	h.press("X")
-	wholeDest := filepath.Join(env.dst, "bundle")
+	wholeDest := filepath.Join(env.src, "bundle")
 	if !h.dialogKind(dlgExtract) || h.a.dialog.input.Value() != wholeDest {
 		t.Fatalf("whole TAR extraction default folder should strip .tar.gz: got %q", h.a.dialog.input.Value())
 	}

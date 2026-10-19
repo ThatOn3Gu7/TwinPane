@@ -115,18 +115,19 @@ password needs `RCLONE_CONFIG_PASS` set in the environment.
 | single GZ, BZ2, XZ, ZST, LZ4 files | built in: *Decompress* writes one file, the name without the extension (`notes.txt.gz` → `notes.txt`) |
 | 7Z, RAR | the installed 7-Zip (`7zz`, `7z`, `7za` or `7zr`; Termux: `pkg install 7zip`) |
 
-The dialog proposes a folder in the other panel named after the archive
-(`photos.tar.gz` → `photos/`; for a single compressed file the other
-panel's folder itself), which you can edit. The safety rules of ZIP
-extraction apply to every format: nothing is written outside the chosen
-folder or through a symbolic link, existing files are replaced only after
-you choose Overwrite, files appear only when complete (a damaged or
-cancelled entry leaves nothing behind and never destroys an existing file),
-symbolic links, hard links and special files are not created, and
-permissions are reduced to 0644/0755. Repeated names in a TAR keep the
-first entry. 7-Zip unpacks into a private temporary folder inside the
-destination first; only when it succeeded are the files moved into place
-(with the same conflict questions), so a failure extracts nothing.
+The dialog defaults to the folder containing the source archive for selected
+entries and single compressed files. Whole-archive extraction defaults to a
+new same-named subfolder there (`photos.tar.gz` → `photos/`). The destination
+is editable. The safety rules of ZIP extraction apply to every format:
+nothing is written outside the chosen folder or through a symbolic link.
+Existing files are replaced only after you choose Overwrite. Files appear
+only when complete (a damaged or cancelled entry leaves nothing behind and
+never destroys an existing file). Symbolic links, hard links and special
+files are not created, and permissions are reduced to 0644/0755. Repeated
+names in a TAR keep the first entry. 7-Zip unpacks into a private temporary
+folder inside the destination first; only when it succeeds are the files
+moved into place (with the same conflict questions), so a failure extracts
+nothing.
 Symbolic and hard links in 7Z/RAR archives are left out before 7-Zip runs,
 so 7-Zip never creates them, not even in its temporary folder; files stored
 "below" a link are skipped with it, and the result counts both. This needs
@@ -414,12 +415,13 @@ overflows. Tap targets cover the whole chip and description.
 - **Extract:**
   - Inside an archive, `x` (or `c`/`F5`) extracts the selected entries, or
     the one under the cursor. Folders are extracted recursively. The default
-    destination is the other panel's folder.
-  - `X` extracts the whole archive into `<other panel>/<archive name>/`.
-  - In a normal folder, `x` on a ZIP file extracts the whole archive the same
-    way.
-  - The destination is editable. Missing folders are created, and
-    `~/` and relative paths work.
+    destination is the folder containing the source archive.
+  - `X` extracts the whole archive into `<archive folder>/<archive name>/`.
+  - In a normal folder, `x` on an archive extracts it beside the source:
+    compressed single files go directly into that folder, while whole archives
+    get a new subfolder named after the archive.
+  - The destination is editable, so you can choose another folder. Missing
+    folders are created; `~/` and relative paths work.
   - Progress, `Esc` to cancel, and the conflict dialog (Skip / Overwrite /
     Cancel all, "apply to all") and low-space warning are the same as for
     copying. A summary and a problem report follow.

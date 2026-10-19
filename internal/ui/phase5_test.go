@@ -527,7 +527,7 @@ func TestArchiveRefusesUnsupportedOperations(t *testing.T) {
 
 func TestArchiveExtractSelectedWithConflict(t *testing.T) {
 	h, env, _ := zipApp(t)
-	os.WriteFile(filepath.Join(env.dst, "top.txt"), []byte("old"), 0o644)
+	os.WriteFile(filepath.Join(env.src, "top.txt"), []byte("old"), 0o644)
 	h.press("enter")
 	h.until("archive", func() bool { return h.a.ActivePanel().InArchive() })
 	h.focus("dir")
@@ -535,7 +535,7 @@ func TestArchiveExtractSelectedWithConflict(t *testing.T) {
 	h.focus("top.txt")
 	h.press(" ")
 	h.press("x")
-	if !h.dialogKind(dlgExtract) || h.a.dialog.input.Value() != env.dst {
+	if !h.dialogKind(dlgExtract) || h.a.dialog.input.Value() != env.src {
 		t.Fatalf("extract dialog / default destination: %v", h.a.dialog)
 	}
 	h.press("enter")
@@ -545,10 +545,10 @@ func TestArchiveExtractSelectedWithConflict(t *testing.T) {
 	}
 	h.press("s") // skip: the existing file stays
 	h.idle()
-	if readFile(t, filepath.Join(env.dst, "top.txt")) != "old" {
+	if readFile(t, filepath.Join(env.src, "top.txt")) != "old" {
 		t.Fatal("skip overwrote")
 	}
-	if readFile(t, filepath.Join(env.dst, "dir", "sub", "b.txt")) != "deep\n" || readFile(t, filepath.Join(env.dst, "dir", "a.txt")) != "inside dir\n" {
+	if readFile(t, filepath.Join(env.src, "dir", "sub", "b.txt")) != "deep\n" || readFile(t, filepath.Join(env.src, "dir", "a.txt")) != "inside dir\n" {
 		t.Fatal("folder not extracted recursively")
 	}
 	if !strings.Contains(h.status(), "kept 1 existing") {
@@ -561,7 +561,7 @@ func TestArchiveExtractSelectedWithConflict(t *testing.T) {
 	h.waitDialog(dlgConflict)
 	h.press("o")
 	h.idle()
-	if readFile(t, filepath.Join(env.dst, "top.txt")) != "top level\n" {
+	if readFile(t, filepath.Join(env.src, "top.txt")) != "top level\n" {
 		t.Fatal("overwrite not applied")
 	}
 	if !h.a.ActivePanel().InArchive() {
@@ -577,7 +577,7 @@ func TestExtractWholeArchiveFromFolderAndTraversal(t *testing.T) {
 	h.exec(h.a.panels[0].RefreshFocus("evil.zip"))
 	h.settle()
 	h.press("x")
-	want := filepath.Join(env.dst, "evil")
+	want := filepath.Join(env.src, "evil")
 	if !h.dialogKind(dlgExtract) || h.a.dialog.input.Value() != want {
 		t.Fatalf("default destination %q", h.a.dialog.input.Value())
 	}
@@ -586,7 +586,7 @@ func TestExtractWholeArchiveFromFolderAndTraversal(t *testing.T) {
 	if readFile(t, filepath.Join(want, "ok.txt")) != "fine" {
 		t.Fatal("safe entry not extracted")
 	}
-	for _, p := range []string{filepath.Join(env.dst, "escape.txt"), filepath.Join(env.root, "escape.txt"), filepath.Join(env.root, "escape2.txt"), "/abs.txt", filepath.Join(want, "abs.txt")} {
+	for _, p := range []string{filepath.Join(env.src, "escape.txt"), filepath.Join(env.src, "escape2.txt"), filepath.Join(env.root, "escape.txt"), filepath.Join(env.root, "escape2.txt"), "/abs.txt", filepath.Join(want, "abs.txt")} {
 		if p == filepath.Join(want, "abs.txt") {
 			continue // an absolute name may only ever land inside the destination
 		}
