@@ -205,7 +205,8 @@ were not used before, and every earlier shortcut works as it did.
 
 The dialog that used to create ZIP files now creates any of these formats.
 `↑`/`↓` (or a tap on `◂` `▸`) changes the format, `PgUp`/`PgDn` changes the
-level, and the destination path can be edited:
+level, and the output path can be edited. It defaults to the active panel's
+folder, shown in the full path field:
 
 ```
   Compress folder "src"
@@ -215,7 +216,7 @@ level, and the destination path can be edited:
   Level    ◂ normal ▸   PgUp/PgDn
 
   Archive file:
-  /home/me/R/src.tar.gz
+  /home/me/R/.tar.gz
 ```
 
 | Format | Extension | Made by | Levels |
@@ -236,10 +237,14 @@ level, and the destination path can be edited:
   found, 7Z is still listed but marked **unavailable**, with the reason (in
   Termux: `pkg install 7zip`), and `Enter` refuses it. TwinPane never falls
   back to a different format.
-- **Names:** the default is the other panel's folder plus the item's name
-  (several items: the current folder's name). Single-file formats keep the
-  whole file name (`notes.txt.gz`). Changing the format swaps the extension.
-  A name with another format's extension is refused, never "corrected".
+- **Name and location:** the output defaults to the active panel's folder.
+  The file field shows that folder plus only the selected format's extension
+  (`/path/.zip`, `/path/.tar.gz`, and so on), with the cursor before the dot.
+  Type the desired name there (`backup` before `.zip` makes `backup.zip`).
+  The full path remains editable, so you can choose another folder. Changing
+  the format swaps the extension and keeps any name you have typed. A name
+  ending in another format's extension is refused, never "corrected"; an
+  extension without a name is not created.
 - **Contents:** several items keep their folder structure, relative to the
   folder they are in. Symbolic links are stored as links; FIFOs, sockets and
   devices are left out and reported. The new file is never added to itself.
@@ -426,8 +431,9 @@ overflows. Tap targets cover the whole chip and description.
     Cancel all, "apply to all") and low-space warning are the same as for
     copying. A summary and a problem report follow.
 - **Create:** `z` makes a ZIP of the selection (or the item under the
-  cursor). The default output is `<other panel>/<name>.zip`, and both name
-  and destination are editable (`.zip` is added if there is no extension).
+  cursor). The default output is in the current panel's folder. The name field
+  starts at `.zip` with the cursor before the dot; the name and full path are
+  editable.
   Folders are added recursively and symlinks are stored as links. The output
   file (and its temporary file) is never added to itself, even when you
   create it inside a folder being archived. If the file already exists, a
