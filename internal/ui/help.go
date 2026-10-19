@@ -77,10 +77,10 @@ func (a *App) helpColumns() [2][]helpSection {
 // Document the bridge here so / remains familiar while Advanced Search is
 // still easy to discover.
 var searchModeHelp = []Binding{
-	{Help: "/", Desc: "open the existing live filename search"},
-	{Help: "Ctrl+G in /", Desc: "open Advanced Search with the current query"},
-	{Help: "Ctrl+T", Desc: "toggle filename / content mode in Advanced Search"},
-	{Help: "Esc", Desc: "close search and keep both panels unchanged"},
+	{Help: "/", Desc: "live filename search"},
+	{Help: "Ctrl+G in /", Desc: "Advanced Search; query kept"},
+	{Help: "Ctrl+T", Desc: "toggle filename / content"},
+	{Help: "Esc", Desc: "close; preserve both panes"},
 }
 
 var advancedSearchHelp = []Binding{
