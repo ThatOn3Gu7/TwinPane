@@ -9,6 +9,43 @@ The complete description of every feature is in
 
 ## [Unreleased]
 
+## [0.9.0]
+
+Advanced Search, reviewable directory comparison, folder-size analysis,
+background task tracking, and read-only TAR browsing, alongside safety fixes.
+
+### Added
+- **Advanced Search** (`Ctrl+G` from `/`): recursive fuzzy filename and
+  content search (`Ctrl+T` switches modes), previews, and read-only inspection
+  inside TwinPane. Common source and configuration files receive syntax
+  highlighting. Content search skips exact `.git` directories by default,
+  while `.gitignore` and `.github` remain searchable; binary files and scan
+  limits are reported.
+- **Directory comparison** (`D`) for the two local panel folders, with optional
+  SHA-256 checks and a copy-only sync plan to review and approve. It never
+  generates delete actions.
+- **Folder-size analysis** (`A`): cancellable recursive local scans with
+  largest-first results and apparent/allocated size totals.
+- **Background task view** (`t`) for tracking long-running operations and
+  their progress or results. Cancel active tasks and clear completed history.
+- **TAR browsing:** browse TAR and supported compressed-TAR archives read-only
+  and selectively extract entries.
+- Hidden-file visibility now persists across launches.
+
+### Changed
+- Archive creation and extraction default beside their source files. Whole
+  archives extract into a same-named subfolder, and single-file compression
+  preserves the source filename. Archive-creation progress remains visible
+  through completion or failure.
+
+### Security
+- 7-Zip extraction refuses ambiguous archive listings rather than risk unsafe
+  extraction.
+- Cloud folder merges refuse symlinked destinations and nested symlink paths.
+- Local folder creation validates names before creating them.
+- Delete planning marks the plan incomplete if an item disappears during the
+  scan, rather than presenting a misleading complete plan.
+
 ## [0.8.0]
 
 Cloud remotes, more archive formats and a new-folder key. Two safety
@@ -165,5 +202,6 @@ First public release.
 - Dual-pane navigation (phase 1).
 - Copy, move, rename and delete (trash first), external editing (phase 2).
 
+[0.9.0]: https://github.com/ThatOn3Gu7/TwinPane/releases/tag/v0.9.0
 [0.8.0]: https://github.com/ThatOn3Gu7/TwinPane/releases/tag/v0.8.0
 [0.7.0]: https://github.com/ThatOn3Gu7/TwinPane/releases/tag/v0.7.0
