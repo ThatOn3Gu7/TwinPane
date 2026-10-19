@@ -57,6 +57,9 @@ func (a *App) helpColumns() [2][]helpSection {
 	if a.comparison != nil {
 		cols[1] = append(cols[1], helpSection{"Directory comparison", comparisonHelp})
 	}
+	if a.folderSize != nil {
+		cols[1] = append(cols[1], helpSection{"Folder-size analysis", folderSizeHelp})
+	}
 	cols[0] = append(cols[0], helpSection{"Mouse & touch", mouseHelp})
 	cols[1] = append(cols[1], a.editorHelp(), helpSection{"Help & dialogs", helpScreenHelp})
 	return cols

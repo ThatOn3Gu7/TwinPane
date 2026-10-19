@@ -12,7 +12,8 @@ cmd/twinpane ──► internal/ui ──► internal/panel ──► internal/f
                    │  └─────► internal/ops      (phase 2, no UI imports)
                    ├────────► internal/editor ─┐ (phase 2/3, no UI imports)
                    ├────────► internal/search ─┴► internal/proc (v0.3.1)
-                   └────────► internal/cloud  ──► internal/proc (phase 9, rclone)
+                   ├────────► internal/cloud  ──► internal/proc (phase 9, rclone)
+                   └────────► internal/foldersize ──► internal/storage (local folder scans)
 ```
 
 | Package | Responsibility | Knows about |
@@ -25,6 +26,7 @@ cmd/twinpane ──► internal/ui ──► internal/panel ──► internal/f
 | `search` | Filename search: `ParseQuery`/`Match`. v0.3.1: `Index` lists a tree with fd / find / a built-in walker and streams `IndexUpdate`s; `Filter`/`Rank` match the in-memory index per keystroke. (`Run`, the phase-3 walker-and-match, is kept and tested but no longer used by the UI.) | stdlib, `proc` |
 | `proc` | v0.3.1: `LookPath` and `Start`/`Wait`/`Kill` without the system calls Android's seccomp filter forbids. All program lookups and starts go through it. | stdlib, `x/sys` |
 | `cloud` | Phase 9: rclone remotes. `Detect`, `Client.Remotes`/`List`/`Stat`/`Mkdir`/`Rename`/`Delete`/`Transfer`, the `Path` type (`remote:path` or local), and `Error` with an `ErrKind` that explains failures (not installed, login, network, missing, exists, unsupported, locked config, cancelled). Starts rclone through `proc`, never a shell. | stdlib, `proc`, `ops` (transfer types) |
+| `foldersize` | On-demand local recursive scan: apparent and allocated totals, bounded largest-entry samples, mount/volume boundaries, identity-based duplicate avoidance, cancellation and batched progress. Does not import UI or modify files. | stdlib, `storage`, platform syscalls (`x/sys/unix` on Unix) |
 | `ui` | Root `tea.Model`: owns two panels, routes keys to the active one, lays out the screen, and renders the title, status line, footer and help. Phase 2 adds dialogs (`dialog.go`, `input.go`), operation sessions (`fileops.go`) and editor launching (`edit.go`). | everything above |
 
 A panel never refers to the other panel. Cross-panel actions such as `=` (and
@@ -43,6 +45,53 @@ ignores any result whose sequence is not the latest. Load modes:
   the panel (used for the initial home directory).
 - `LoadRefresh`: keep the cursor and selection by name. If the directory has
   vanished, climb to the nearest existing ancestor.
+
+## On-demand folder-size analysis (`internal/foldersize`, `internal/ui/foldersize.go`)
+
+`foldersize.Scan(ctx, root, options, report)` is independent of Bubble Tea. It
+uses `Lstat`, opens only verified directories with no-follow/directory-only
+flags on Unix and reparse-point-aware handles on Windows, reads entries in
+batches of 128, and checks cancellation between batches and entries. Leaf
+special files are never opened. The scanner revalidates directory identity
+before traversal and tracks `(device, inode)` identities on Unix; Windows
+uses normalized path identity plus volume-path checks. Other supported builds
+fail closed where a same-filesystem identity cannot be established.
+
+A `Node` stores recursive totals/counts and children for directories. Direct
+file/link/special rows are bounded to the 20 largest apparent-size and, where
+available, allocated-size entries per directory, with a 20,000-slot global
+cache. Stored directory results are bounded to 100,000 nodes and depth 128; reaching
+that cap stops traversal with a partial result. All byte sums use saturating
+`uint64` addition; overflow is visible as a lower bound and also makes the
+result partial.
+`FormatBytes(uint64)` lives in this package so these values never pass through
+`fsys.HumanSize(int64)`. Unix allocation is reported as `st_blocks × 512`;
+other targets may report it as unavailable. Hard-linked paths intentionally
+count once per pathname. Symlinks contribute their own `Lstat` length and are
+never followed; directory metadata and special-file sizes are excluded.
+
+Mount/volume policy is fail-closed: Linux/Android require a parsed mount
+table and compare mount points; if it is unavailable or a path is unmatched,
+the child is skipped. Other Unix targets compare device IDs, which cannot
+distinguish every same-device bind mount; Windows compares volume paths. A
+detected different filesystem, or an unverifiable boundary, is skipped and
+makes the result partial. Directory-identity duplicates are skipped and
+disclosed; because that directory identity was already scanned, its
+unique-tree data is not counted twice. Unreadable/disappearing paths,
+depth/directory limits, and read/close errors make totals partial lower
+bounds. Root failures are failed; context cancellation is distinct; complete
+means there were no scan errors, excluded filesystem boundaries, or arithmetic
+overflow. Results are not atomic filesystem snapshots.
+
+The UI keeps a scan worker off the model loop. Its callback coalesces progress
+into a one-slot channel; one `tea.Cmd` waits for the next event and rearms
+itself, so the scan cannot flood Bubble Tea. The `A` shortcut picks one marked
+real directory, otherwise a real cursor directory, otherwise the active
+folder; archives, remotes and busy file operations are refused. The overlay
+owns navigation/sort state only—it never calls panel navigation or selection
+methods. Escape cancels, and a second Escape can dismiss the view while a
+filesystem call winds down. Refresh rescans the original root and restores the
+current relative directory where possible.
 
 ## File operations (phase 2)
 
@@ -885,9 +934,12 @@ exit 130/143 after the cleanup trap removed the temporary folder.
   bounds; entry payloads are read on demand, and selective extraction reuses
   the same validated paths. New codecs should preserve those bounds and the
   no-in-place-editing rule.
-- **Storage analysis (future)**: deliberately not implemented. `fileinfo`
-  and `fsys` have no recursive sizing, so a future analyser can add its own
-  cancellable walker (like `ops.PlanDelete`) without touching the panels.
+- **Storage analysis**: `internal/foldersize` provides the cancellable,
+  bounded local scanner described above; the `A` overlay is deliberately
+  separate from `fileinfo`, `fsys.HumanSize(int64)`, and panel navigation.
+  Future allocation or filesystem-specific enhancements should preserve its
+  `uint64` saturating totals, explicit partial states, and fail-closed
+  mount-boundary policy.
 - **Content search / filters**: `search.Query` is the only matcher. A
   content matcher or a name filter for the panel (`fsys.Options`) can reuse
   `search.ParseQuery`.
@@ -898,6 +950,11 @@ exit 130/143 after the cleanup trap removed the temporary folder.
 
 ## Testing
 
+- `foldersize`: nested/empty totals, apparent/allocated top-K retention,
+  hard-link path accounting, symlink cycles, duplicate identities, mount
+  boundaries, special files and FIFO replacement races, cancellation and
+  handle cleanup, partial/error paths, depth/directory/cache bounds, overflow,
+  and `uint64` formatting.
 - `fsys`: real temp directories (ordering, hidden files, symlinks, permission
   errors, root handling, formatting).
 - `panel`: commands are executed synchronously and applied (navigation,
@@ -911,6 +968,9 @@ exit 130/143 after the cleanup trap removed the temporary folder.
   block on dialog answers. They cover copy/move/delete/rename/edit flows,
   conflicts, cancel, partial-failure reports, typed confirmation, coalesced or
   pasted keys, and that dialogs and help fit 80×24 and smaller screens.
+  Folder-size tests cover target selection and panel/selection preservation,
+  largest-first and name sorting, drill-down/parent/refresh, help semantics,
+  cancellation/dismissal, and visible root failures.
 - `ops`: success, nested folders, conflicts (skip / overwrite / apply-all /
   cancel / merge), type mismatch, self-copy and symlinked self-copy, symlink
   loops, unreadable files and folders, special files, disk full, low space,

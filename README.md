@@ -115,6 +115,21 @@ The [user guide](docs/USER_GUIDE.md) describes every feature in detail.
 - Single compressed files and 7Z/RAR (with an installed 7-Zip) can be
   extracted as a whole with `x`; they are not browsable or partially extracted.
 
+**Folder-size analysis**
+- `A` starts a cancellable recursive scan of one selected real directory, the
+  real directory under the cursor, or the active folder. It runs off the UI
+  loop, reports batched progress, and never changes either panel's path,
+  cursor or selection. The results are navigable, largest-first, with name and
+  size sorting, refresh, direct-entry rows and recursive totals. Remote and
+  archive locations are not scanned.
+- The scanner does not follow symlinks, skips nested filesystem boundaries
+  when detected, and reports complete, partial, cancelled or failed results
+  distinctly. Apparent sizes count each pathname (so hard links may be
+  counted more than once); allocated sizes are reported where the OS exposes
+  filesystem blocks. Byte overflow is saturated and shown as a lower bound /
+  partial result. See the [folder-size analysis guide](docs/USER_GUIDE.md#on-demand-folder-size-analysis-a)
+  for limits and exact semantics.
+
 **Viewing, editing and opening**
 - Read-only text viewer (`v`, or `Enter` on a text file) with wrapping, line
   numbers and search. Binary files and huge files are handled safely.
@@ -125,8 +140,8 @@ The [user guide](docs/USER_GUIDE.md) describes every feature in detail.
 - Open in the default app (`o`) or choose an app (`O`): `termux-open` in
   Termux (including Share), `xdg-open` in a Linux desktop session, `open` on
   macOS.
-- Storage overview of the current filesystem (`i`), and an action menu (`M`,
-  or a tap on the TwinPane title).
+- Storage overview of the current filesystem (`i`), cancellable folder-size
+  analysis (`A`), and an action menu (`M`, or a tap on the TwinPane title).
 
 **Keyboard, touch and mouse**
 - A context-aware hint bar, a help screen (`?`) with a live filter (`/`),
@@ -520,6 +535,7 @@ TwinPane/
 │   ├── search/            filename search with fd, find or built in
 │   ├── bookmarks/         bookmark file
 │   ├── storage/           filesystem capacity and mounts
+│   ├── foldersize/        bounded, cancellable recursive local scanner
 │   ├── proc/              starts programs without Android-forbidden system calls
 │   ├── scrollbar/         scroll indicator geometry
 │   └── theme/             colours and styles

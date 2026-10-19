@@ -26,14 +26,14 @@ func (b Binding) Matches(msg tea.KeyMsg) bool {
 // Hidden to h). Panel code is unaware of key bindings. File operations act
 // on the selection if there is one, otherwise on the entry under the cursor.
 type KeyMap struct {
-	Up, Down, PageUp, PageDown, Top, Bottom Binding
-	Open, Parent, Home, SyncOther, Compare  Binding
-	Select, SelectAll, Unselect             Binding
-	Switch, Hidden, Sort, Reverse, Refresh  Binding
-	Search                                  Binding
-	Copy, Move, Rename, Delete, Edit        Binding
-	EditWith                                Binding
-	Cancel, Tasks, Help, Quit               Binding
+	Up, Down, PageUp, PageDown, Top, Bottom            Binding
+	Open, Parent, Home, SyncOther, Compare, FolderSize Binding
+	Select, SelectAll, Unselect                        Binding
+	Switch, Hidden, Sort, Reverse, Refresh             Binding
+	Search                                             Binding
+	Copy, Move, Rename, Delete, Edit                   Binding
+	EditWith                                           Binding
+	Cancel, Tasks, Help, Quit                          Binding
 
 	// Phase 5
 	Properties, View         Binding
@@ -51,36 +51,37 @@ type KeyMap struct {
 // DefaultKeys returns the default key bindings.
 func DefaultKeys() KeyMap {
 	return KeyMap{
-		Up:        Binding{[]string{"up", "k"}, "↑/k", "move up"},
-		Down:      Binding{[]string{"down", "j"}, "↓/j", "move down"},
-		PageUp:    Binding{[]string{"pgup", "ctrl+b"}, "PgUp", "page up"},
-		PageDown:  Binding{[]string{"pgdown", "ctrl+f"}, "PgDn", "page down"},
-		Top:       Binding{[]string{"home", "g"}, "Home/g", "first entry"},
-		Bottom:    Binding{[]string{"end", "G"}, "End/G", "last entry"},
-		Open:      Binding{[]string{"enter", "right", "l"}, "⏎/→/l", "open directory"},
-		Parent:    Binding{[]string{"backspace", "left"}, "⌫/←", "parent directory"},
-		Home:      Binding{[]string{"~"}, "~", "go to home directory"},
-		SyncOther: Binding{[]string{"="}, "=", "same dir in other panel"},
-		Compare:   Binding{[]string{"D"}, "D", "compare local directories"},
-		Select:    Binding{[]string{" ", "insert"}, "Space/Ins", "toggle selection"},
-		SelectAll: Binding{[]string{"a"}, "a", "select all / none"},
-		Unselect:  Binding{[]string{"u"}, "u", "clear selection"},
-		Switch:    Binding{[]string{"tab", "shift+tab"}, "Tab", "switch active panel"},
-		Hidden:    Binding{[]string{"h", "H", "."}, "h/H/.", "hidden files (both panels)"},
-		Sort:      Binding{[]string{"s"}, "s", "sort by name/size/time/type"},
-		Reverse:   Binding{[]string{"S"}, "S", "reverse sort order (↑/↓)"},
-		Search:    Binding{[]string{"/"}, "/", "find files by name (live)"},
-		Refresh:   Binding{[]string{"ctrl+l"}, "^L", "refresh both panels"},
-		Copy:      Binding{[]string{"c", "f5"}, "c/F5", "copy to other panel"},
-		Move:      Binding{[]string{"m", "f6"}, "m/F6", "move to other panel"},
-		Rename:    Binding{[]string{"r", "f2"}, "r/F2", "rename (several: bulk)"},
-		Delete:    Binding{[]string{"d", "f8", "delete"}, "d/F8/Del", "delete (trash if available)"},
-		Edit:      Binding{[]string{"e", "f4"}, "e/F4", "edit in default editor"},
-		EditWith:  Binding{[]string{"E"}, "E", "edit with… (choose editor)"},
-		Cancel:    Binding{[]string{"esc"}, "Esc", "cancel dialog / operation"},
-		Tasks:     Binding{[]string{"t"}, "t", "background tasks / progress"},
-		Help:      Binding{[]string{"?", "f1"}, "?", "toggle help"},
-		Quit:      Binding{[]string{"q", "ctrl+c", "f10"}, "q", "quit"},
+		Up:         Binding{[]string{"up", "k"}, "↑/k", "move up"},
+		Down:       Binding{[]string{"down", "j"}, "↓/j", "move down"},
+		PageUp:     Binding{[]string{"pgup", "ctrl+b"}, "PgUp", "page up"},
+		PageDown:   Binding{[]string{"pgdown", "ctrl+f"}, "PgDn", "page down"},
+		Top:        Binding{[]string{"home", "g"}, "Home/g", "first entry"},
+		Bottom:     Binding{[]string{"end", "G"}, "End/G", "last entry"},
+		Open:       Binding{[]string{"enter", "right", "l"}, "⏎/→/l", "open directory"},
+		Parent:     Binding{[]string{"backspace", "left"}, "⌫/←", "parent directory"},
+		Home:       Binding{[]string{"~"}, "~", "go to home directory"},
+		SyncOther:  Binding{[]string{"="}, "=", "same dir in other panel"},
+		Compare:    Binding{[]string{"D"}, "D", "compare local directories"},
+		FolderSize: Binding{[]string{"A"}, "A", "analyze folder sizes"},
+		Select:     Binding{[]string{" ", "insert"}, "Space/Ins", "toggle selection"},
+		SelectAll:  Binding{[]string{"a"}, "a", "select all / none"},
+		Unselect:   Binding{[]string{"u"}, "u", "clear selection"},
+		Switch:     Binding{[]string{"tab", "shift+tab"}, "Tab", "switch active panel"},
+		Hidden:     Binding{[]string{"h", "H", "."}, "h/H/.", "hidden files (both panels)"},
+		Sort:       Binding{[]string{"s"}, "s", "sort by name/size/time/type"},
+		Reverse:    Binding{[]string{"S"}, "S", "reverse sort order (↑/↓)"},
+		Search:     Binding{[]string{"/"}, "/", "find files by name (live)"},
+		Refresh:    Binding{[]string{"ctrl+l"}, "^L", "refresh both panels"},
+		Copy:       Binding{[]string{"c", "f5"}, "c/F5", "copy to other panel"},
+		Move:       Binding{[]string{"m", "f6"}, "m/F6", "move to other panel"},
+		Rename:     Binding{[]string{"r", "f2"}, "r/F2", "rename (several: bulk)"},
+		Delete:     Binding{[]string{"d", "f8", "delete"}, "d/F8/Del", "delete (trash if available)"},
+		Edit:       Binding{[]string{"e", "f4"}, "e/F4", "edit in default editor"},
+		EditWith:   Binding{[]string{"E"}, "E", "edit with… (choose editor)"},
+		Cancel:     Binding{[]string{"esc"}, "Esc", "cancel dialog / operation"},
+		Tasks:      Binding{[]string{"t"}, "t", "background tasks / progress"},
+		Help:       Binding{[]string{"?", "f1"}, "?", "toggle help"},
+		Quit:       Binding{[]string{"q", "ctrl+c", "f10"}, "q", "quit"},
 
 		Properties: Binding{[]string{"P"}, "P", "properties / permissions"},
 		View:       Binding{[]string{"v", "f3"}, "v/F3", "view file (read-only)"},
@@ -120,7 +121,7 @@ func (k KeyMap) helpSections() [2][]helpSection {
 			{"Folders & cloud (rclone)", []Binding{k.Mkdir, k.Sources,
 				{Help: "c / m", Desc: "upload / download"},
 				{Help: "Esc", Desc: "stop a slow listing"}}},
-			{"Directory comparison", []Binding{k.Compare}},
+			{"Directory analysis", []Binding{k.FolderSize, k.Compare}},
 		},
 	}
 }

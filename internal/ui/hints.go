@@ -46,6 +46,8 @@ func (a *App) hints() (items []barItem, pinned *barItem) {
 		return a.searchHints(), nil
 	case a.bulk != nil:
 		return a.bulkHints(), nil
+	case a.folderSize != nil:
+		return a.folderSizeHints(), nil
 	case a.comparison != nil:
 		return a.comparisonHints(), nil
 	}
@@ -139,7 +141,7 @@ func (a *App) browseHints() []barItem {
 	if ok && !cur.IsDir && !cur.IsParent && nsel == 0 && !isBrowsable {
 		out = append(out, item("o/O", "open with", "O"))
 	}
-	out = append(out, item("b", "bookmarks", "b"), item("i", "storage", "i"))
+	out = append(out, item("b", "bookmarks", "b"), item("i", "storage", "i"), item("A", "folder sizes", "A"))
 	if len(targets) > 0 {
 		out = append(out, item("z", "compress", "z"))
 	}

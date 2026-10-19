@@ -152,6 +152,7 @@ func (a *App) menuEntries() (title string, entries []menuEntry) {
 	}
 	add(menuEntry{label: "Bookmarks…", key: "b", send: "b"})
 	add(menuEntry{label: "Storage info", key: "i", send: "i"})
+	add(menuEntry{label: "Analyze folder sizes", key: "A", send: "A"})
 	if len(targets) > 0 {
 		add(menuEntry{label: "Delete…", key: "d", send: "d", danger: true})
 	}
