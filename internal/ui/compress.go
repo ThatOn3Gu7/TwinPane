@@ -16,8 +16,8 @@ import (
 // The compress dialog (z, or Compress in the context menu) creates an
 // archive or a compressed file of the targets in any format of package
 // compress. It is the phase-5 "create a ZIP" dialog with two selector rows
-// added. The output goes in the active panel's folder by default; only the
-// selected format's extension is prefilled, with the cursor before the dot:
+// added. The output goes in the active panel's folder by default. Archive
+// formats prefill only the extension, with the cursor before the dot:
 //
 //	Format  ◂ TAR.GZ (.tar.gz) ▸   ↑↓       (all formats; unavailable ones say why)
 //	Level   ◂ normal ▸             PgUp/PgDn (only formats with levels)
@@ -40,21 +40,28 @@ type compressState struct {
 	sel    compress.Selection
 	idx    int    // current format (index into caps)
 	outDir string // default destination folder
+	single string // source filename for single-file formats
 	auto   string // the path value set automatically (not edited by the user)
 }
 
 func (st *compressState) cur() compress.Capability { return st.caps[st.idx] }
 
-// defaultPath is the suggested output for format f. Leave the name blank
-// and prefill only the extension so users can type their own name before it.
+// defaultPath is the suggested output for format f. Archive names start
+// blank; single-file formats keep the selected file's name.
 func (st *compressState) defaultPath(f compress.Format) string {
-	return filepath.Join(st.outDir, f.Ext)
+	name := f.Ext
+	if f.Kind == compress.Single && st.single != "" {
+		name = st.single + f.Ext
+	}
+	return filepath.Join(st.outDir, name)
 }
 
-// newCompressPathInput leaves the cursor immediately before the extension.
+// newCompressPathInput starts archive names immediately before the extension.
 func newCompressPathInput(path string, f compress.Format) *lineInput {
 	in := newLineInput(path)
-	in.SetCursor(len(in.runes) - len([]rune(f.Ext)))
+	if f.Kind == compress.Archive {
+		in.SetCursor(len(in.runes) - len([]rune(f.Ext)))
+	}
 	return in
 }
 
@@ -84,6 +91,7 @@ func (a *App) beginZip() tea.Cmd {
 	st.sel.Items = len(targets)
 	if len(targets) == 1 && !targets[0].IsDir && targets[0].Mode.IsRegular() {
 		st.sel.SingleFile = true
+		st.single = targets[0].Name
 	}
 	// the format chosen last time, if it can be used for these items
 	for i, c := range st.caps {
@@ -103,7 +111,7 @@ func (a *App) beginZip() tea.Cmd {
 	d.body = []dline{text("Add:")}
 	d.body = append(d.body, nameList(targets)...)
 	d.body = append(d.body, blank(),
-		hint("Default output folder: "+shortPath(st.outDir)+". Type a name before the extension, or edit the path to choose another folder."),
+		hint("Default output folder: "+shortPath(st.outDir)+". Archive names start at the extension; single-file formats keep the source name. Edit the path to choose another folder."),
 		hint("Folders are added with all their contents; symbolic links are stored as links. The new file is never added to itself, and an existing file is not replaced without asking."))
 	st.auto = st.defaultPath(st.cur().Format)
 	d.input = newCompressPathInput(st.auto, st.cur().Format)

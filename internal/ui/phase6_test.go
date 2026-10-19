@@ -231,7 +231,10 @@ func TestCompressSingleFileFormats(t *testing.T) {
 	h.press("z")
 	h.waitDialog(dlgCompress)
 	h.chooseFormat("GZIP")
-	assertCompressDefault(t, h.a.dialog.input, env.src, ".gz")
+	wantDefault := filepath.Join(env.src, "a.txt.gz")
+	if got := h.a.dialog.input.Value(); got != wantDefault || h.a.dialog.input.pos != len([]rune(wantDefault)) {
+		t.Fatalf("single-file default %q at cursor %d", got, h.a.dialog.input.pos)
+	}
 	if !strings.Contains(h.view(), "Compressed file:") {
 		t.Fatalf("label:\n%s", h.view())
 	}
