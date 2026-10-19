@@ -1,7 +1,7 @@
 # Builds and publishes a GitHub Release when a version tag is pushed:
 #
-#   git tag -a v0.8.0 -m "TwinPane v0.8.0"
-#   git push origin v0.8.0
+#   git tag -a v0.9.0 -m "TwinPane v0.9.0"
+#   git push origin v0.9.0
 #
 # The tag must be vMAJOR.MINOR.PATCH, match the VERSION file and have a
 # CHANGELOG.md section. Nothing is published unless the tests pass, every

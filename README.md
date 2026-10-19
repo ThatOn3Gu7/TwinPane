@@ -33,7 +33,7 @@ view with large touch targets is easier than typing long paths.
   nothing is ever overwritten without asking.
 
 ```
- TwinPane  0.8.0                                   hidden: off · active: left panel
+ TwinPane  0.9.0                                   hidden: off · active: left panel
 ╭──────────────────────────────────────╮┌──────────────────────────────────────┐
 │ /home/me/L                           ││ /home/me/R                           │
 │ Name        ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓          │
@@ -71,14 +71,23 @@ The [user guide](docs/USER_GUIDE.md) describes every feature in detail.
 - Two independent panels, both starting in your home folder. Tab switches
   between them, and `=` shows the active folder in the other panel.
 - Sorting by name, size, modification time or type (`s`, reverse with `S`).
-- One switch for hidden files in both panels (`h`).
+- One switch for hidden files in both panels (`h`); the preference is saved
+  between launches.
 - Multi-selection (`Space`, `a`, `u`). The selection is shared when both
   panels show the same folder.
 - Bookmarks for folders (`B` adds, `b` lists). A missing folder is reported,
   never replaced by another one.
 - Live filename search below the current folder (`/`), using `fd` or `find`
-  when installed, otherwise a built-in walker. Names only; file contents are
-  not searched.
+  when installed, otherwise a built-in walker. It searches names only; press
+  `Ctrl+G` while it is open for fuzzy filename or content search in Advanced
+  Search.
+
+**Advanced Search**
+- Press `Ctrl+G` from the `/` search box to open a recursive search view inside
+  TwinPane. It supports fuzzy filename matching or content search (`Ctrl+T`),
+  live previews, and read-only inspection. Common source and configuration
+  files are syntax-highlighted. Content search skips exact `.git` directories
+  by default and reports binary files and scan limits.
 
 **File operations**
 - Copy (`c`) and move (`m`) to the other panel, with progress, cancel, and a
@@ -95,6 +104,12 @@ The [user guide](docs/USER_GUIDE.md) describes every feature in detail.
 - Properties (`P`): size, times, owner, symbolic-link target, and permission
   editing on filesystems that support it.
 
+**Background tasks**
+- Long-running file operations continue in the background. Press `t` to review
+  active progress and completed results; cancel the selected active task with
+  `c`, or clear finished history with `x`. Active tasks must finish or be
+  cancelled before quitting.
+
 **Directory comparison**
 - Compare the two local panel folders (`D`), ignoring exact `.git` directories
   by default (`g` includes them). `f` hides matching rows; `h` can verify
@@ -109,11 +124,13 @@ The [user guide](docs/USER_GUIDE.md) describes every feature in detail.
   and selectively extract them with `x`; `X` extracts the whole archive.
   Encrypted ZIP entries and unsafe or unsupported entries are not extracted.
 - Create archives (`z`): ZIP, TAR, TAR.GZ, TAR.XZ, TAR.ZST, TAR.BZ2, TAR.LZ4,
-  and single-file GZIP, XZ, ZSTD, BZIP2 and LZ4, all built in. A modal progress
-  dialog stays open through completion or failure. 7Z needs an installed
-  7-Zip (`7zz`, `7z`, `7za` or `7zr`).
+  and single-file GZIP, XZ, ZSTD, BZIP2 and LZ4, all built in. Output defaults
+  beside the source, and the progress dialog stays open through completion or
+  failure. 7Z needs an installed 7-Zip (`7zz`, `7z`, `7za` or `7zr`).
 - Single compressed files and 7Z/RAR (with an installed 7-Zip) can be
   extracted as a whole with `x`; they are not browsable or partially extracted.
+  Extraction defaults beside the source; whole archives use a same-named
+  subfolder, while single compressed files are written directly beside it.
 
 **Folder-size analysis**
 - `A` starts a cancellable recursive scan of one selected real directory, the
@@ -132,7 +149,8 @@ The [user guide](docs/USER_GUIDE.md) describes every feature in detail.
 
 **Viewing, editing and opening**
 - Read-only text viewer (`v`, or `Enter` on a text file) with wrapping, line
-  numbers and search. Binary files and huge files are handled safely.
+  numbers, search and syntax highlighting for common source/configuration files.
+  Binary files and huge files are handled safely.
 - External editor (`e`): `$VISUAL`, then `$EDITOR`, then the first installed
   editor; `E` chooses among the installed editors. The terminal is handed
   over and restored cleanly, also when the editor suspends itself. There is
@@ -153,8 +171,30 @@ The [user guide](docs/USER_GUIDE.md) describes every feature in detail.
 - `--no-mouse` turns touch and mouse input off, so the terminal can select
   text normally.
 
-Not included: content search, configurable keys or themes, and editing
-archives in place.
+Not included: configurable keys or themes, and editing archives in place.
+
+### New in v0.9.0
+
+- **Advanced Search** (`Ctrl+G` from `/`) adds recursive fuzzy filename and
+  content search (`Ctrl+T` switches modes) without changing the existing quick
+  `/` workflow. Results stay inside TwinPane with live previews and read-only
+  inspection; common source and configuration files receive syntax
+  highlighting.
+- **Directory comparison** (`D`) provides optional SHA-256 checks and a
+  reviewable, approvable copy-only sync plan. No delete actions are generated.
+- **Folder-size analysis** (`A`) adds cancellable recursive local scans with
+  largest-first results and apparent/allocated size totals.
+- **Background task view** (`t`) tracks active operations and their results;
+  cancel active tasks or clear completed history.
+- **TAR browsing** lets you inspect TAR and supported compressed-TAR archives
+  read-only and selectively extract entries.
+- **Hidden-file visibility** now persists across launches.
+- Archive creation and extraction default beside their source files. Whole
+  archives extract into a same-named subfolder, and single-file compression
+  preserves the source filename.
+- Safety fixes refuse ambiguous 7-Zip listings, block cloud folder merges
+  through symlinked destinations, validate local folder names, and mark delete
+  plans incomplete when files disappear during planning.
 
 ### New in v0.8.0
 
@@ -171,8 +211,10 @@ archives in place.
 - **Extraction of more formats** (`x` on the file): TAR, TAR.GZ/TGZ,
   TAR.BZ2, TAR.XZ, TAR.ZST, TAR.LZ4 and single GZ, BZ2, XZ, ZST, LZ4 files
   are built in; 7Z and RAR use an installed 7-Zip (links inside them are
-  never created). ZIP and TAR-family archives are browsable read-only and
-  support selective extraction; single compressed files and 7Z/RAR are not.
+  never created). ZIP archives are browsable and support selective extraction;
+  TAR formats can be extracted as a whole. TAR browsing and selective
+  extraction are new in v0.9.0. Single compressed files and 7Z/RAR are not
+  browsable or partially extractable.
 - **Refresh moved from `Ctrl+R` to `Ctrl+L`** (`Ctrl+R` now opens Sources).
 
 ## Supported platforms
@@ -230,7 +272,7 @@ Options go after `sh -s --`:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/ThatOn3Gu7/TwinPane/master/scripts/install.sh | sh -s -- --dir "$HOME/bin"
-curl -fsSL https://raw.githubusercontent.com/ThatOn3Gu7/TwinPane/master/scripts/install.sh | sh -s -- --version v0.8.0
+curl -fsSL https://raw.githubusercontent.com/ThatOn3Gu7/TwinPane/master/scripts/install.sh | sh -s -- --version v0.9.0
 ```
 
 | Option | Meaning |
@@ -261,19 +303,19 @@ TwinPane.
 Download your platform's package and `SHA256SUMS` from the
 [Releases page](https://github.com/ThatOn3Gu7/TwinPane/releases), check the
 checksum, extract the package, and copy `twinpane` into a folder in your
-`PATH`. Replace `v0.8.0` below with the version you want.
+`PATH`. Replace `v0.9.0` below with the version you want.
 
 **Termux (Android ARM64):**
 
 ```sh
 cd ~
-curl -fLO https://github.com/ThatOn3Gu7/TwinPane/releases/download/v0.8.0/twinpane-v0.8.0-android-arm64.tar.gz
-curl -fLO https://github.com/ThatOn3Gu7/TwinPane/releases/download/v0.8.0/SHA256SUMS
-# with wget instead:  wget https://github.com/ThatOn3Gu7/TwinPane/releases/download/v0.8.0/twinpane-v0.8.0-android-arm64.tar.gz
-#                     wget https://github.com/ThatOn3Gu7/TwinPane/releases/download/v0.8.0/SHA256SUMS
-grep ' twinpane-v0.8.0-android-arm64.tar.gz$' SHA256SUMS | sha256sum -c -
-tar -xzf twinpane-v0.8.0-android-arm64.tar.gz
-install -m 755 twinpane-v0.8.0-android-arm64/twinpane "$PREFIX/bin/twinpane"
+curl -fLO https://github.com/ThatOn3Gu7/TwinPane/releases/download/v0.9.0/twinpane-v0.9.0-android-arm64.tar.gz
+curl -fLO https://github.com/ThatOn3Gu7/TwinPane/releases/download/v0.9.0/SHA256SUMS
+# with wget instead:  wget https://github.com/ThatOn3Gu7/TwinPane/releases/download/v0.9.0/twinpane-v0.9.0-android-arm64.tar.gz
+#                     wget https://github.com/ThatOn3Gu7/TwinPane/releases/download/v0.9.0/SHA256SUMS
+grep ' twinpane-v0.9.0-android-arm64.tar.gz$' SHA256SUMS | sha256sum -c -
+tar -xzf twinpane-v0.9.0-android-arm64.tar.gz
+install -m 755 twinpane-v0.9.0-android-arm64/twinpane "$PREFIX/bin/twinpane"
 twinpane --version
 ```
 
@@ -283,23 +325,23 @@ Keep the program in Termux's own folders. Shared storage (`/sdcard`,
 **Linux** (use `linux-arm64` on ARM machines):
 
 ```sh
-curl -fLO https://github.com/ThatOn3Gu7/TwinPane/releases/download/v0.8.0/twinpane-v0.8.0-linux-amd64.tar.gz
-curl -fLO https://github.com/ThatOn3Gu7/TwinPane/releases/download/v0.8.0/SHA256SUMS
-grep ' twinpane-v0.8.0-linux-amd64.tar.gz$' SHA256SUMS | sha256sum -c -
-tar -xzf twinpane-v0.8.0-linux-amd64.tar.gz
+curl -fLO https://github.com/ThatOn3Gu7/TwinPane/releases/download/v0.9.0/twinpane-v0.9.0-linux-amd64.tar.gz
+curl -fLO https://github.com/ThatOn3Gu7/TwinPane/releases/download/v0.9.0/SHA256SUMS
+grep ' twinpane-v0.9.0-linux-amd64.tar.gz$' SHA256SUMS | sha256sum -c -
+tar -xzf twinpane-v0.9.0-linux-amd64.tar.gz
 mkdir -p ~/.local/bin
-install -m 755 twinpane-v0.8.0-linux-amd64/twinpane ~/.local/bin/twinpane
+install -m 755 twinpane-v0.9.0-linux-amd64/twinpane ~/.local/bin/twinpane
 ```
 
 **macOS** (use `darwin-amd64` on Intel Macs):
 
 ```sh
-curl -fLO https://github.com/ThatOn3Gu7/TwinPane/releases/download/v0.8.0/twinpane-v0.8.0-darwin-arm64.tar.gz
-curl -fLO https://github.com/ThatOn3Gu7/TwinPane/releases/download/v0.8.0/SHA256SUMS
-grep ' twinpane-v0.8.0-darwin-arm64.tar.gz$' SHA256SUMS | shasum -a 256 -c -
-tar -xzf twinpane-v0.8.0-darwin-arm64.tar.gz
+curl -fLO https://github.com/ThatOn3Gu7/TwinPane/releases/download/v0.9.0/twinpane-v0.9.0-darwin-arm64.tar.gz
+curl -fLO https://github.com/ThatOn3Gu7/TwinPane/releases/download/v0.9.0/SHA256SUMS
+grep ' twinpane-v0.9.0-darwin-arm64.tar.gz$' SHA256SUMS | shasum -a 256 -c -
+tar -xzf twinpane-v0.9.0-darwin-arm64.tar.gz
 mkdir -p ~/.local/bin
-install -m 755 twinpane-v0.8.0-darwin-arm64/twinpane ~/.local/bin/twinpane
+install -m 755 twinpane-v0.9.0-darwin-arm64/twinpane ~/.local/bin/twinpane
 ```
 
 The macOS binaries are not signed. Files downloaded with a web browser get a
@@ -307,7 +349,7 @@ quarantine flag; remove it with
 `xattr -d com.apple.quarantine ~/.local/bin/twinpane`. Files downloaded with
 `curl` don't get that flag.
 
-**Windows (untested):** extract `twinpane-v0.8.0-windows-amd64.zip` and run
+**Windows (untested):** extract `twinpane-v0.9.0-windows-amd64.zip` and run
 `twinpane.exe` in Windows Terminal. It is compiled for completeness but has
 never been run, and Windows has no trash (deletes are permanent).
 
@@ -364,16 +406,17 @@ twinpane --version
 |---|---|---|---|
 | `Tab` | switch panel | `c` / `F5` | copy to the other panel |
 | `↑` `↓` / `j` `k` | move | `m` / `F6` | move to the other panel |
-| `Enter` / `→` | open folder, view file, browse ZIP | `r` / `F2` | rename (several: bulk rename) |
+| `Enter` / `→` | open folder, view file, browse ZIP/TAR | `r` / `F2` | rename (several: bulk rename) |
 | `Backspace` / `←` | parent folder | `d` / `F8` | delete (trash if available) |
 | `Space` | select | `e` / `E` | edit / edit with… |
 | `a` / `u` | select all / none | `v` / `F3` | view |
-| `/` | find by name | `z` / `x` | compress / extract |
+| `/` | find by name; `Ctrl+G` opens Advanced Search | `z` / `x` | compress / extract |
 | `s` / `S` | sort / reverse | `o` / `O` | open / open with… |
 | `h` | hidden files | `P` | properties |
+| `D` / `A` | compare folders / analyze sizes | `t` | background tasks |
 | `b` / `B` | bookmarks / add | `M` | action menu |
 | `i` | storage | `?` / `F1` | help (with `/` filter) |
-| `~` | home folder | `q` / `F10` | quit |
+| `~` | home folder | `q` / `F10` | quit when idle; active tasks must finish or be cancelled |
 | `Ctrl+R` ¹ | sources: local / cloud | `n` / `F7` ¹ | new folder |
 | `Ctrl+L` ¹ | refresh both panels | | |
 
@@ -488,7 +531,7 @@ CGO_ENABLED=0 GOOS=android GOARCH=arm64 \
   on the target system.
 - `-X main.version=…` puts the contents of the `VERSION` file into the
   program (`twinpane --version`). Override it with
-  `VERSION=0.8.0-mytest ./build.sh`. `-s -w` drop debug symbols (smaller
+  `VERSION=0.9.0-mytest ./build.sh`. `-s -w` drop debug symbols (smaller
   file); `-trimpath` keeps your folder names out of the binary.
 - `./build.sh release` additionally packs each binary with `LICENSE` and
   `README.md` into a reproducible archive and writes `SHA256SUMS`; the
@@ -563,7 +606,7 @@ Go tests sit next to the code they test (`*_test.go`).
 Releases are published on
 [GitHub Releases](https://github.com/ThatOn3Gu7/TwinPane/releases) by a
 workflow that runs when a version tag `vMAJOR.MINOR.PATCH` (for example
-`v0.8.0`) is pushed. Each release contains:
+`v0.9.0`) is pushed. Each release contains:
 
 - one package per platform, named `twinpane-<tag>-<os>-<arch>.tar.gz`
   (`.zip` for Windows), holding a folder with `twinpane`, `LICENSE` and
@@ -584,7 +627,7 @@ in [CHANGELOG.md](CHANGELOG.md).
 | `Permission denied` when starting it in Termux | The file is on shared storage or not executable. Keep it in `$PREFIX/bin` or `~` and run `chmod +x`. |
 | `twinpane: command not found` | The install folder is not in `PATH`. Add `export PATH="$HOME/.local/bin:$PATH"` to `~/.profile` (zsh: `~/.zshrc`) and open a new shell. |
 | Installer: `neither curl nor wget is installed` | Termux: `pkg install curl`. Debian/Ubuntu: `sudo apt install curl`. |
-| Installer: `HTTP 403` or `60 requests per hour` | GitHub limits anonymous API requests. Wait, or pass `--version v0.8.0` (this skips the API). |
+| Installer: `HTTP 403` or `60 requests per hour` | GitHub limits anonymous API requests. Wait, or pass `--version v0.9.0` (this skips the API). |
 | Installer: `checksum mismatch` | The download is incomplete or altered; nothing was installed. Try again later or use another network. |
 | Installer: `could not download the latest release information` | Network problem, or no release is published yet. |
 | macOS: "cannot be opened because the developer cannot be verified" | `xattr -d com.apple.quarantine "$(command -v twinpane)"` |

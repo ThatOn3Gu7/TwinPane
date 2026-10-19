@@ -1,16 +1,17 @@
 # TwinPane user guide
 
-The complete reference for TwinPane 0.8.0: every feature, key and safety
+The complete reference for TwinPane 0.9.0: every feature, key and safety
 rule. For installation, building and an overview, see the
 [README](../README.md); for the version history, see the
 [changelog](../CHANGELOG.md).
 
-Features are grouped by the version that introduced them, newest first.
-Later versions sometimes changed earlier behaviour; such changes are noted
-where they apply and summarised under [Keyboard controls](#keyboard-controls).
+The latest additions are documented first; historical sections retain the
+version in which each earlier feature was introduced. Later changes to earlier
+behaviour are noted where they apply and summarised under
+[Keyboard controls](#keyboard-controls).
 
 ```
- TwinPane  0.8.0                                   hidden: off · active: left panel
+ TwinPane  0.9.0                                   hidden: off · active: left panel
 ╭──────────────────────────────────────╮┌──────────────────────────────────────┐
 │ /home/me/L                           ││ /home/me/R                           │
 │ Name        ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓          │
@@ -28,6 +29,79 @@ where they apply and summarised under [Keyboard controls](#keyboard-controls).
 ```
 
 ## Features
+
+### New in v0.9.0 (search, operations, analysis, archives)
+
+TwinPane 0.9.0 adds native search, reviewable directory comparison,
+cancellable folder-size analysis, and a background task view. It also adds
+read-only TAR browsing, persists the hidden-file preference, and includes
+several safety fixes.
+
+#### Advanced Search (`Ctrl+G` from `/`)
+- `/` remains the familiar live filename search. While that box is open,
+  `Ctrl+G` opens Advanced Search and carries the current query into its
+  recursive **filename** mode. The footer and `?` help document this route.
+- Advanced Search stays inside TwinPane: the left side has a query and a
+  scrollable result list; the right side previews the selected file or its
+  matching content lines. Type to filter, use `↑`/`↓` (or `Ctrl+P`/`Ctrl+N`)
+  to move, `Enter` to inspect a file read-only, and `Esc` to return. Closing
+  the search or inspection does not change either panel's directory, cursor,
+  or selection. `Esc` from inspection returns to the same query and result.
+- Filename mode is case-insensitive fuzzy subsequence matching over relative
+  paths: `asgo` can find `src/AdvancedSearch.go`; it honors the hidden-file
+  setting active in `/`. `Ctrl+T` switches in place to content mode and back
+  without clearing the query. Content matching uses smart case (lowercase
+  queries ignore case; capitals make the query exact).
+- Content mode includes hidden files and directories except directories named
+  exactly `.git`, at any depth. `.gitignore`, `.github`, and similarly named
+  paths are searchable. Symlinks and special files are not followed/opened;
+  binary files are skipped and counted. Unreadable paths, cancellation, empty
+  results, per-file/total scan caps, and a 10,000-result cap are reported in
+  the status area. A content scan visits at most 500,000 paths, scans 200,000
+  regular files, returns 10,000 matching files, and examines at most 1 MiB per
+  file and 512 MiB total by default; matching-file previews show bounded line
+  excerpts.
+- The read-only inspection viewer preserves the content query, highlights
+  every matching occurrence distinctly from syntax colours, and uses `n`/`N`
+  to navigate matching lines. Go, JSON, YAML, shell, and many other common
+  source/config formats receive Chroma highlighting; unknown formats stay
+  plain text. Viewer loading remains bounded to 8 MiB, 500,000 lines, and
+  16 KiB per line.
+
+#### Background tasks (`t`)
+
+Long-running file operations run as background tasks, so the panels remain
+usable while work continues. Press `t` to see active progress and the results
+retained during this run. The list shows each task's state, progress, current
+path and result or error.
+
+- `↑`/`↓` or `j`/`k` selects a task; `PgUp`/`PgDn` scrolls its details.
+- `c` cancels the selected active task. `x` clears finished task history.
+- `t` or `Esc` closes the task view. Quitting is blocked while tasks are
+  active; `q` opens the task view, where you can wait or cancel.
+- Operations that need a safety or conflict decision show their prompts one at
+  a time. Archive creation keeps its dedicated progress dialog visible through
+  completion or failure.
+
+#### Other additions and safety fixes
+
+- **Directory comparison (`D`):** compare the two local panel folders,
+  optionally verify matching files with SHA-256, then review and approve a
+  copy-only plan. It does not generate deletions; see
+  [Directory comparison](#directory-comparison-d).
+- **Folder-size analysis (`A`):** cancellable recursive local scans with
+  largest-first results and apparent/allocated totals; see
+  [On-demand folder-size analysis](#on-demand-folder-size-analysis-a).
+- **TAR browsing:** TAR and supported compressed-TAR archives open as
+  read-only folders and support selective extraction. Existing archive safety
+  rules continue to reject unsafe entries and do not create links.
+- Archive creation and extraction default beside their source. Whole-archive
+  extraction uses a same-named subfolder, and single-file compression keeps
+  the source filename.
+- 7-Zip extraction refuses ambiguous listings; cloud folder merges refuse
+  symlinked destinations and nested symlink paths; local folder creation
+  validates names; and delete plans become incomplete if files disappear
+  during planning.
 
 ### New in 0.8.0 (cloud remotes, more extraction formats, new folder)
 
@@ -72,8 +146,9 @@ passwords or tokens.
   deleted takes you to its nearest existing parent.
 - **Copy and move** (`c`, `m`) work local → remote (upload), remote → local
   (download) and remote → remote (also between two remotes), for the
-  selection or the item under the cursor, with the usual confirmation,
-  progress box and `Esc` to cancel. An item that exists in the destination
+  selection or the item under the cursor, with the usual confirmation and
+  background progress. Since v0.9.0, press `t` to review it; `Esc` cancels the
+  latest active task. An item that exists in the destination
   gets the usual Skip / Overwrite (files) or Skip / Merge (folders) dialog,
   with "apply to all"; nothing is overwritten without asking. A move removes
   each source only after rclone transferred it.
@@ -112,14 +187,14 @@ password needs `RCLONE_CONFIG_PASS` set in the environment.
 | Format | How |
 |---|---|
 | ZIP (also `.jar`, `.apk`, `.epub`, …) | built in; browse with `Enter`, extract whole or selected entries |
-| TAR, TAR.GZ / TGZ, TAR.BZ2 / TBZ2, TAR.XZ / TXZ, TAR.ZST / TZST, TAR.LZ4 | built in; browse read-only and extract whole or selected entries |
+| TAR, TAR.GZ / TGZ, TAR.BZ2 / TBZ2, TAR.XZ / TXZ, TAR.ZST / TZST, TAR.LZ4 | built in; whole-archive extraction in v0.8.0; read-only browsing and selected-entry extraction in v0.9.0 |
 | single GZ, BZ2, XZ, ZST, LZ4 files | built in: *Decompress* writes one file, the name without the extension (`notes.txt.gz` → `notes.txt`) |
 | 7Z, RAR | the installed 7-Zip (`7zz`, `7z`, `7za` or `7zr`; Termux: `pkg install 7zip`) |
 
-The dialog defaults to the folder containing the source archive for selected
-entries and single compressed files. Whole-archive extraction defaults to a
-new same-named subfolder there (`photos.tar.gz` → `photos/`). The destination
-is editable. The safety rules of ZIP extraction apply to every format:
+Since v0.9.0, the dialog defaults to the folder containing the source archive
+for selected entries and single compressed files. Whole-archive extraction
+defaults to a new same-named subfolder there (`photos.tar.gz` → `photos/`).
+The destination is editable. The safety rules of ZIP extraction apply to every format:
 nothing is written outside the chosen folder or through a symbolic link.
 Existing files are replaced only after you choose Overwrite. Files appear
 only when complete (a damaged or cancelled entry leaves nothing behind and
@@ -206,8 +281,8 @@ were not used before, and every earlier shortcut works as it did.
 
 The dialog that used to create ZIP files now creates any of these formats.
 `↑`/`↓` (or a tap on `◂` `▸`) changes the format, `PgUp`/`PgDn` changes the
-level, and the output path can be edited. It defaults to the active panel's
-folder, shown in the full path field:
+level, and the output path can be edited. Since v0.9.0, it defaults to the
+directory containing the source item(s), so the new archive is beside them:
 
 ```
   Compress folder "src"
@@ -238,7 +313,7 @@ folder, shown in the full path field:
   found, 7Z is still listed but marked **unavailable**, with the reason (in
   Termux: `pkg install 7zip`), and `Enter` refuses it. TwinPane never falls
   back to a different format.
-- **Name and location:** the output defaults to the active panel's folder.
+- **Name and location (v0.9.0):** the output defaults beside the source item(s).
   For archive formats, the file field shows that folder plus only the selected
   extension (`/path/.zip`, `/path/.tar.gz`, and so on), with the cursor before
   the dot. Type the desired name there (`backup` before `.zip` makes
@@ -261,9 +336,10 @@ folder, shown in the full path field:
   codec finishes its current work. 7-Zip is started directly, without a shell (file names are
   passed after `--`, with `-spd` so `*`, `?` and `@` stay literal), and
   cancelling stops its whole process group.
-- ZIP and TAR-family archives can be **browsed read-only** and selectively
-  extracted entry by entry. Supported TAR names include `.tar`, `.tar.gz` /
-  `.tgz`, `.tar.bz2` / `.tbz2`, `.tar.xz` / `.txz`, and `.tar.zst` / `.tzst`.
+- ZIP archives and, since v0.9.0, TAR-family archives can be **browsed
+  read-only** and selectively extracted entry by entry. Supported TAR names
+  include `.tar`, `.tar.gz` / `.tgz`, `.tar.bz2` / `.tbz2`, `.tar.xz` / `.txz`,
+  and `.tar.zst` / `.tzst`.
   Single compressed files and 7Z/RAR can be extracted as a whole but are not
   browsable or partially extracted.
 
@@ -360,9 +436,9 @@ doesn't compute anything itself.
 
 #### On-demand folder-size analysis (`A`)
 
-`A` opens a local, recursive scan without changing either panel's path,
-cursor, or selection. With exactly one marked real directory, that directory
-is the target. With no marked items, a real directory under the cursor is
+Added in v0.9.0, `A` opens a local, recursive scan without changing either
+panel's path, cursor, or selection. With exactly one marked real directory,
+that directory is the target. With no marked items, a real directory under the cursor is
 used; if the cursor is on a file or `..`, the active panel's current folder is
 used. Multiple marked items, a marked file, a symlinked directory, or a
 listing error is refused with a clear message. Archive and cloud panels are
@@ -518,7 +594,7 @@ overflows. Tap targets cover the whole chip and description.
     entry. Corrupt or non-ZIP files are refused when opened, and the panel
     stays where it was.
 
-**TAR archives (including compressed TAR).**
+**TAR archives (including compressed TAR; browsing added in v0.9.0).**
 - **Browse without extracting:** `Enter` (or a double tap) opens `.tar`,
   `.tar.gz` / `.tgz`, `.tar.bz2` / `.tbz2`, `.tar.xz` / `.txz`, and
   `.tar.zst` / `.tzst` as virtual, read-only folders. The archive is streamed
@@ -554,8 +630,8 @@ overflows. Tap targets cover the whole chip and description.
   - `/` searches (smart case: ignores case unless you type a capital),
     `n`/`N` go to the next/previous match (wrapping around), and matches are
     highlighted.
-  - Recognized source and configuration files receive Chroma syntax
-    highlighting; search matches use a separate background highlight.
+  - Since v0.9.0, recognized source and configuration files receive Chroma
+    syntax highlighting; search matches use a separate background highlight.
   - `e` hands a normally opened file to your external editor. Files inspected
     from Advanced Search stay read-only and do not offer this action.
   - `Esc`, `q` or `Backspace` closes the viewer and returns to exactly the
@@ -601,8 +677,10 @@ shown in the **other panel**.
 **Copy (`c` / `F5`)**
 - Files and folders (recursive), with a confirmation that lists the items,
   source and destination.
-- A progress box (items, bytes, percentage, current path, error count) appears
-  for anything that takes longer than about 0.3 s. `Esc` cancels safely.
+- Since v0.9.0, copy runs as a background task with live progress (items,
+  bytes, percentage, current path and error count). The panels remain usable;
+  press `t` for task details. `Esc` or `Ctrl+C` cancels the latest active task, or use `c` in the
+  task view to cancel the selected one.
 - **Never overwrites silently.** For each existing destination you choose
   **Skip** (the default), **Overwrite** (files) / **Merge** (folders) or
   **Cancel all**. You can tick "apply to all remaining conflicts" (`a`). The
@@ -679,17 +757,20 @@ shown in the **other panel**.
 - There is no built-in editor.
 
 **Responsiveness and cancellation**
-- Operations run in the background. The progress box updates live, and `Esc`
-  (or `Ctrl+C`) cancels: the current file is abandoned cleanly and nothing
-  further is touched. The summary always says what was actually done ("Copy
-  cancelled (Copied 12 files; remaining items untouched)").
+- Operations run in the background. The task view (`t`) tracks progress and
+  retains the result; `Esc` or `Ctrl+C` in the panel cancels the latest active
+  operation, while `c` cancels the selected task in the task view. Cancellation
+  abandons the current file safely and leaves remaining items untouched. The
+  summary always says what was actually done ("Copy cancelled (Copied 12 files;
+  remaining items untouched)").
 - Copy, move and delete clear the selection only after full success, so after a
   partial failure the items that are still there remain selected for a retry.
 
 ### Directory comparison (`D`)
 
-Compare the two local folders visible in the panels; archives and cloud
-sources are not included. The scan is read-only and does not follow symlinks.
+Added in v0.9.0, compare the two local folders visible in the panels; archives
+and cloud sources are not included. The scan is read-only and does not follow
+symlinks.
 It ignores directories named exactly `.git` at any depth by default, while
 keeping `.gitignore`, `.github` and similarly named entries. Press `g` to
 include `.git` directories and rescan; changing this scope clears any current
@@ -787,8 +868,9 @@ Safety with destructive actions:
   outside a dialog neither confirms nor cancels it.
 - The typed confirmation for permanent deletes (`Type "delete"`) has no
   button: it can only be confirmed by typing.
-- Mouse input is ignored while the editor runs and briefly after it exits,
-  and (except `Esc cancel`) while an operation runs.
+- Mouse input is ignored while the editor runs and briefly after it exits.
+  Background operations do not lock panel input; any safety or conflict prompt
+  still requires its normal explicit decision.
 
 Everything still works with the keyboard alone. `--no-mouse` (or
 `TWINPANE_NO_MOUSE=1`) turns mouse reporting off, for example to select text
@@ -817,8 +899,9 @@ Limits (from Termux's terminal code; not tested on a phone):
   never acts on something you can't see.
 - The search box uses the same setting: hidden files are searched only when
   they are shown.
-- The choice is saved and restored the next time you open TwinPane. It is
-  stored in `settings.json` in the same configuration directory as bookmarks.
+- Since v0.9.0, the choice is saved and restored the next time you open
+  TwinPane. It is stored in `settings.json` in the same configuration
+  directory as bookmarks.
 
 **Bulk rename: how to finish**
 
@@ -940,37 +1023,6 @@ The fix:
   listed, not followed. `.gitignore` rules are ignored (it's a file manager).
   Unreadable folders are counted. The listing stops at 300 000 entries and
   says so.
-
-**Advanced Search (`Ctrl+G` from the `/` search box)**
-- `/` remains the familiar live filename search. While that box is open,
-  `Ctrl+G` opens Advanced Search and carries the current query into its
-  recursive **filename** mode. The footer and `?` help document this route.
-- Advanced Search stays inside TwinPane: the left side has a query and a
-  scrollable result list; the right side previews the selected file or its
-  matching content lines. Type to filter, use `↑`/`↓` (or `Ctrl+P`/`Ctrl+N`)
-  to move, `Enter` to inspect a file read-only, and `Esc` to return. Closing
-  the search or inspection does not change either panel's directory, cursor,
-  or selection. `Esc` from inspection returns to the same query and result.
-- Filename mode is case-insensitive fuzzy subsequence matching over relative
-  paths: `asgo` can find `src/AdvancedSearch.go`; it honors the hidden-file
-  setting active in `/`. `Ctrl+T` switches in place to content mode and back
-  without clearing the query. Content matching uses smart case (lowercase
-  queries ignore case; capitals make the query exact).
-- Content mode includes hidden files and directories except directories named
-  exactly `.git`, at any depth. `.gitignore`, `.github`, and similarly named
-  paths are searchable. Symlinks and special files are not followed/opened;
-  binary files are skipped and counted. Unreadable paths, cancellation, empty
-  results, per-file/total scan caps, and a 10,000-result cap are reported in
-  the status area. A content scan visits at most 500,000 paths, scans 200,000
-  regular files, returns 10,000 matching files, and examines at most 1 MiB per
-  file and 512 MiB total by default; matching-file previews show bounded line
-  excerpts.
-- The read-only inspection viewer preserves the content query, highlights
-  every matching occurrence distinctly from syntax colours, and uses `n`/`N`
-  to navigate matching lines. Go, JSON, YAML, shell, and many other common
-  source/config formats receive Chroma highlighting; unknown formats stay
-  plain text. Viewer loading remains bounded to 8 MiB, 500,000 lines, and
-  16 KiB per line.
 
 ### Phase 3
 
@@ -1117,7 +1169,7 @@ v0.3.1; the matching rules below still apply)
 | `E` | **edit with…**: choose from the installed editors |
 | `P` | **properties**: details, rename, permissions |
 | `v` / `F3` | **view** the file (read-only); `Enter` on a file does the same |
-| `Enter` on a `.zip` | **browse** the archive (no extraction) |
+| `Enter` on a `.zip` or supported TAR | **browse** the archive (no extraction) |
 | `x` | **extract**: selected entries (in an archive) or the archive under the cursor (also TAR, compressed files, 7Z/RAR since v0.8.0) |
 | `X` | extract the whole archive (in an archive) |
 | `z` | **compress** the selection / item under the cursor: ZIP, 7Z, TAR, TAR.GZ, TAR.XZ, TAR.ZST, TAR.BZ2, TAR.LZ4, GZIP, XZ, ZSTD, BZIP2, LZ4 |
@@ -1127,8 +1179,11 @@ v0.3.1; the matching rules below still apply)
 | `B` | **bookmark** the current folder |
 | `b` | **bookmarks**: open (`Enter`/`1`–`9`), rename (`r`), remove (`d`), add (`a`) |
 | `i` | **storage**: total / used / free of the folder's filesystem |
-| `Esc` | cancel a dialog or running operation/scan; leave an archive (second `Esc` can dismiss a stopping scan) |
+| `Esc` | cancel a dialog or active operation/scan; close a task view; leave an archive (second `Esc` can dismiss a stopping scan) |
 | `/` | **find**: live filename search box below the active panel's folder |
+| `Ctrl+G` (while `/` is open) | open Advanced Search |
+| `Ctrl+T` (in Advanced Search) | switch between filename and content search |
+| `t` | view background task progress and results |
 | `h` / `H` / `.` | show / hide hidden files in **both** panels |
 | `s` | cycle sort: name → size → time → type |
 | `S` | reverse the sort order (↑/↓) |
@@ -1136,7 +1191,7 @@ v0.3.1; the matching rules below still apply)
 | `Ctrl+R` | **sources**: local files or an rclone remote for the active panel (new in v0.8.0) |
 | `n` / `F7` | **new folder** (new in v0.8.0) |
 | `?` / `F1` | help (scroll with `↑`/`↓` `PgUp`/`PgDn` `g`/`G`; any other key closes it) |
-| `q` / `F10` / `Ctrl+C` | quit (`Ctrl+C` cancels a running operation instead) |
+| `q` / `F10` / `Ctrl+C` | quit when idle; with active tasks, `q`/`F10` opens tasks and `Ctrl+C` cancels the latest |
 
 **Changed in v0.8.0:** refresh is `Ctrl+L` (was `Ctrl+R`);
 `Ctrl+R` opens Sources (cloud remotes); `n`/`F7` (new folder) are new. These
@@ -1236,9 +1291,9 @@ including the end-to-end test scripts, are in
   cross-filesystem moves, where the source is removed.
 - The free-space check is an estimate (it doesn't subtract files that would
   be overwritten).
-- While an operation runs, the panels can't be navigated; only cancel is
-  accepted. Quitting waits for the operation to stop, so a hung network mount
-  can delay it.
+- Long-running operations run in the background and are tracked in the task
+  view (`t`); panels remain usable. Quitting is blocked while tasks are active,
+  and a slow operation may take time to stop safely after cancellation.
 - "Rename without replacing" is atomic on Linux (`renameat2`), macOS
   (`renamex_np`) and Windows (`MoveFileEx`). On other systems it is a check
   followed by a rename, so there is a tiny race window if another program
@@ -1246,12 +1301,14 @@ including the end-to-end test scripts, are in
 - Bulk rename isn't a transaction. If a rename fails halfway (e.g. permission
   denied), the ones already done stay done, and the report lists exactly what
   happened. An item left under a temporary name is reported with that name.
-- Search: names only (no content search). The listing is made once when the
-  box opens (at most 300 000 entries) and isn't updated if files change while
-  it is open (reopen with `Esc` `/`). Symlinked folders are not entered. Large
-  trees list much faster with `fd` or `find` than with the built-in walker.
-  Sort is per panel, hidden files are one setting for both panels, and
-  neither is saved between runs.
+- Quick search (`/`) searches names only. Its listing is made once when the
+  box opens (at most 300,000 entries) and is not updated if files change while
+  it is open; reopen it with `Esc` then `/`. Symlinked folders are not entered.
+  Use Advanced Search for content search; it has separate scan limits and skips
+  exact `.git` directories by default. Large trees list faster with `fd` or
+  `find` than with the built-in walker. Sort order is per panel and is not
+  saved; hidden-file visibility is shared by both panels and is saved in
+  `settings.json`.
 - Termux: the android build has not been run on a real device yet (see
   the [README](../README.md#installation)). Please report the output of `twinpane --version` with
   any problem.
@@ -1294,8 +1351,9 @@ including the end-to-end test scripts, are in
   depends on the provider; rclone's error is shown when one is not
   supported. Tested with rclone's local and alias backends, not with real
   cloud accounts.
-- Viewer: text only, no syntax highlighting and no hex view for binary
-  files. Search matches within a line, not across lines. Files bigger than
+- Viewer: text only, with no hex view for binary files. Syntax highlighting
+  is applied to recognized source/configuration formats; unknown formats stay
+  plain text. Search matches within a line, not across lines. Files bigger than
   8 MiB show their first 8 MiB. The viewer never modifies files: editing is
   always done in your external editor.
 - Properties: the `P` dialog does not calculate recursive folder sizes; use
@@ -1325,5 +1383,5 @@ including the end-to-end test scripts, are in
 - Storage overview (`i`): one filesystem at a time (the active panel's, plus
   the other panel's if different); it is separate from the recursive local
   folder-size analysis (`A`). There is no list of all mounts.
-- Not included: content search, configurable keys/themes, or folder-size
-  analysis of cloud remotes and archive contents.
+- Not included: configurable keys/themes or folder-size analysis of cloud
+  remotes and archive contents.
