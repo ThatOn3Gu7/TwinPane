@@ -51,6 +51,7 @@ const (
 	areaSearch
 	areaBulk
 	areaViewer
+	areaFolderSize
 )
 
 // pressState remembers a left-button press on a hint-bar item, so that the
@@ -106,6 +107,8 @@ func (a *App) handleMouse(m tea.MouseMsg) tea.Cmd {
 		return a.searchMouse(ev)
 	case a.bulk != nil:
 		return a.bulkMouse(ev)
+	case a.folderSize != nil:
+		return a.folderSizeMouse(ev)
 	case a.comparison != nil:
 		return a.comparisonMouse(ev)
 	}

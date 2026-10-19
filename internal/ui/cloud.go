@@ -249,6 +249,8 @@ func (a *App) remoteUnsupported(msg tea.KeyMsg) string {
 		return "Bookmarking"
 	case k.Storage.Matches(msg):
 		return "Storage info"
+	case k.FolderSize.Matches(msg):
+		return "Folder-size analysis"
 	}
 	return ""
 }

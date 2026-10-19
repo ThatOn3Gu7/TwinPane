@@ -92,6 +92,7 @@ passwords or tokens.
   local panel first. `~` (and Menu → *Back to local files*) returns the panel
   to local files; `=` shows the same remote folder in the other panel, or,
   from a local panel, brings a remote panel back to that local folder.
+  Folder-size analysis (`A`) is local-only and refuses remote locations.
 - **Without rclone** the Sources picker explains how to install it
   (`pkg install rclone` in Termux) and everything else works as before. With
   rclone but no remotes, it explains `rclone config`.
@@ -331,9 +332,9 @@ and left untouched; bookmarks can't be changed until it is fixed or removed.
 `M` opens a menu for the item under the cursor or the selection. It lists
 only the actions that apply: Open, Open with…, View, Edit, Copy/Move to the
 other panel, Rename, Compress…, Extract, Properties, Share… (Termux), Bookmark
-this folder / Remove this folder's bookmark, Bookmarks…, Storage info and,
-always last and in the warning colour, Delete…. Each entry shows its
-shortcut letter, and that letter runs it. Entries run the normal shortcut,
+this folder / Remove this folder's bookmark, Bookmarks…, Storage info, Analyze
+folder sizes, and, always last and in the warning colour, Delete…. Each
+entry shows its shortcut letter, and that letter runs it. Entries run the normal shortcut,
 with the same checks and confirmations. Inside an archive only the read-only
 actions are offered.
 
@@ -356,6 +357,61 @@ example, a restricted mount table hides the mount point, but the sizes are
 still shown. On Android, shared storage is usually a FUSE view
 (`/storage/emulated`); TwinPane shows whatever the kernel reports for it and
 doesn't compute anything itself.
+
+#### On-demand folder-size analysis (`A`)
+
+`A` opens a local, recursive scan without changing either panel's path,
+cursor, or selection. With exactly one marked real directory, that directory
+is the target. With no marked items, a real directory under the cursor is
+used; if the cursor is on a file or `..`, the active panel's current folder is
+used. Multiple marked items, a marked file, a symlinked directory, or a
+listing error is refused with a clear message. Archive and cloud panels are
+not supported.
+
+The scan runs outside the TUI event loop and reports batched counts, bytes,
+errors and the current path. `Esc` requests cancellation; the overlay reports
+**cancelled** separately from **partial**, **failed** and **complete**. A
+second `Esc` can dismiss the overlay while an in-flight filesystem call winds
+down. Cancelled and partial totals are lower bounds, never presented as a
+complete result. Unreadable or disappearing entries, filesystem-boundary
+skips, and depth/directory safety limits are shown as issues; root failures
+are reported as failed.
+
+The results are a navigable tree of directory aggregates and direct files.
+`Enter`/`→`/`l` drills into a directory, `Backspace`/`←` returns to its
+parent, and `r` rescans the original root while restoring the current
+subdirectory when possible. `s` sorts largest apparent size first, `n` sorts
+by name, and `a` sorts by allocated size where supported. The view displays
+recursive file/directory/link/special counts and apparent/allocated totals.
+For directories with many direct files, the list keeps the 20 largest entries
+per size metric; name sorting applies to that retained sample. Directory
+nodes and file-row samples are bounded (100,000 stored directories, depth
+128, and 20,000 retained file-row slots by default). Reaching the directory or
+depth limit, or overflowing a `uint64` total, produces an explicitly partial
+result; the file-row cache can separately show a limited sample.
+
+**Size semantics and safety:**
+- **Apparent size** sums `Lstat` lengths for regular-file paths and the
+  symlink itself (not its target). Directory inode metadata and special-file
+  sizes are excluded. Hard links are counted once per pathname, so apparent
+  totals can include the same underlying data more than once.
+- **Allocated size** uses the OS's reported allocation (`st_blocks × 512` on
+  Unix). It is an estimate of filesystem blocks, not a promise of physical
+  device use; sparse files, compression, copy-on-write and filesystem
+  metadata can differ. It is unavailable on platforms without a supported
+  allocation API (including Windows in this implementation). Hard-linked
+  paths are also summed per pathname here.
+- Directory symlinks are never traversed; special files are never opened.
+  Directory identities are tracked to prevent repeated traversal. Linux and
+  Android compare mountinfo mount points and fail closed if the table is
+  unavailable; other Unix targets compare device IDs (which cannot distinguish
+  every same-device bind mount), and Windows compares volume paths. If a
+  boundary cannot be verified, the scanner fails closed and marks the result
+  partial. Skipped mounts are visible rather than silently counted as empty.
+- This is an on-demand, non-atomic view: files can be created, removed or
+  changed while the scan runs. It does not alter files or selections. Sizes
+  use binary units (`KiB`, `MiB`, …), and the separate `i` storage overview
+  still describes filesystem capacity rather than recursively scanning data.
 
 ### v0.5.0 (phase 5: properties, archives, viewer)
 
@@ -1015,6 +1071,7 @@ v0.3.1; the matching rules below still apply)
 | `~` | go to home directory |
 | `=` | show the active panel's folder in the other panel |
 | `D` | compare the two local panel directories (see Directory comparison) |
+| `A` | analyze the selected/cursor directory or active folder (see Folder-size analysis) |
 | `Space` / `Insert` | toggle selection (and move down) |
 | `a` | select all / select none |
 | `u` | clear selection |
@@ -1036,7 +1093,7 @@ v0.3.1; the matching rules below still apply)
 | `B` | **bookmark** the current folder |
 | `b` | **bookmarks**: open (`Enter`/`1`–`9`), rename (`r`), remove (`d`), add (`a`) |
 | `i` | **storage**: total / used / free of the folder's filesystem |
-| `Esc` | cancel a dialog or a running operation; leave an archive |
+| `Esc` | cancel a dialog or running operation/scan; leave an archive (second `Esc` can dismiss a stopping scan) |
 | `/` | **find**: live filename search box below the active panel's folder |
 | `h` / `H` / `.` | show / hide hidden files in **both** panels |
 | `s` | cycle sort: name → size → time → type |
@@ -1197,8 +1254,8 @@ including the end-to-end test scripts, are in
   can't be viewed, edited or opened in place (copy them to a local panel).
   Rename on a remote is one item at a time. Symbolic links are not uploaded
   (rclone does not follow them; links inside uploaded folders are skipped).
-  Folder sizes are not shown, and permissions are not shown or changed on
-  remotes. Quitting while a slow listing runs can leave rclone running until
+  Recursive folder-size analysis (`A`) is available only for local folders;
+  permissions are not shown or changed on remotes. Quitting while a slow listing runs can leave rclone running until
   its own timeout. Whether empty folders, renames or server-side moves work
   depends on the provider; rclone's error is shown when one is not
   supported. Tested with rclone's local and alias backends, not with real
@@ -1207,9 +1264,9 @@ including the end-to-end test scripts, are in
   files. Search matches within a line, not across lines. Files bigger than
   8 MiB show their first 8 MiB. The viewer never modifies files: editing is
   always done in your external editor.
-- Properties: no recursive folder size (by design: storage analysis is out
-  of scope). No chown/chgrp, and no ACLs or extended attributes. Permissions
-  apply to one item at a time.
+- Properties: the `P` dialog does not calculate recursive folder sizes; use
+  the separate `A` folder-size analysis. No chown/chgrp, ACLs or extended
+  attributes. Permissions apply to one item at a time.
 - Compression/archive support: ZIP and TAR-family archives can be browsed
   read-only and selectively extracted. Single compressed files and 7Z/RAR
   can be extracted as a whole, not browsed or selectively extracted.
@@ -1231,8 +1288,8 @@ including the end-to-end test scripts, are in
   right-click menu (right click still marks).
 - Bookmarks: one list for the whole app (not per panel), no folders or
   reordering. Bookmarks inside ZIP archives are not possible.
-- Storage: one filesystem at a time (the active panel's, plus the other
-  panel's if different); no recursive folder sizes and no list of all
-  mounts.
-- Not included: content search, configurable keys/themes, recursive
-  storage analysis.
+- Storage overview (`i`): one filesystem at a time (the active panel's, plus
+  the other panel's if different); it is separate from the recursive local
+  folder-size analysis (`A`). There is no list of all mounts.
+- Not included: content search, configurable keys/themes, or folder-size
+  analysis of cloud remotes and archive contents.

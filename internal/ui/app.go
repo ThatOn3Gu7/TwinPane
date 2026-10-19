@@ -113,6 +113,7 @@ type App struct {
 	opSeq            int
 	compressProgress *compressProgressState
 	comparisonSeq    int
+	folderSizeSeq    int
 	trasher          ops.Trasher
 	edEnv            editor.Env
 	execFn           ExecFunc
@@ -125,6 +126,7 @@ type App struct {
 	search     *searchView     // recursive search overlay
 	bulk       *bulkRename     // bulk rename overlay
 	comparison *comparisonView // local directory comparison and reviewed plan
+	folderSize *folderSizeView // cancellable local folder-size analysis
 
 	// phase 4
 	showHidden     bool        // one setting for both panels (h / H / .)
@@ -352,6 +354,9 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.comparisonDone(msg)
 		return a, nil
 
+	case folderSizeEventMsg:
+		return a, a.folderSizeEvent(msg)
+
 	case bulkDoneMsg:
 		return a, a.bulkDone(msg)
 
@@ -397,6 +402,9 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if a.dialog == nil && a.tasks.showing {
 			return a, a.taskViewKey(msg)
+		}
+		if a.dialog == nil && a.folderSize != nil && !a.showHelp {
+			return a, a.folderSizeKey(msg)
 		}
 		if a.dialog == nil && a.comparison != nil && !a.showHelp {
 			return a, a.comparisonKey(msg)
@@ -472,13 +480,14 @@ type uiState struct {
 	viewer                                  *viewer
 	props                                   *propsView
 	comparison                              *comparisonView
+	folderSize                              *folderSizeView
 }
 
 func (a *App) uiState() uiState {
 	return uiState{
 		dialog: a.dialog, search: a.search, bulk: a.bulk, tasks: a.tasks.showing,
 		busy: a.busy(), quitting: a.quitting, editing: a.editing, help: a.showHelp,
-		inputBox: a.dialog != nil && a.dialog.input != nil, viewer: a.viewer, props: a.props, comparison: a.comparison,
+		inputBox: a.dialog != nil && a.dialog.input != nil, viewer: a.viewer, props: a.props, comparison: a.comparison, folderSize: a.folderSize,
 	}
 }
 
@@ -574,6 +583,8 @@ func (a *App) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return a, other.Load(p.Path(), focus, panel.LoadNavigate)
 	case k.Compare.Matches(msg):
 		return a, a.beginDirectoryCompare()
+	case k.FolderSize.Matches(msg):
+		return a, a.beginFolderSize()
 	case k.Select.Matches(msg):
 		p.ToggleSelect()
 	case k.SelectAll.Matches(msg):
@@ -688,6 +699,8 @@ func (a *App) View() string {
 		body = a.searchViewRender(a.height - 3)
 	case a.bulk != nil:
 		body = a.bulkView(a.height - 3)
+	case a.folderSize != nil:
+		body = a.folderSizeViewRender(a.height - 3)
 	case a.comparison != nil:
 		body = a.comparisonViewRender(a.height - 3)
 	default:
