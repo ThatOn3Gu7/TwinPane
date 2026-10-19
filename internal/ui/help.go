@@ -189,28 +189,32 @@ func maxWidth(lines []string) int {
 }
 
 // helpFull lays out the unfiltered help for a screen maxInner cells wide
-// (inside the frame): two columns when they fit (an 80-column terminal),
-// otherwise stacked with long rows wrapped. It returns the lines and the
-// natural content width.
+// (inside the frame): two columns from 80 columns up, wrapping each column
+// when their natural widths do not fit; narrower screens stack the sections.
+// It returns the lines and the natural content width.
 func (a *App) helpFull(cols [2][]helpSection, maxInner int) ([]string, int) {
 	if a.width >= 80 {
 		left, right := a.sectionLines(cols[0], 0), a.sectionLines(cols[1], 0)
 		lw, rw := maxWidth(left), maxWidth(right)
-		if lw+3+rw <= maxInner {
-			n := max(len(left), len(right))
-			lines := make([]string, n)
-			for i := range lines {
-				var l, r string
-				if i < len(left) {
-					l = left[i]
-				}
-				if i < len(right) {
-					r = right[i]
-				}
-				lines[i] = l + strings.Repeat(" ", lw-ansi.StringWidth(l)+3) + r
-			}
-			return lines, lw + 3 + rw
+		if lw+3+rw > maxInner {
+			lw = max(1, (maxInner-3)/2)
+			rw = max(1, maxInner-lw-3)
+			left = a.sectionLines(cols[0], lw)
+			right = a.sectionLines(cols[1], rw)
 		}
+		n := max(len(left), len(right))
+		lines := make([]string, n)
+		for i := range lines {
+			var l, r string
+			if i < len(left) {
+				l = left[i]
+			}
+			if i < len(right) {
+				r = right[i]
+			}
+			lines[i] = l + strings.Repeat(" ", lw-ansi.StringWidth(l)+3) + r
+		}
+		return lines, lw + 3 + rw
 	}
 	all := append(append([]helpSection(nil), cols[0]...), cols[1]...)
 	natural := maxWidth(a.sectionLines(all, 0))
