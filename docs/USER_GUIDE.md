@@ -758,6 +758,8 @@ Limits (from Termux's terminal code; not tested on a phone):
   never acts on something you can't see.
 - The search box uses the same setting: hidden files are searched only when
   they are shown.
+- The choice is saved and restored the next time you open TwinPane. It is
+  stored in `settings.json` in the same configuration directory as bookmarks.
 
 **Bulk rename: how to finish**
 

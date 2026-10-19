@@ -10,6 +10,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/ThatOn3Gu7/TwinPane/internal/editor"
+	"github.com/ThatOn3Gu7/TwinPane/internal/settings"
 	"github.com/ThatOn3Gu7/TwinPane/internal/ui"
 )
 
@@ -36,6 +37,12 @@ func main() {
 	restore := editor.SaveTerminal(os.Stdin)
 	mouse := !*noMouse && os.Getenv("TWINPANE_NO_MOUSE") == ""
 	opts := ui.Options{Version: version, Mouse: mouse, EditorTips: !*noTips}
+	prefsPath, prefsErr := settings.DefaultPath()
+	if prefsErr != nil {
+		opts.SettingsPathError = prefsErr.Error()
+	} else {
+		opts.SettingsPath = prefsPath
+	}
 	if runtime.GOOS == "linux" && onAndroid() {
 		opts.Notice = "this is the Linux build running on Android: for Termux install the android-arm64 build"
 	}

@@ -25,6 +25,7 @@ import (
 	"github.com/ThatOn3Gu7/TwinPane/internal/panel"
 	"github.com/ThatOn3Gu7/TwinPane/internal/proc"
 	"github.com/ThatOn3Gu7/TwinPane/internal/search"
+	"github.com/ThatOn3Gu7/TwinPane/internal/settings"
 	"github.com/ThatOn3Gu7/TwinPane/internal/theme"
 )
 
@@ -76,6 +77,11 @@ type Options struct {
 	Launch func(argv []string) error
 	// BookmarksPath is the bookmarks file: "" = bookmarks.DefaultPath().
 	BookmarksPath string
+	// SettingsPath is the user preferences file. The command sets this to
+	// settings.DefaultPath(); empty disables persistence (useful for tests).
+	SettingsPath string
+	// SettingsPathError reports a failure resolving the default settings path.
+	SettingsPathError string
 }
 
 // status levels
@@ -122,6 +128,8 @@ type App struct {
 
 	// phase 4
 	showHidden     bool        // one setting for both panels (h / H / .)
+	settingsPath   string      // persisted user preferences (empty disables persistence)
+	settingsErr    error       // latest settings load/save failure
 	footerHits     []footerHit // clickable hint-bar items of the last frame
 	helpScroll     int         // first line of the help screen shown
 	helpScrollable bool        // the help body is taller than its viewport
@@ -190,10 +198,31 @@ func New(opts Options) *App {
 		a.launch = func(argv []string) error { return opener.Launch(argv, opener.LaunchWait) }
 	}
 	a.formatLevels = map[compress.ID]int{}
+	a.settingsPath = opts.SettingsPath
+	if opts.SettingsPathError != "" {
+		a.settingsErr = fmt.Errorf("%s", opts.SettingsPathError)
+	} else if a.settingsPath != "" {
+		prefs, err := settings.Load(a.settingsPath)
+		a.settingsErr = err
+		if err == nil {
+			a.showHidden = prefs.ShowHidden
+		}
+	}
 	a.panels[0] = panel.New(0, opts.Lister)
 	a.panels[1] = panel.New(1, opts.Lister)
+	// Set the global preference before Init starts either panel's first load.
+	// SetShowHidden updates the option without reloading an uninitialized panel.
+	a.panels[0].SetShowHidden(a.showHidden)
+	a.panels[1].SetShowHidden(a.showHidden)
+	var notices []string
 	if opts.Notice != "" {
-		a.setStatusLevel(opts.Notice, lvlWarn)
+		notices = append(notices, opts.Notice)
+	}
+	if a.settingsErr != nil {
+		notices = append(notices, "settings: "+a.settingsErr.Error())
+	}
+	if len(notices) > 0 {
+		a.setStatusLevel(strings.Join(notices, " · "), lvlWarn)
 	}
 	return a
 }
@@ -741,11 +770,24 @@ func (a *App) statusView() string {
 // neighbour if that entry is now hidden) on the same screen row.
 func (a *App) toggleHidden() tea.Cmd {
 	a.showHidden = !a.showHidden
+	message := "hiding hidden files in both panels (h shows them)"
 	if a.showHidden {
-		a.setStatus("showing hidden files in both panels (h hides them)", false)
-	} else {
-		a.setStatus("hiding hidden files in both panels (h shows them)", false)
+		message = "showing hidden files in both panels (h hides them)"
 	}
+	level := lvlInfo
+	if a.settingsPath != "" {
+		if err := settings.Save(a.settingsPath, settings.Preferences{ShowHidden: a.showHidden}); err != nil {
+			a.settingsErr = err
+			message += "; not saved: " + errText(err)
+			level = lvlWarn
+		} else {
+			a.settingsErr = nil
+		}
+	} else if a.settingsErr != nil {
+		message += "; not saved: " + errText(a.settingsErr)
+		level = lvlWarn
+	}
+	a.setStatusLevel(message, level)
 	return tea.Batch(a.panels[0].SetShowHidden(a.showHidden), a.panels[1].SetShowHidden(a.showHidden))
 }
 

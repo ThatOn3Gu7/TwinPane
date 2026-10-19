@@ -534,6 +534,14 @@ Four new packages with no UI dependency. The TUI code lives in four
   and remove are separate dialogs that return to the list.
   `Options.BookmarksPath` overrides the file (tests).
 
+### User preferences (`internal/settings`)
+- `settings.json` shares the bookmarks configuration directory and is written
+  atomically with mode 0600. The versioned preferences currently persist the
+  global hidden-files flag. The UI loads it before the panels' initial listing
+  and saves each `h`/`H`/`.` change; an unreadable or newer settings file is
+  left untouched and reported in the status line. The command passes the path
+  through `Options.SettingsPath` so tests can use an isolated file.
+
 ### Open / Open with (`internal/opener`, `ui/open.go`)
 - `filetype.go`: `ByName` (an extension table) and `Sniff` (magic bytes:
   images, audio, video, PDF, ZIP-based documents and APKs, ELF/scripts,
