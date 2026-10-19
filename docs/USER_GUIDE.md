@@ -238,13 +238,14 @@ folder, shown in the full path field:
   Termux: `pkg install 7zip`), and `Enter` refuses it. TwinPane never falls
   back to a different format.
 - **Name and location:** the output defaults to the active panel's folder.
-  The file field shows that folder plus only the selected format's extension
-  (`/path/.zip`, `/path/.tar.gz`, and so on), with the cursor before the dot.
-  Type the desired name there (`backup` before `.zip` makes `backup.zip`).
-  The full path remains editable, so you can choose another folder. Changing
-  the format swaps the extension and keeps any name you have typed. A name
-  ending in another format's extension is refused, never "corrected"; an
-  extension without a name is not created.
+  For archive formats, the file field shows that folder plus only the selected
+  extension (`/path/.zip`, `/path/.tar.gz`, and so on), with the cursor before
+  the dot. Type the desired name there (`backup` before `.zip` makes
+  `backup.zip`). Single-file formats keep the source filename and add the
+  selected extension. The full path remains editable, so you can choose
+  another folder. Changing the format swaps the extension and keeps any name
+  you have typed. A name ending in another format's extension is refused,
+  never "corrected"; an archive extension without a name is not created.
 - **Contents:** several items keep their folder structure, relative to the
   folder they are in. Symbolic links are stored as links; FIFOs, sockets and
   devices are left out and reported. The new file is never added to itself.
