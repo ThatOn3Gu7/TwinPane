@@ -554,7 +554,10 @@ overflows. Tap targets cover the whole chip and description.
   - `/` searches (smart case: ignores case unless you type a capital),
     `n`/`N` go to the next/previous match (wrapping around), and matches are
     highlighted.
-  - `e` hands the file to your external editor.
+  - Recognized source and configuration files receive Chroma syntax
+    highlighting; search matches use a separate background highlight.
+  - `e` hands a normally opened file to your external editor. Files inspected
+    from Advanced Search stay read-only and do not offer this action.
   - `Esc`, `q` or `Backspace` closes the viewer and returns to exactly the
     same panel, cursor, scroll and selection.
 - **Safe with any file:**
@@ -937,6 +940,37 @@ The fix:
   listed, not followed. `.gitignore` rules are ignored (it's a file manager).
   Unreadable folders are counted. The listing stops at 300 000 entries and
   says so.
+
+**Advanced Search (`Ctrl+G` from the `/` search box)**
+- `/` remains the familiar live filename search. While that box is open,
+  `Ctrl+G` opens Advanced Search and carries the current query into its
+  recursive **filename** mode. The footer and `?` help document this route.
+- Advanced Search stays inside TwinPane: the left side has a query and a
+  scrollable result list; the right side previews the selected file or its
+  matching content lines. Type to filter, use `↑`/`↓` (or `Ctrl+P`/`Ctrl+N`)
+  to move, `Enter` to inspect a file read-only, and `Esc` to return. Closing
+  the search or inspection does not change either panel's directory, cursor,
+  or selection. `Esc` from inspection returns to the same query and result.
+- Filename mode is case-insensitive fuzzy subsequence matching over relative
+  paths: `asgo` can find `src/AdvancedSearch.go`; it honors the hidden-file
+  setting active in `/`. `Ctrl+T` switches in place to content mode and back
+  without clearing the query. Content matching uses smart case (lowercase
+  queries ignore case; capitals make the query exact).
+- Content mode includes hidden files and directories except directories named
+  exactly `.git`, at any depth. `.gitignore`, `.github`, and similarly named
+  paths are searchable. Symlinks and special files are not followed/opened;
+  binary files are skipped and counted. Unreadable paths, cancellation, empty
+  results, per-file/total scan caps, and a 10,000-result cap are reported in
+  the status area. A content scan visits at most 500,000 paths, scans 200,000
+  regular files, returns 10,000 matching files, and examines at most 1 MiB per
+  file and 512 MiB total by default; matching-file previews show bounded line
+  excerpts.
+- The read-only inspection viewer preserves the content query, highlights
+  every matching occurrence distinctly from syntax colours, and uses `n`/`N`
+  to navigate matching lines. Go, JSON, YAML, shell, and many other common
+  source/config formats receive Chroma highlighting; unknown formats stay
+  plain text. Viewer loading remains bounded to 8 MiB, 500,000 lines, and
+  16 KiB per line.
 
 ### Phase 3
 

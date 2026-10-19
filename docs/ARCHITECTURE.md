@@ -23,7 +23,7 @@ cmd/twinpane ──► internal/ui ──► internal/panel ──► internal/f
 | `theme` | Every Lip Gloss style in one struct. | Lip Gloss |
 | `ops` | File-operation engine: `Validate`, `Run` (copy/move), `PlanDelete`/`Delete`, `Trasher` implementations, `ValidateName`/`Rename`. Reports through plain callback hooks. | stdlib, `x/sys` |
 | `editor` | Picks the external editor (`$VISUAL` → `$EDITOR` → fallbacks), checks whether a file is editable or binary, builds the `*exec.Cmd`. Phase 3: `Process` runs it with terminal hand-over and job control (`process_jobctl.go`, termios per OS). | stdlib, `x/sys` |
-| `search` | Filename search: `ParseQuery`/`Match`. v0.3.1: `Index` lists a tree with fd / find / a built-in walker and streams `IndexUpdate`s; `Filter`/`Rank` match the in-memory index per keystroke. (`Run`, the phase-3 walker-and-match, is kept and tested but no longer used by the UI.) | stdlib, `proc` |
+| `search` | Live filename indexing (`Index`, `Filter`, `Rank`), cancellable content traversal (`RunContent`, bounded by file/byte/result limits and skipping exact `.git` directories), and FZF-inspired fuzzy subsequence ranking (`FuzzyRankContext`). | stdlib, `proc`, `textview` |
 | `proc` | v0.3.1: `LookPath` and `Start`/`Wait`/`Kill` without the system calls Android's seccomp filter forbids. All program lookups and starts go through it. | stdlib, `x/sys` |
 | `cloud` | Phase 9: rclone remotes. `Detect`, `Client.Remotes`/`List`/`Stat`/`Mkdir`/`Rename`/`Delete`/`Transfer`, the `Path` type (`remote:path` or local), and `Error` with an `ErrKind` that explains failures (not installed, login, network, missing, exists, unsupported, locked config, cancelled). Starts rclone through `proc`, never a shell. | stdlib, `proc`, `ops` (transfer types) |
 | `foldersize` | On-demand local recursive scan: apparent and allocated totals, bounded largest-entry samples, mount/volume boundaries, identity-based duplicate avoidance, cancellation and batched progress. Does not import UI or modify files. | stdlib, `storage`, platform syscalls (`x/sys/unix` on Unix) |
@@ -226,6 +226,20 @@ body. `Enter` loads the result's directory with `RefreshFocus(name)`, and `Esc`
 cancels the context. Stale updates from a previous search are dropped by
 search id.
 
+Advanced Search is a separate `advancedSearchView`, reached with `Ctrl+G`
+from the existing `/` box. It keeps the query and panel index but never calls
+`Panel.Load` or mutates either panel. The file index streams once in the
+background; query ranking runs on cancellable snapshots through
+`FuzzyRankContext`. Content mode runs `RunContent` per query, checks context
+between paths, opens only regular files (no-follow/nonblocking flags on Unix),
+uses `textview`'s binary classifier, and bounds each scan to 500,000 paths,
+200,000 regular files, 1 MiB per file, 10,000 matching files, and 512 MiB in
+total by default. Only directories whose basename is exactly `.git` are
+pruned; hidden lookalikes remain searchable. Each content update carries only
+its new matches; the UI ignores stale generations after query changes and uses
+a separate 256 KiB preview worker for the selected filename result. Enter overlays the normal viewer in
+read-only inspection mode; closing it exposes the same search state.
+
 ### Sorting (`fsys.SortEntries`, `panel`)
 
 `fsys.Options{ShowHidden, Sort, Desc}` per panel. `SortEntries` keeps
@@ -346,6 +360,25 @@ user's dump (`SIGSYS … 0x1b7`), and v0.3.1 passes edit, chooser, multi-file,
   modes (text field / result list), and marks are a path set. `searchEdit`
   calls `editPaths`, and the box stays open afterwards. `searchJump` loads the
   folder with `RefreshFocus`.
+
+### Advanced Search (`ui/advanced_search*.go`)
+- `Ctrl+G` in the live `/` view copies its root, panel index, hidden-file
+  preference, and query, then cancels the quick-search index. `/` itself is
+  unchanged. The overlay doesn't load or navigate either panel.
+- Filename mode ranks streamed `search.Entry` snapshots off-loop. Query
+  generations and contexts discard stale work; index batches arriving during
+  ranking mark the result dirty so the newest snapshot is ranked next.
+- `Ctrl+T` preserves the same input while switching to cancellable content
+  traversal. Exact `.git` components are pruned; `.github`, `.gitignore`, and
+  other hidden paths remain in scope. Binary/unreadable files and partial
+  files are counted; match excerpts are limited per file.
+- Filename previews are loaded in a separate bounded worker. Content previews
+  use the stored matching-line excerpts. Enter opens `viewer` with the search
+  term and matching line; the viewer's Escape closes only the viewer, leaving
+  the query, results, cursor, and both panels untouched.
+- Wide terminals place results and preview side by side; narrow terminals
+  stack them and compact further at short heights. Footer hints and contextual
+  help show the active mode and keys.
 
 ## Phase 4 (v0.4.0): usability, touch, polish
 
@@ -522,9 +555,16 @@ user's dump (`SIGSYS … 0x1b7`), and v0.3.1 passes edit, chooser, multi-file,
   lines lazily. Scroll position is (line, wrapped row), so wrapping and
   resizing never jump; `clampEnd` stops at the end. The scroll column uses
   `internal/scrollbar`. Archive entries are read with `Archive.OpenEntry`.
-- Key routing in `Update`: dialog input, then Properties, then viewer, then
-  search, then bulk rename, then panels. Both are part of `uiState`, so
-  burst handling stops when they open or close.
+- Supported text extensions are tokenized off the model loop by Chroma and
+  formatted as bounded ANSI lines. `ansi.Cut` keeps token colours aligned with
+  wrapped/horizontally scrolled rows; the viewer overlays the independent
+  match background after syntax colour, and unknown lexers fall back to plain
+  text. Advanced Search inspection seeds the viewer with the selected content
+  query/line and suppresses external editing while the search view remains
+  parked underneath.
+- Key routing in `Update`: dialog input, then Properties, viewer, Advanced
+  Search, live search, bulk rename, then panels. Search/view overlays are part
+  of `uiState`, so burst handling stops when they open or close.
 
 ## Phase 6 (v0.6.0): compression, bookmarks, open with, menu, storage
 

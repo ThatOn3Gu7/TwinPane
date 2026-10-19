@@ -42,6 +42,8 @@ func (a *App) hints() (items []barItem, pinned *barItem) {
 		return a.propsHints(), nil
 	case a.viewer != nil:
 		return a.viewerHints(), nil
+	case a.advancedSearch != nil:
+		return a.advancedSearchHints(), nil
 	case a.search != nil:
 		return a.searchHints(), nil
 	case a.bulk != nil:
@@ -235,13 +237,13 @@ func (a *App) searchHints() []barItem {
 		if have {
 			out = append(out, item("⏎", "go to", "enter"), item("e", "edit", "e"), item("E", "edit with…", "E"), item("Space", "mark", " "))
 		}
-		return append(out, item("↑↓", "move", ""), item("/", "type", "/"), item("Esc", "close", "esc"))
+		return append(out, item("^G", "advanced", "ctrl+g"), item("↑↓", "move", ""), item("/", "type", "/"), item("Esc", "close", "esc"))
 	}
 	out := []barItem{item("type", "to filter", "")}
 	if have {
 		out = append(out, item("⏎", "go to", "enter"), item("Tab", "results", "tab"), item("F4", "edit", "f4"), item("↑↓", "move", ""))
 	}
-	return append(out, item("Esc", "close", "esc"))
+	return append(out, item("^G", "advanced", "ctrl+g"), item("Esc", "close", "esc"))
 }
 
 func (a *App) bulkHints() []barItem {
