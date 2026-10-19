@@ -43,6 +43,10 @@ func drain(a *App, cmd tea.Cmd) (quit bool) {
 
 func key(s string) tea.KeyMsg {
 	switch s {
+	case "ctrl+g":
+		return tea.KeyMsg{Type: tea.KeyCtrlG}
+	case "ctrl+t":
+		return tea.KeyMsg{Type: tea.KeyCtrlT}
 	case "tab":
 		return tea.KeyMsg{Type: tea.KeyTab}
 	case "enter":

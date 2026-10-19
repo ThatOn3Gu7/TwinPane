@@ -119,14 +119,16 @@ type App struct {
 	execFn           ExecFunc
 
 	// phase 3
-	editing    bool      // the external editor owns the terminal
-	quietUntil time.Time // ignore keys until then (late terminal replies)
-	now        func() time.Time
-	spinning   bool            // a spinner tick is scheduled (only while a panel loads)
-	search     *searchView     // recursive search overlay
-	bulk       *bulkRename     // bulk rename overlay
-	comparison *comparisonView // local directory comparison and reviewed plan
-	folderSize *folderSizeView // cancellable local folder-size analysis
+	editing        bool      // the external editor owns the terminal
+	quietUntil     time.Time // ignore keys until then (late terminal replies)
+	now            func() time.Time
+	spinning       bool                // a spinner tick is scheduled (only while a panel loads)
+	search         *searchView         // recursive search overlay
+	advancedSearch *advancedSearchView // FZF-inspired filename/content search
+	advancedSeq    int
+	bulk           *bulkRename     // bulk rename overlay
+	comparison     *comparisonView // local directory comparison and reviewed plan
+	folderSize     *folderSizeView // cancellable local folder-size analysis
 
 	// phase 4
 	showHidden     bool        // one setting for both panels (h / H / .)
@@ -350,6 +352,9 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case searchMsg:
 		return a, a.searchUpdate(msg)
 
+	case advancedSearchMsg:
+		return a, a.advancedSearchUpdate(msg)
+
 	case compareDoneMsg:
 		a.comparisonDone(msg)
 		return a, nil
@@ -387,7 +392,9 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, nil
 
 	case viewLoadedMsg:
-		a.viewerLoaded(msg)
+		return a, a.viewerLoaded(msg)
+	case viewSyntaxMsg:
+		a.viewerSyntaxLoaded(msg)
 		return a, nil
 
 	case tea.KeyMsg:
@@ -427,6 +434,9 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if a.dialog == nil && a.viewer != nil && !a.showHelp {
 			return a, a.viewerKey(msg)
+		}
+		if a.dialog == nil && a.advancedSearch != nil && !a.showHelp {
+			return a, a.advancedSearchKey(msg)
 		}
 		if a.dialog == nil && a.search != nil {
 			return a, a.searchKey(msg)
@@ -474,6 +484,7 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 type uiState struct {
 	dialog                                  *dialog
 	search                                  *searchView
+	advancedSearch                          *advancedSearchView
 	bulk                                    *bulkRename
 	tasks                                   bool
 	busy, quitting, editing, help, inputBox bool
@@ -485,9 +496,10 @@ type uiState struct {
 
 func (a *App) uiState() uiState {
 	return uiState{
-		dialog: a.dialog, search: a.search, bulk: a.bulk, tasks: a.tasks.showing,
+		dialog: a.dialog, search: a.search, advancedSearch: a.advancedSearch, bulk: a.bulk, tasks: a.tasks.showing,
 		busy: a.busy(), quitting: a.quitting, editing: a.editing, help: a.showHelp,
-		inputBox: a.dialog != nil && a.dialog.input != nil, viewer: a.viewer, props: a.props, comparison: a.comparison, folderSize: a.folderSize,
+		inputBox: a.dialog != nil && a.dialog.input != nil, viewer: a.viewer, props: a.props,
+		comparison: a.comparison, folderSize: a.folderSize,
 	}
 }
 
@@ -695,6 +707,8 @@ func (a *App) View() string {
 		body = a.taskViewRender(a.height - 3)
 	case a.viewer != nil:
 		body = a.viewerRender(a.height - 3)
+	case a.advancedSearch != nil:
+		body = a.advancedSearchRender(a.height - 3)
 	case a.search != nil:
 		body = a.searchViewRender(a.height - 3)
 	case a.bulk != nil:

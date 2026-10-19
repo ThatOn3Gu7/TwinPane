@@ -60,9 +60,44 @@ func (a *App) helpColumns() [2][]helpSection {
 	if a.folderSize != nil {
 		cols[1] = append(cols[1], helpSection{"Folder-size analysis", folderSizeHelp})
 	}
+	cols[1] = append(cols[1], helpSection{"Search workflow", searchModeHelp})
+	if a.advancedSearch != nil {
+		cols[1] = append(cols[1], helpSection{"Advanced Search", advancedSearchHelp})
+	}
 	cols[0] = append(cols[0], helpSection{"Mouse & touch", mouseHelp})
-	cols[1] = append(cols[1], a.editorHelp(), helpSection{"Help & dialogs", helpScreenHelp})
+	editor := a.editorHelp()
+	if a.viewer != nil && a.viewer.fromAdvanced {
+		editor = helpSection{"Read-only search inspection", advancedInspectionHelp}
+	}
+	cols[1] = append(cols[1], editor, helpSection{"Help & dialogs", helpScreenHelp})
 	return cols
+}
+
+// Search bindings live in their own overlays, not in the normal panel key map.
+// Document the bridge here so / remains familiar while Advanced Search is
+// still easy to discover.
+var searchModeHelp = []Binding{
+	{Help: "/", Desc: "open the existing live filename search"},
+	{Help: "Ctrl+G in /", Desc: "open Advanced Search with the current query"},
+	{Help: "Ctrl+T", Desc: "toggle filename / content mode in Advanced Search"},
+	{Help: "Esc", Desc: "close search and keep both panels unchanged"},
+}
+
+var advancedSearchHelp = []Binding{
+	{Help: "type", Desc: "filter relative paths by fuzzy character sequence"},
+	{Help: "Ctrl+T", Desc: "switch between filename and content search; query is preserved"},
+	{Help: "↑ / ↓", Desc: "move through results; the preview follows the selection"},
+	{Help: "Enter", Desc: "inspect a file read-only; Esc returns to the same results"},
+	{Help: "CONTENT", Desc: "smart-case search; matching lines and distinct highlights are shown"},
+	{Help: ".git", Desc: "exact .git directories are skipped, including nested repositories"},
+	{Help: "LIMITS", Desc: "binary files are skipped; traversal, byte and result caps are reported"},
+	{Help: "Esc", Desc: "cancel the active scan and return without changing panel state"},
+}
+
+var advancedInspectionHelp = []Binding{
+	{Help: "n / N", Desc: "next / previous content match"},
+	{Help: "e / F4", Desc: "editing is disabled during search inspection"},
+	{Help: "Esc", Desc: "return to the same Advanced Search results"},
 }
 
 // helpScreenHelp documents the help screen itself and the dialog keys

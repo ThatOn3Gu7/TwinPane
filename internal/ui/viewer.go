@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"context"
 	"fmt"
 	pathpkg "path"
 	"path/filepath"
@@ -36,6 +37,13 @@ type viewer struct {
 	doc     *textview.Doc
 	err     error
 
+	fromAdvanced  bool // Advanced Search inspection is read-only and returns to its results
+	initialQuery  string
+	initialLine   int // one-based content result line to select after loading
+	syntaxLines   []string
+	syntaxLoading bool
+	syntaxCancel  context.CancelFunc
+
 	disp    []string // expanded display lines, filled lazily
 	dispOK  []bool
 	top     int // first line shown
@@ -48,6 +56,10 @@ type viewer struct {
 	matches []int // line indices containing query
 	mcur    int   // current match (index into matches), -1 = none
 
+	rangeLine  int
+	rangeQuery string
+	rangeCells [][2]int // cell ranges for the last rendered line/chunk
+
 	// geometry of the last frame (for scrolling and the mouse)
 	rows, textW, total, visible int
 }
@@ -56,6 +68,11 @@ type viewLoadedMsg struct {
 	seq int
 	doc *textview.Doc
 	err error
+}
+
+type viewSyntaxMsg struct {
+	seq   int
+	lines []string
 }
 
 // openViewer shows the file e of panel p.
@@ -101,6 +118,27 @@ func (a *App) openViewer(p *panel.Panel, e fsys.Entry) tea.Cmd {
 	}
 }
 
+// openAdvancedViewer is the read-only inspection path from Advanced Search.
+// It deliberately leaves both panels and the search view untouched.
+func (a *App) openAdvancedViewer(path, query string, line int) tea.Cmd {
+	if path == "" {
+		return nil
+	}
+	a.opSeq++
+	v := &viewer{
+		seq: a.opSeq, name: filepath.Base(path), where: filepath.Dir(path), path: path,
+		loading: true, wrap: true, numbers: true, mcur: -1,
+		fromAdvanced: true, initialQuery: query, initialLine: line,
+	}
+	a.viewer = v
+	a.setStatus("", false)
+	seq := v.seq
+	return func() tea.Msg {
+		doc, err := textview.LoadFile(path, textview.Defaults)
+		return viewLoadedMsg{seq: seq, doc: doc, err: err}
+	}
+}
+
 // innerDir is the folder of an archive entry ("" = the archive root).
 func innerDir(inner string) string {
 	if d := pathpkg.Dir(inner); d != "." && d != "/" {
@@ -119,20 +157,66 @@ func (a *App) openViewerFor(p *panel.Panel) tea.Cmd {
 	return a.openViewer(p, e)
 }
 
-func (a *App) viewerLoaded(m viewLoadedMsg) {
+func (a *App) viewerLoaded(m viewLoadedMsg) tea.Cmd {
+	v := a.viewer
+	if v == nil || v.seq != m.seq {
+		return nil // closed or superseded
+	}
+	v.loading = false
+	v.doc, v.err = m.doc, m.err
+	if m.doc == nil {
+		return nil
+	}
+	v.disp = make([]string, len(m.doc.Lines))
+	v.dispOK = make([]bool, len(m.doc.Lines))
+	if v.initialQuery != "" && !m.doc.Binary {
+		v.query = v.initialQuery
+		v.matches = textview.Find(m.doc.Lines, v.query, viewMaxMatches)
+		v.mcur = -1
+		for i, line := range v.matches {
+			if line >= max(0, v.initialLine-1) {
+				v.mcur = i
+				break
+			}
+		}
+		if v.mcur < 0 && len(v.matches) > 0 {
+			v.mcur = 0
+		}
+		if v.mcur >= 0 {
+			v.gotoLine(v.matches[v.mcur])
+			a.viewerMatchStatus()
+		}
+	}
+	if m.doc.Binary || len(m.doc.Lines) == 0 {
+		return nil
+	}
+	v.syntaxLoading = true
+	ctx, cancel := context.WithCancel(context.Background())
+	v.syntaxCancel = cancel
+	seq, name := v.seq, v.name
+	lines := append([]string(nil), m.doc.Lines...)
+	return func() tea.Msg {
+		colored := syntaxHighlightLines(name, lines)
+		if ctx.Err() != nil {
+			return nil
+		}
+		return viewSyntaxMsg{seq: seq, lines: colored}
+	}
+}
+
+func (a *App) viewerSyntaxLoaded(m viewSyntaxMsg) {
 	v := a.viewer
 	if v == nil || v.seq != m.seq {
 		return // closed or superseded
 	}
-	v.loading = false
-	v.doc, v.err = m.doc, m.err
-	if m.doc != nil {
-		v.disp = make([]string, len(m.doc.Lines))
-		v.dispOK = make([]bool, len(m.doc.Lines))
-	}
+	v.syntaxLoading = false
+	v.syntaxLines = m.lines
 }
 
 func (a *App) closeViewer() {
+	if a.viewer != nil && a.viewer.syntaxCancel != nil {
+		a.viewer.syntaxCancel()
+	}
 	a.viewer = nil
 	a.setStatus("", false)
 }
@@ -256,11 +340,18 @@ func (a *App) viewerKey(msg tea.KeyMsg) tea.Cmd {
 		a.openHelp()
 		return nil
 	case "e", "f4":
+		if v.fromAdvanced {
+			a.setStatus("Advanced Search inspection is read-only", true)
+			return nil
+		}
 		if v.path == "" {
 			a.setStatus("an archive entry cannot be edited: extract it first (x in the panel)", true)
 			return nil
 		}
 		path := v.path
+		if v.syntaxCancel != nil {
+			v.syntaxCancel()
+		}
 		a.viewer = nil
 		return a.editPaths([]string{path}, false)
 	}
@@ -460,12 +551,20 @@ func (a *App) viewerRender(h int) string {
 	for i := v.top; i < len(v.doc.Lines) && len(rows) < v.rows; i++ {
 		shown++
 		var chunks []string
+		var chunkStarts []int
 		cut := false
 		if v.wrap {
 			chunks = textview.Chunks(v.line(i), v.textW)
+			chunkStarts = make([]int, len(chunks))
+			for j := range chunks {
+				if j > 0 {
+					chunkStarts[j] = chunkStarts[j-1] + ansi.StringWidth(chunks[j-1])
+				}
+			}
 		} else {
 			full := v.line(i)
 			chunks = []string{textview.Cut(full, v.xoff, v.textW)}
+			chunkStarts = []int{v.xoff}
 			cut = ansi.StringWidth(full) > v.xoff+v.textW
 		}
 		start := 0
@@ -491,7 +590,7 @@ func (a *App) viewerRender(h int) string {
 			if cut {
 				text = ansi.Truncate(text, v.textW-1, "") // room for the marker
 			}
-			b.WriteString(a.highlight(text, v.query))
+			b.WriteString(a.viewerText(i, text, chunkStarts[j]))
 			tw := ansi.StringWidth(text)
 			if cut {
 				b.WriteString(strings.Repeat(" ", max(0, v.textW-1-tw)) + th.Control.Render("›"))
@@ -544,7 +643,9 @@ func (a *App) highlight(s, q string) string {
 func (a *App) viewerInfo() string {
 	v := a.viewer
 	var parts []string
-	if v.path != "" {
+	if v.fromAdvanced {
+		parts = append(parts, "read-only search inspection")
+	} else if v.path != "" {
 		parts = append(parts, "e edits in your external editor")
 	} else {
 		parts = append(parts, "read-only archive entry")
@@ -570,6 +671,11 @@ func (a *App) viewerInfo() string {
 			if !v.wrap {
 				parts = append(parts, "no wrap")
 			}
+			if v.syntaxLoading {
+				parts = append(parts, "syntax highlighting…")
+			} else if len(v.syntaxLines) > 0 {
+				parts = append(parts, "syntax highlighted")
+			}
 		}
 	}
 	parts = append(parts, fsys.SanitizeName(v.where))
@@ -588,13 +694,13 @@ func (a *App) viewerMessage() []string {
 	case v.doc.Binary:
 		out := []string{th.Empty.Render("This looks like a binary file, so it is not shown."),
 			th.Summary.Render("(" + v.doc.BinaryReason + ")")}
-		if v.path != "" {
+		if v.path != "" && !v.fromAdvanced {
 			out = append(out, th.Summary.Render("e opens it in your external editor anyway."))
 		}
 		return out
 	default:
 		out := []string{th.Empty.Render("(empty file)")}
-		if v.path != "" {
+		if v.path != "" && !v.fromAdvanced {
 			out = append(out, th.Summary.Render("e opens it in your external editor."))
 		}
 		return out
@@ -605,7 +711,7 @@ func (a *App) viewerHints() []barItem {
 	v := a.viewer
 	out := []barItem{item("Esc", "close", "esc")}
 	if !v.showsText() {
-		if v.path != "" && v.err == nil && !v.loading {
+		if v.path != "" && !v.fromAdvanced && v.err == nil && !v.loading {
 			out = append(out, item("e", "edit externally", "e"))
 		}
 		return out
@@ -620,7 +726,7 @@ func (a *App) viewerHints() []barItem {
 		out = append(out, item("←→", "sideways", ""))
 	}
 	out = append(out, item("w", wrap, "w"))
-	if v.path != "" {
+	if v.path != "" && !v.fromAdvanced {
 		out = append(out, item("e", "edit externally", "e"))
 	}
 	nums := "hide numbers"

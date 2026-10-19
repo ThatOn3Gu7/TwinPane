@@ -200,6 +200,8 @@ func (a *App) searchKey(msg tea.KeyMsg) tea.Cmd {
 	case "esc":
 		a.stopSearch()
 		return nil
+	case "ctrl+g":
+		return a.beginAdvancedSearchFromQuick()
 	case "enter":
 		return a.searchJump()
 	case "tab", "shift+tab":
@@ -353,9 +355,11 @@ func (a *App) searchHeader(innerW int) []string {
 	sv := a.search
 	th := a.theme
 	backend := sv.last.Backend
-	right := th.TitleText.Render(" " + backend)
-	head := th.HelpTitle.Render(truncRight("Find files by name", innerW-lipgloss.Width(right)))
-	head += strings.Repeat(" ", max(0, innerW-lipgloss.Width(head)-lipgloss.Width(right))) + right
+	right := th.TitleText.Render(truncRight(" "+backend+" · Ctrl+G advanced", max(0, innerW)))
+	rightWidth := lipgloss.Width(right)
+	headWidth := max(0, innerW-rightWidth)
+	head := th.HelpTitle.Render(truncRight("Find files by name", headWidth))
+	head += strings.Repeat(" ", max(0, innerW-lipgloss.Width(head)-rightWidth)) + right
 	where := th.Info.Render(truncLeft("in "+fsys.SanitizeName(sv.root), innerW))
 
 	label := "Name: "
