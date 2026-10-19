@@ -63,6 +63,18 @@ func (h *harness) chooseFormat(name string) {
 	h.t.Fatalf("format %s not offered", name)
 }
 
+func assertCompressDefault(t *testing.T, input *lineInput, dir, ext string) {
+	t.Helper()
+	want := filepath.Join(dir, ext)
+	if input.Value() != want {
+		t.Fatalf("default output path %q, want %q", input.Value(), want)
+	}
+	wantPos := len([]rune(want)) - len([]rune(ext))
+	if input.pos != wantPos {
+		t.Fatalf("extension cursor at %d, want %d for %q", input.pos, wantPos, want)
+	}
+}
+
 func tarGzNames(t *testing.T, path string) []string {
 	t.Helper()
 	f, err := os.Open(path)
@@ -96,11 +108,9 @@ func TestCompressDialogFormatAndLevel(t *testing.T) {
 	h.press("z")
 	h.waitDialog(dlgCompress)
 	d := h.a.dialog
-	if got := d.input.Value(); got != filepath.Join(env.dst, "sub.zip") {
-		t.Fatalf("default %q", got)
-	}
+	assertCompressDefault(t, d.input, env.src, ".zip")
 	v := h.view()
-	for _, want := range []string{"Format", "ZIP (.zip)", "Level", "Archive file:"} {
+	for _, want := range []string{"Format", "ZIP (.zip)", "Level", "Archive file:", "Default output folder"} {
 		if !strings.Contains(v, want) {
 			t.Fatalf("dialog lacks %q:\n%s", want, v)
 		}
@@ -110,9 +120,7 @@ func TestCompressDialogFormatAndLevel(t *testing.T) {
 	}
 	// ↓ changes the format and the extension with it
 	h.chooseFormat("TAR.GZ")
-	if got := d.input.Value(); got != filepath.Join(env.dst, "sub.tar.gz") {
-		t.Fatalf("after format change %q", got)
-	}
+	assertCompressDefault(t, d.input, env.src, ".tar.gz")
 	lvl := d.selectors[1].value()
 	h.keyType(tea.KeyPgDown)
 	if d.selectors[1].value() == lvl {
@@ -120,11 +128,12 @@ func TestCompressDialogFormatAndLevel(t *testing.T) {
 	}
 	// TAR has no levels: shown as such
 	h.chooseFormat("TAR")
+	assertCompressDefault(t, d.input, env.src, ".tar")
 	if !strings.Contains(d.selectors[1].value(), "single setting") {
 		t.Fatalf("TAR level %q", d.selectors[1].value())
 	}
 	// an edited name keeps its stem when the format changes
-	h.press("ctrl+u")
+	h.press("ctrl+u", "ctrl+k")
 	h.typeText(filepath.Join(env.dst, "mine.tar"), true)
 	h.chooseFormat("TAR.GZ")
 	if got := d.input.Value(); got != filepath.Join(env.dst, "mine.tar.gz") {
@@ -148,9 +157,25 @@ func TestCompressDialogFormatAndLevel(t *testing.T) {
 	h.focus("a.txt")
 	h.press("z")
 	h.waitDialog(dlgCompress)
-	if got := h.a.dialog.input.Value(); got != filepath.Join(env.dst, "a.txt.tar.gz") && got != filepath.Join(env.dst, "a.tar.gz") {
-		t.Fatalf("remembered format: %q", got)
+	assertCompressDefault(t, h.a.dialog.input, env.src, ".tar.gz")
+}
+
+func TestCompressRequiresNameBeforeExtension(t *testing.T) {
+	h, env, _ := p4App(t, nil)
+	h.focus("a.txt")
+	h.press("z")
+	h.waitDialog(dlgCompress)
+	assertCompressDefault(t, h.a.dialog.input, env.src, ".zip")
+	h.press("enter")
+	if !h.dialogKind(dlgCompress) || !strings.Contains(h.a.dialog.errLine, "file name") {
+		t.Fatalf("extension-only name was accepted: %v", h.a.dialog)
 	}
+	for _, name := range []string{".zip", ".zip.zip"} {
+		if fileExists(filepath.Join(env.src, name)) {
+			t.Fatalf("extension-only default created a hidden archive: %s", name)
+		}
+	}
+	h.press("esc")
 }
 
 func TestCompressMultipleItemsKeepStructure(t *testing.T) {
@@ -162,20 +187,23 @@ func TestCompressMultipleItemsKeepStructure(t *testing.T) {
 	h.press("z")
 	h.waitDialog(dlgCompress)
 	h.chooseFormat("TAR.GZ")
-	if got := h.a.dialog.input.Value(); got != filepath.Join(env.dst, "src.tar.gz") {
-		t.Fatalf("default for a selection %q", got)
+	assertCompressDefault(t, h.a.dialog.input, env.src, ".tar.gz")
+	h.typeText("selection", false)
+	out := filepath.Join(env.src, "selection.tar.gz")
+	if got := h.a.dialog.input.Value(); got != out {
+		t.Fatalf("typed name %q", got)
 	}
 	h.press("enter")
 	h.waitCompressionDone()
-	got := tarGzNames(t, filepath.Join(env.dst, "src.tar.gz"))
+	got := tarGzNames(t, out)
 	want := []string{"a.txt", "sub/", "sub/deep/", "sub/deep/c.txt"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("entries %v, want %v", got, want)
 	}
-	// both panels show the result: the new file is in the right panel
-	h.until("right panel refreshed", func() bool {
-		for _, n := range entryNames(h.a.panels[1]) {
-			if n == "src.tar.gz" {
+	// The result is created and focused in the active source folder.
+	h.until("source panel refreshed", func() bool {
+		for _, n := range entryNames(h.a.panels[0]) {
+			if n == "selection.tar.gz" {
 				return true
 			}
 		}
@@ -203,14 +231,12 @@ func TestCompressSingleFileFormats(t *testing.T) {
 	h.press("z")
 	h.waitDialog(dlgCompress)
 	h.chooseFormat("GZIP")
-	if got := h.a.dialog.input.Value(); got != filepath.Join(env.dst, "a.txt.gz") {
-		t.Fatalf("single-file default %q", got)
-	}
+	assertCompressDefault(t, h.a.dialog.input, env.src, ".gz")
 	if !strings.Contains(h.view(), "Compressed file:") {
 		t.Fatalf("label:\n%s", h.view())
 	}
 	// a wrong extension is refused, never "fixed" silently
-	h.press("ctrl+u")
+	h.press("ctrl+u", "ctrl+k")
 	h.typeText(filepath.Join(env.dst, "a.txt.zip"), true)
 	h.press("enter")
 	if !h.dialogKind(dlgCompress) || h.a.dialog.errLine == "" {
@@ -219,7 +245,7 @@ func TestCompressSingleFileFormats(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(env.dst, "a.txt.zip")); err == nil {
 		t.Fatal("a file with the wrong extension was created")
 	}
-	h.press("ctrl+u")
+	h.press("ctrl+u", "ctrl+k")
 	h.typeText(filepath.Join(env.dst, "a.txt.gz"), true)
 	h.press("enter")
 	h.waitCompressionDone()
@@ -265,8 +291,8 @@ func TestCompressUnavailableFormatExplained(t *testing.T) {
 		t.Fatalf("unavailable format not refused: %v", h.a.dialog)
 	}
 	h.press("esc")
-	if es, _ := os.ReadDir(env.dst); len(es) != 0 {
-		t.Fatalf("something was created: %v", es)
+	if fileExists(filepath.Join(env.src, ".7z")) || fileExists(filepath.Join(env.src, ".7z.7z")) {
+		t.Fatal("unavailable format created an output")
 	}
 }
 
@@ -278,6 +304,8 @@ func TestCompressOverwriteNeedsConfirmation(t *testing.T) {
 	h.press("z")
 	h.waitDialog(dlgCompress)
 	h.chooseFormat("GZIP")
+	h.press("ctrl+u", "ctrl+k")
+	h.typeText(out, true)
 	h.press("enter")
 	h.waitDialog(dlgZipExists)
 	h.press("esc")
@@ -299,16 +327,17 @@ func TestCompressAwkwardNames(t *testing.T) {
 	h.press("z")
 	h.waitDialog(dlgCompress)
 	h.chooseFormat("TAR.GZ")
+	h.typeText("odd-archive", false)
+	out := filepath.Join(env.src, "odd-archive.tar.gz")
 	h.press("enter")
 	h.waitCompressionDone()
 	if !strings.Contains(h.status(), "Created") {
 		t.Fatalf("status %q", h.status())
 	}
-	es, _ := os.ReadDir(env.dst)
-	if len(es) != 1 || !strings.HasSuffix(es[0].Name(), ".tar.gz") {
-		t.Fatalf("dst: %v", es)
+	if !fileExists(out) {
+		t.Fatalf("default source folder does not contain %q", out)
 	}
-	if got := tarGzNames(t, filepath.Join(env.dst, es[0].Name())); !reflect.DeepEqual(got, []string{name}) {
+	if got := tarGzNames(t, out); !reflect.DeepEqual(got, []string{name}) {
 		t.Fatalf("entries %q", got)
 	}
 	h.dismissCompression()
@@ -638,6 +667,15 @@ func TestMenuActionsAndDispatch(t *testing.T) {
 			t.Fatalf("menu lacks %q: %q", want, labels)
 		}
 	}
+	foundCompressLocation := false
+	for _, it := range d.list {
+		if it.label == "Compress…" {
+			foundCompressLocation = it.detail == "default: "+shortPath(env.src)
+		}
+	}
+	if !foundCompressLocation {
+		t.Fatalf("Compress menu item should show the default folder %q", env.src)
+	}
 	last := d.list[len(d.list)-1]
 	if last.label != "Delete…" || !last.danger {
 		t.Fatalf("Delete is not last/danger: %+v", last)
@@ -875,6 +913,8 @@ func TestCompressCancelLeavesNothing(t *testing.T) {
 	h.press("z")
 	h.waitDialog(dlgCompress)
 	h.chooseFormat("TAR.XZ")
+	h.typeText("cancel-test", false)
+	out := filepath.Join(env.src, "cancel-test.tar.xz")
 	h.send(key("enter"))                 // starts
 	h.send(tea.KeyMsg{Type: tea.KeyEsc}) // request cancellation; the modal stays open
 	if h.a.compressProgress == nil {
@@ -892,9 +932,8 @@ func TestCompressCancelLeavesNothing(t *testing.T) {
 	if !strings.Contains(h.view(), "No temporary output remains") {
 		t.Fatalf("cancel summary does not report cleanup:\n%s", h.view())
 	}
-	es, _ := os.ReadDir(env.dst)
-	if len(es) != 0 {
-		t.Fatalf("left behind after cancel: %v", es)
+	if fileExists(out) {
+		t.Fatalf("final output remains after cancel: %s", out)
 	}
 	h.dismissCompression()
 }

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -15,12 +16,12 @@ import (
 // The compress dialog (z, or Compress in the context menu) creates an
 // archive or a compressed file of the targets in any format of package
 // compress. It is the phase-5 "create a ZIP" dialog with two selector rows
-// added, so with the defaults (ZIP, normal level, the other panel's folder)
-// z + Enter works exactly as before:
+// added. The output goes in the active panel's folder by default; only the
+// selected format's extension is prefilled, with the cursor before the dot:
 //
 //	Format  ◂ TAR.GZ (.tar.gz) ▸   ↑↓       (all formats; unavailable ones say why)
 //	Level   ◂ normal ▸             PgUp/PgDn (only formats with levels)
-//	Archive file: [/other/panel/name.tar.gz]
+//	Archive file: [/source/folder/.tar.gz]
 //
 // Changing the format swaps the file name's extension; a name that ends in
 // another format's extension is refused rather than silently corrected,
@@ -39,20 +40,32 @@ type compressState struct {
 	sel    compress.Selection
 	idx    int    // current format (index into caps)
 	outDir string // default destination folder
-	base   string // default name for archive formats (without extension)
-	single string // full file name, for single-file formats ("" = not one file)
 	auto   string // the path value set automatically (not edited by the user)
 }
 
 func (st *compressState) cur() compress.Capability { return st.caps[st.idx] }
 
-// defaultPath is the suggested output for format f.
+// defaultPath is the suggested output for format f. Leave the name blank
+// and prefill only the extension so users can type their own name before it.
 func (st *compressState) defaultPath(f compress.Format) string {
-	name := st.base
-	if f.Kind == compress.Single && st.single != "" {
-		name = st.single
+	return filepath.Join(st.outDir, f.Ext)
+}
+
+// newCompressPathInput leaves the cursor immediately before the extension.
+func newCompressPathInput(path string, f compress.Format) *lineInput {
+	in := newLineInput(path)
+	in.SetCursor(len(in.runes) - len([]rune(f.Ext)))
+	return in
+}
+
+// isFormatExtensionOnly reports whether name consists solely of a known suffix.
+func isFormatExtensionOnly(name string) bool {
+	for _, f := range compress.Formats() {
+		if strings.EqualFold(name, f.Ext) {
+			return true
+		}
 	}
-	return filepath.Join(st.outDir, name+f.Ext)
+	return false
 }
 
 // beginZip opens the compress dialog for the targets of the active panel.
@@ -66,26 +79,11 @@ func (a *App) beginZip() tea.Cmd {
 		a.setStatus("nothing to compress: put the cursor on an item or select items with Space", true)
 		return nil
 	}
-	other := a.panels[1-a.active]
-	outDir := other.Path()
-	if other.InArchive() || other.InRemote() || other.Err() != nil || outDir == "" {
-		outDir = p.Path()
-	}
+	outDir := p.Path()
 	st := &compressState{caps: compress.Detect(a.lookPath), outDir: outDir}
 	st.sel.Items = len(targets)
-	st.base = filepath.Base(p.Path())
-	if len(targets) == 1 {
-		st.base = targets[0].Name
-		if !targets[0].IsDir {
-			st.base = stem(st.base)
-			if targets[0].Mode.IsRegular() {
-				st.sel.SingleFile = true
-				st.single = targets[0].Name
-			}
-		}
-	}
-	if st.base == "" || st.base == string(filepath.Separator) || st.base == "." {
-		st.base = "archive"
+	if len(targets) == 1 && !targets[0].IsDir && targets[0].Mode.IsRegular() {
+		st.sel.SingleFile = true
 	}
 	// the format chosen last time, if it can be used for these items
 	for i, c := range st.caps {
@@ -105,9 +103,10 @@ func (a *App) beginZip() tea.Cmd {
 	d.body = []dline{text("Add:")}
 	d.body = append(d.body, nameList(targets)...)
 	d.body = append(d.body, blank(),
+		hint("Default output folder: "+shortPath(st.outDir)+". Type a name before the extension, or edit the path to choose another folder."),
 		hint("Folders are added with all their contents; symbolic links are stored as links. The new file is never added to itself, and an existing file is not replaced without asking."))
 	st.auto = st.defaultPath(st.cur().Format)
-	d.input = newLineInput(st.auto)
+	d.input = newCompressPathInput(st.auto, st.cur().Format)
 	a.compressLabel(d, st)
 	d.footer = "Enter create · Esc cancel · ↑↓ format · PgUp/PgDn level"
 	d.selectors = []*selector{
@@ -173,7 +172,12 @@ func (a *App) beginZip() tea.Cmd {
 			a.dialog.errLine = err.Error()
 			return nil
 		}
-		name, err := compress.CheckName(c.Format, filepath.Base(out))
+		base := filepath.Base(out)
+		if base == "." || isFormatExtensionOnly(base) {
+			a.dialog.errLine = "enter a file name before the extension"
+			return nil
+		}
+		name, err := compress.CheckName(c.Format, base)
 		if err != nil {
 			a.dialog.errLine = err.Error()
 			return nil
@@ -224,9 +228,9 @@ func (a *App) levelIndex(f compress.Format) int {
 }
 
 // compressFormat moves to the next/previous format and updates the file
-// name: a suggested name is regenerated; an edited one gets the new
-// extension if it had the old one; anything else is left alone (Enter then
-// checks it).
+// name: an untouched default gets the new extension; an edited name keeps
+// its stem when it has the old extension; anything else is left alone (Enter
+// then checks it).
 func (a *App) compressFormat(d *dialog, st *compressState, delta int) {
 	from := st.cur().Format
 	n := len(st.caps)
@@ -242,7 +246,7 @@ func (a *App) compressFormat(d *dialog, st *compressState, delta int) {
 		nv = v[:len(v)-len(from.Ext)] + to.Ext
 	}
 	if nv != v {
-		d.input = newLineInput(nv)
+		d.input = newCompressPathInput(nv, to)
 	}
 	a.compressLabel(d, st)
 }

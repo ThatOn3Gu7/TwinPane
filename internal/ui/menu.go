@@ -127,7 +127,7 @@ func (a *App) menuEntries() (title string, entries []menuEntry) {
 		} else {
 			add(menuEntry{label: "Rename", key: "r", send: "r"})
 		}
-		add(menuEntry{label: "Compress…", key: "z", send: "z"})
+		add(menuEntry{label: "Compress…", detail: "default: " + shortPath(p.Path()), key: "z", send: "z"})
 		if file && canExtract(e.Path) {
 			add(menuEntry{label: "Extract to folder…", key: "x", send: "x"})
 		}

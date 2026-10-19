@@ -630,14 +630,19 @@ func TestCreateZipFromSelection(t *testing.T) {
 	h.focus("sub")
 	h.press(" ")
 	h.press("z")
-	want := filepath.Join(env.dst, "src.zip")
-	if !h.dialogKind(dlgZip) || h.a.dialog.input.Value() != want {
+	if !h.dialogKind(dlgZip) {
 		t.Fatalf("zip dialog default %v", h.a.dialog)
+	}
+	assertCompressDefault(t, h.a.dialog.input, env.src, ".zip")
+	h.typeText("selection", false)
+	want := filepath.Join(env.src, "selection.zip")
+	if h.a.dialog.input.Value() != want {
+		t.Fatalf("typed archive name %q", h.a.dialog.input.Value())
 	}
 	h.press("enter")
 	h.idle()
 	h.waitCompressionDone()
-	if !strings.Contains(h.status(), "src.zip") {
+	if !strings.Contains(h.status(), "selection.zip") {
 		t.Fatalf("status %q", h.status())
 	}
 	arc, err := archive.Open(want)
@@ -652,8 +657,8 @@ func TestCreateZipFromSelection(t *testing.T) {
 	if _, ok := arc.Lookup("b.txt"); ok {
 		t.Fatal("unselected file archived")
 	}
-	if e, _ := h.a.panels[1].Current(); e.Name != "src.zip" {
-		t.Fatalf("new archive not focused in the destination: %q", e.Name)
+	if e, _ := h.a.panels[0].Current(); e.Name != "selection.zip" {
+		t.Fatalf("new archive not focused in the source folder: %q", e.Name)
 	}
 	if len(h.a.panels[0].Selection()) != 0 {
 		t.Fatal("selection not cleared after success")
@@ -665,7 +670,7 @@ func TestCreateZipExcludesItselfAndAsksBeforeOverwrite(t *testing.T) {
 	h, env, _ := p4App(t, nil)
 	// output inside the folder being archived
 	h.focus("sub")
-	h.press("z", "ctrl+u")
+	h.press("z", "ctrl+u", "ctrl+k")
 	out := filepath.Join(env.src, "sub", "self.zip")
 	h.typeText(out, true)
 	h.press("enter")
@@ -687,7 +692,10 @@ func TestCreateZipExcludesItselfAndAsksBeforeOverwrite(t *testing.T) {
 	// existing file: confirmation, default cancel
 	os.WriteFile(filepath.Join(env.dst, "a.zip"), []byte("keep"), 0o644)
 	h.focus("a.txt")
-	h.press("z", "enter")
+	h.press("z")
+	h.press("ctrl+u", "ctrl+k")
+	h.typeText(filepath.Join(env.dst, "a.zip"), true)
+	h.press("enter")
 	if !h.dialogKind(dlgZipExists) {
 		t.Fatal("no overwrite confirmation")
 	}
@@ -695,7 +703,10 @@ func TestCreateZipExcludesItselfAndAsksBeforeOverwrite(t *testing.T) {
 	if readFile(t, filepath.Join(env.dst, "a.zip")) != "keep" || h.a.dialog != nil {
 		t.Fatal("Enter on the confirmation overwrote")
 	}
-	h.press("z", "enter")
+	h.press("z")
+	h.press("ctrl+u", "ctrl+k")
+	h.typeText(filepath.Join(env.dst, "a.zip"), true)
+	h.press("enter")
 	h.press("o")
 	h.idle()
 	h.waitCompressionDone()
@@ -705,7 +716,7 @@ func TestCreateZipExcludesItselfAndAsksBeforeOverwrite(t *testing.T) {
 	h.dismissCompression()
 	// A slow or missing destination mount is checked by the background task,
 	// not synchronously while the archive dialog is open.
-	h.press("z", "ctrl+u")
+	h.press("z", "ctrl+u", "ctrl+k")
 	h.typeText(filepath.Join(env.root, "nope", "x.zip"), true)
 	h.press("enter")
 	h.idle()
