@@ -55,7 +55,7 @@ func (a *App) menuEntries() (title string, entries []menuEntry) {
 			add(menuEntry{label: "Open folder", send: "enter"})
 		}
 		if len(targets) > 0 {
-			add(menuEntry{label: "Extract to other panel", key: "x", send: "x"})
+			add(menuEntry{label: "Extract to folder…", key: "x", send: "x"})
 		}
 		add(menuEntry{label: "Extract everything", key: "X", send: "X"})
 		if hasCur {
@@ -129,7 +129,7 @@ func (a *App) menuEntries() (title string, entries []menuEntry) {
 		}
 		add(menuEntry{label: "Compress…", key: "z", send: "z"})
 		if file && canExtract(e.Path) {
-			add(menuEntry{label: "Extract to other panel", key: "x", send: "x"})
+			add(menuEntry{label: "Extract to folder…", key: "x", send: "x"})
 		}
 	}
 	if hasCur || nsel > 0 {

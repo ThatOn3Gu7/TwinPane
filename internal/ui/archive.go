@@ -189,15 +189,15 @@ type extractTarget struct {
 // filesystem: the supported archive under the cursor (or the one selected).
 func (a *App) beginExtract(all bool) tea.Cmd {
 	p := a.ActivePanel()
-	other := a.panels[1-a.active]
-	destDir := other.Path()
-	if other.InArchive() || other.InRemote() || other.Err() != nil || destDir == "" {
-		destDir = p.RealDir()
-	}
+	// Keep extraction beside the source archive by default. The destination
+	// field remains editable when the user wants a different folder.
+	destDir := p.RealDir()
 	var t extractTarget
 	defDest := destDir
 	if p.InArchive() {
 		arc := p.Archive()
+		destDir = filepath.Dir(arc.Path)
+		defDest = destDir
 		t.archive = arc.Path
 		if all {
 			t.what = fmt.Sprintf("the whole archive (%s, %s)", plural(arc.Files, "file"), plural(arc.Dirs, "folder"))
@@ -263,6 +263,8 @@ func (a *App) beginExtract(all bool) tea.Cmd {
 			t.tool = c.Tool
 		}
 		t.archive = e.Path
+		destDir = filepath.Dir(e.Path)
+		defDest = destDir
 		if info.Single() {
 			t.single = archive.SingleOutputName(e.Name, info.Codec)
 			t.what = fmt.Sprintf("%s file %q", info.Name(), e.Name)
@@ -296,7 +298,8 @@ func (a *App) beginExtract(all bool) tea.Cmd {
 		}
 	}
 	d.body = append(d.body, blank(),
-		hint("Missing folders are created. Existing files are never overwritten without asking; unsafe paths and symbolic links in the archive are never extracted."))
+		hint("Default destination is the source archive's folder; whole archives use a same-named subfolder. Edit the path to choose another folder. Missing folders are created, and existing files are never overwritten without asking."),
+		hint("Unsafe paths and symbolic links in archives are never extracted."))
 	d.input = newLineInput(defDest)
 	d.inputLabel = verb + " into folder:"
 	d.footer = "Enter " + strings.ToLower(verb) + " · Esc cancel"

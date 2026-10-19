@@ -52,18 +52,19 @@ func TestExtractTarGzFromUI(t *testing.T) {
 		t.Fatalf("dialog: %q", h.status())
 	}
 	v := h.view()
-	if !strings.Contains(v, "TAR.GZ") || h.a.dialog.input.Value() != filepath.Join(env.dst, "release") {
+	if !strings.Contains(v, "TAR.GZ") || h.a.dialog.input.Value() != filepath.Join(env.src, "release") {
 		t.Fatalf("dialog %q:\n%s", h.a.dialog.input.Value(), v)
 	}
 	h.press("enter")
 	h.idle()
-	if b, _ := os.ReadFile(filepath.Join(env.dst, "release", "pkg", "readme.txt")); string(b) != "hello" {
+	if b, _ := os.ReadFile(filepath.Join(env.src, "release", "pkg", "readme.txt")); string(b) != "hello" {
 		t.Fatalf("extracted: %q (status %q)", b, h.status())
 	}
 	if !strings.Contains(h.status(), "Extracted 2 files") {
 		t.Fatalf("status: %q", h.status())
 	}
 	// again: the existing files are asked about
+	h.focus("release.tar.gz")
 	h.press("x", "enter")
 	h.waitDialog(dlgConflict)
 	h.press("s")
@@ -74,8 +75,9 @@ func TestExtractTarGzFromUI(t *testing.T) {
 		t.Fatalf("status: %q", h.status())
 	}
 	// the menu offers it too
+	h.focus("release.tar.gz")
 	h.press("M")
-	if !strings.Contains(h.view(), "Extract to other panel") {
+	if !strings.Contains(h.view(), "Extract to folder…") {
 		t.Fatal("menu entry")
 	}
 }
@@ -91,8 +93,14 @@ func TestDecompressSingleFileFromUI(t *testing.T) {
 	h.focus("app.log.gz")
 	h.press("x")
 	v := h.view()
-	if !h.dialogKind(dlgExtract) || !strings.Contains(v, "Decompress") || !strings.Contains(v, "app.log") || h.a.dialog.input.Value() != env.dst {
+	if !h.dialogKind(dlgExtract) || !strings.Contains(v, "Decompress") || !strings.Contains(v, "app.log") || h.a.dialog.input.Value() != env.src {
 		t.Fatalf("dialog:\n%s", v)
+	}
+	// The archive folder is the default, but the destination is still editable.
+	h.press("ctrl+u")
+	h.typeText(env.dst, false)
+	if got := h.a.dialog.input.Value(); got != env.dst {
+		t.Fatalf("edited destination %q", got)
 	}
 	h.press("enter")
 	h.idle()
