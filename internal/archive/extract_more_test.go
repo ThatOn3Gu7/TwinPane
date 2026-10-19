@@ -193,7 +193,7 @@ func TestExtractTarAllCodecsAndSafety(t *testing.T) {
 		if len(progress) == 0 || progress[len(progress)-1].DoneBytes == 0 {
 			t.Fatal("progress must be reported")
 		}
-		if !strings.Contains(res.Summary(), "symbolic link") || !strings.Contains(res.Summary(), "special file") {
+		if !strings.Contains(res.Summary(), "links not extracted") || !strings.Contains(res.Summary(), "special file") {
 			t.Fatalf("summary: %s", res.Summary())
 		}
 	}
@@ -277,8 +277,8 @@ func TestExtractDamagedAndCanceled(t *testing.T) {
 	if b, _ := os.ReadFile(filepath.Join(dest, "big.bin")); string(b) != "keep me" {
 		t.Fatal("a damaged entry must not replace the existing file")
 	}
-	if b, _ := os.ReadFile(filepath.Join(dest, "ok.txt")); string(b) != "fine" {
-		t.Fatal("complete entries before the damage are kept")
+	if _, err := os.Lstat(filepath.Join(dest, "ok.txt")); !os.IsNotExist(err) {
+		t.Fatal("malformed archive was indexed before any entries were extracted")
 	}
 	noTemps(t, dest)
 
@@ -308,10 +308,17 @@ func TestExtractDamagedAndCanceled(t *testing.T) {
 	if !errors.Is(res.Fatal, ErrNotArchive) || !strings.Contains(res.Fatal.Error(), "TAR.GZ") {
 		t.Fatalf("unsupported: %v", res.Fatal)
 	}
-	// members are ZIP-only
-	res = ExtractAny(context.Background(), ExtractRequest{Archive: ok, Members: []string{"ok.txt"}, DestDir: dest}, ops.Hooks{})
-	if res.Fatal == nil || !strings.Contains(res.Fatal.Error(), "as a whole") {
-		t.Fatalf("members: %v", res.Fatal)
+	// TAR member extraction writes only the selected file.
+	selectDest := filepath.Join(root, "selected")
+	res = ExtractAny(context.Background(), ExtractRequest{Archive: ok, Members: []string{"ok.txt"}, DestDir: selectDest}, ops.Hooks{})
+	if !res.OK() || res.Files != 1 {
+		t.Fatalf("selective member: %s", res.Summary())
+	}
+	if b, _ := os.ReadFile(filepath.Join(selectDest, "ok.txt")); string(b) != "fine" {
+		t.Fatalf("selected file content %q", b)
+	}
+	if _, err := os.Lstat(filepath.Join(selectDest, "big.bin")); !os.IsNotExist(err) {
+		t.Fatal("unselected TAR member was extracted")
 	}
 }
 

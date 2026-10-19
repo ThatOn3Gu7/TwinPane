@@ -20,15 +20,16 @@ const (
 	dlgRename
 	dlgBinary
 	dlgReport
-	dlgSearch      // search pattern prompt
-	dlgBulkEdit    // bulk rename: a text prompt (row edit, find, replace, pattern)
-	dlgBulkConfirm // bulk rename: apply confirmation
-	dlgChooser     // pick an item from a list (editor chooser)
-	dlgEditTip     // save/quit keys shown just before the editor starts
-	dlgExtract     // extraction destination prompt
-	dlgZip         // new ZIP archive name prompt
-	dlgZipExists   // overwrite an existing file with a new archive?
-	dlgViewFind    // viewer search prompt
+	dlgSearch           // search pattern prompt
+	dlgBulkEdit         // bulk rename: a text prompt (row edit, find, replace, pattern)
+	dlgBulkConfirm      // bulk rename: apply confirmation
+	dlgChooser          // pick an item from a list (editor chooser)
+	dlgEditTip          // save/quit keys shown just before the editor starts
+	dlgExtract          // extraction destination prompt
+	dlgZip              // compression format/name prompt (legacy kind)
+	dlgZipExists        // overwrite an existing compressed output?
+	dlgCompressProgress // retained compression progress / completion modal
+	dlgViewFind         // viewer search prompt
 
 	// phase 6
 	dlgMenu      // context menu (M)

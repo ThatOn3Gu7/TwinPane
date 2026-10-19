@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -14,12 +15,12 @@ import (
 	"github.com/ThatOn3Gu7/TwinPane/internal/panel"
 )
 
-// Archive support (phase 5): browsing a ZIP archive as a virtual, read-only
-// folder in one panel (panel.OpenArchive), extracting all or part of it
-// (archive.Extract) and creating archives (archive.Create). Extraction and
-// creation run as background tasks like copy/move: progress and outcomes stay
-// in the task view, panel navigation remains available, and conflict / low-
-// space prompts are serialized safely.
+// Archive support: browsing ZIP and TAR-family archives as virtual,
+// read-only folders in one panel (panel.OpenArchive), extracting all or part
+// of them (archive.ExtractAny), and creating archives (compress.Create).
+// Extraction runs as a background task like copy/move, with panel navigation
+// available and conflict / low-space prompts serialized safely. Compression
+// keeps its own modal progress and completion dialog above the file manager.
 //
 // Inside an archive, panel paths are virtual (".../x.zip/inner/path"), so
 // every operation that would treat them as real paths is refused here with
@@ -37,9 +38,13 @@ type opExtractDoneMsg struct {
 // file with a ZIP signature can be opened).
 var zipNames = []string{".zip", ".jar", ".apk", ".aar", ".whl", ".epub", ".cbz", ".xpi"}
 
-// archiveNames are other extensions x can extract (phase 9); the hint bar
-// goes by the name, extraction checks the content.
-var archiveNames = []string{".tar", ".tgz", ".tbz2", ".txz", ".gz", ".bz2", ".xz", ".zst", ".lz4", ".7z", ".rar"}
+// archiveNames are other extensions x can extract; TAR-family extensions
+// are also offered for read-only browsing, while extraction checks content.
+var archiveNames = []string{
+	".tar.gzip", ".tar.bzip2", ".tar.zstd", ".tar.gz", ".tgz", ".tar.bz2", ".tbz2", ".tbz",
+	".tar.xz", ".txz", ".tar.zst", ".tzst", ".tar.lz4", ".tar", ".gz", ".gzip", ".bz2", ".bzip2",
+	".xz", ".zst", ".zstd", ".lz4", ".7z", ".rar",
+}
 
 func looksLikeArchive(name string) bool {
 	n := strings.ToLower(name)
@@ -61,13 +66,35 @@ func looksLikeZip(name string) bool {
 	return false
 }
 
+type archiveHintCache struct {
+	path      string
+	size      int64
+	modTime   time.Time
+	browsable bool
+}
+
+func (a *App) isBrowsableArchive(name string) bool {
+	fi, err := os.Stat(name)
+	if err != nil || !fi.Mode().IsRegular() {
+		a.archiveHint = &archiveHintCache{path: name}
+		return false
+	}
+	if c := a.archiveHint; c != nil && c.path == name && c.size == fi.Size() && c.modTime.Equal(fi.ModTime()) {
+		return c.browsable
+	}
+	info, err := archive.Detect(name)
+	ok := err == nil && (info.Format == archive.FormatZIP || info.Format == archive.FormatTAR)
+	a.archiveHint = &archiveHintCache{path: name, size: fi.Size(), modTime: fi.ModTime(), browsable: ok}
+	return ok
+}
+
 // refuseInArchive reports (and returns true) when the active panel shows an
 // archive: what cannot be done on archive entries.
 func (a *App) refuseInArchive(what string) bool {
 	if !a.ActivePanel().InArchive() {
 		return false
 	}
-	a.setStatus(what+" is not possible inside a ZIP archive (it is read-only): x extracts, v views, Esc leaves the archive", true)
+	a.setStatus(what+" is not possible inside a read-only archive: x extracts, v views, Esc leaves", true)
 	return true
 }
 
@@ -77,12 +104,12 @@ func (a *App) refuseArchiveDest(what string) bool {
 	if !a.panels[1-a.active].InArchive() {
 		return false
 	}
-	a.setStatus("cannot "+what+" into a ZIP archive (archives are read-only here): leave it in the other panel first (Esc there)", true)
+	a.setStatus("cannot "+what+" into a read-only archive: leave it in the other panel first (Esc there)", true)
 	return true
 }
 
 // openFile is Enter (and double tap) on a file: an archive entry opens in
-// the viewer, a ZIP archive is browsed, other files open in the viewer (or,
+// the viewer, a ZIP or TAR-family archive is browsed, other files open in the viewer (or,
 // for a double tap, the editor as in phase 4).
 func (a *App) openFile(p *panel.Panel, e fsys.Entry, tap bool) tea.Cmd {
 	if p.InRemote() {
@@ -92,7 +119,7 @@ func (a *App) openFile(p *panel.Panel, e fsys.Entry, tap bool) tea.Cmd {
 	if p.InArchive() {
 		return a.openViewer(p, e)
 	}
-	if archive.Sniff(e.Path) {
+	if a.isBrowsableArchive(e.Path) {
 		a.setStatus("opening "+fsys.SanitizeName(e.Name)+"…", false)
 		return p.OpenArchive(e.Path)
 	}
@@ -113,12 +140,15 @@ func (a *App) openFile(p *panel.Panel, e fsys.Entry, tap bool) tea.Cmd {
 // archiveOpened reports a panel that just entered an archive.
 func (a *App) archiveOpened(p *panel.Panel) {
 	arc := p.Archive()
-	msg := fmt.Sprintf("browsing %s (read-only): %s, %s — x extracts, Esc leaves", filepath.Base(arc.Path),
+	msg := fmt.Sprintf("browsing %s (%s, read-only): %s, %s — x extracts, Esc leaves", filepath.Base(arc.Path), arc.Format.Name(),
 		plural(arc.Files, "file"), plural(arc.Dirs, "folder"))
 	lvl := lvlInfo
 	var notes []string
-	if n := len(arc.Unsafe); n > 0 {
+	if n := arc.UnsafeCount; n > 0 {
 		notes = append(notes, fmt.Sprintf("%s with unsafe paths hidden (never extracted)", plural(n, "entry")))
+	}
+	if arc.UnsafeLinks > 0 {
+		notes = append(notes, fmt.Sprintf("%s visible but never followed or extracted", plural(arc.UnsafeLinks, "unsafe link")))
 	}
 	if arc.Encrypted > 0 {
 		notes = append(notes, fmt.Sprintf("%d encrypted (cannot be read)", arc.Encrypted))
@@ -156,7 +186,7 @@ type extractTarget struct {
 
 // beginExtract opens the extraction dialog. In an archive: the selected
 // entries (or the one under the cursor; all = the whole archive). On the
-// filesystem: the ZIP archive under the cursor (or the one selected).
+// filesystem: the supported archive under the cursor (or the one selected).
 func (a *App) beginExtract(all bool) tea.Cmd {
 	p := a.ActivePanel()
 	other := a.panels[1-a.active]
@@ -171,7 +201,11 @@ func (a *App) beginExtract(all bool) tea.Cmd {
 		t.archive = arc.Path
 		if all {
 			t.what = fmt.Sprintf("the whole archive (%s, %s)", plural(arc.Files, "file"), plural(arc.Dirs, "folder"))
-			defDest = filepath.Join(destDir, stem(filepath.Base(arc.Path)))
+			folder := stem(filepath.Base(arc.Path))
+			if arc.Format.Format == archive.FormatTAR {
+				folder = archive.FolderName(filepath.Base(arc.Path))
+			}
+			defDest = filepath.Join(destDir, folder)
 		} else {
 			targets := p.Targets()
 			if len(targets) == 0 {

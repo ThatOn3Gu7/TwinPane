@@ -416,7 +416,7 @@ func TestArchiveBrowseWithoutExtraction(t *testing.T) {
 	before := dirNames(t, env.src)
 	tmpBefore := dirNames(t, os.TempDir())
 	h.send(tea.WindowSizeMsg{Width: 220, Height: 24})
-	if f := h.footer(); !strings.Contains(f, "⏎  browse ZIP") || !strings.Contains(f, "x  extract") || !strings.Contains(f, "P  properties") {
+	if f := h.footer(); !strings.Contains(f, "⏎  browse archive") || !strings.Contains(f, "x  extract") || !strings.Contains(f, "P  properties") {
 		t.Fatalf("hints on a ZIP file: %q", f)
 	}
 	h.focus("a.txt")
@@ -497,7 +497,7 @@ func TestArchiveRefusesUnsupportedOperations(t *testing.T) {
 		if h.a.dialog != nil || h.a.bulk != nil || h.a.search != nil || h.a.editing {
 			t.Fatalf("%s opened something inside the archive", k)
 		}
-		if s, isErr := h.a.Status(); !isErr || !strings.Contains(s, "ZIP archive") {
+		if s, isErr := h.a.Status(); !isErr || !strings.Contains(s, "read-only archive") {
 			t.Fatalf("%s: status %q", k, s)
 		}
 	}
@@ -507,7 +507,7 @@ func TestArchiveRefusesUnsupportedOperations(t *testing.T) {
 			t.Fatalf("archive hints offer %q: %q", bad, f)
 		}
 	}
-	if !strings.Contains(f, "x  extract") || !strings.Contains(f, "Esc  leave ZIP") {
+	if !strings.Contains(f, "x  extract") || !strings.Contains(f, "Esc  leave archive") {
 		t.Fatalf("archive hints: %q", f)
 	}
 	// copy / move into the archive from the other panel are refused
@@ -516,7 +516,7 @@ func TestArchiveRefusesUnsupportedOperations(t *testing.T) {
 	h.settle()
 	for _, k := range []string{"c", "m"} {
 		h.press(k)
-		if h.a.dialog != nil || !strings.Contains(h.status(), "into a ZIP archive") {
+		if h.a.dialog != nil || !strings.Contains(h.status(), "into a read-only archive") {
 			t.Fatalf("%s into archive: %q", k, h.status())
 		}
 	}
@@ -636,6 +636,7 @@ func TestCreateZipFromSelection(t *testing.T) {
 	}
 	h.press("enter")
 	h.idle()
+	h.waitCompressionDone()
 	if !strings.Contains(h.status(), "src.zip") {
 		t.Fatalf("status %q", h.status())
 	}
@@ -657,6 +658,7 @@ func TestCreateZipFromSelection(t *testing.T) {
 	if len(h.a.panels[0].Selection()) != 0 {
 		t.Fatal("selection not cleared after success")
 	}
+	h.dismissCompression()
 }
 
 func TestCreateZipExcludesItselfAndAsksBeforeOverwrite(t *testing.T) {
@@ -668,6 +670,7 @@ func TestCreateZipExcludesItselfAndAsksBeforeOverwrite(t *testing.T) {
 	h.typeText(out, true)
 	h.press("enter")
 	h.idle()
+	h.waitCompressionDone()
 	arc, err := archive.Open(out)
 	if err != nil {
 		t.Fatal(err)
@@ -680,6 +683,7 @@ func TestCreateZipExcludesItselfAndAsksBeforeOverwrite(t *testing.T) {
 	if _, ok := arc.Lookup("sub/deep/c.txt"); !ok {
 		t.Fatal("content missing")
 	}
+	h.dismissCompression()
 	// existing file: confirmation, default cancel
 	os.WriteFile(filepath.Join(env.dst, "a.zip"), []byte("keep"), 0o644)
 	h.focus("a.txt")
@@ -694,18 +698,22 @@ func TestCreateZipExcludesItselfAndAsksBeforeOverwrite(t *testing.T) {
 	h.press("z", "enter")
 	h.press("o")
 	h.idle()
+	h.waitCompressionDone()
 	if a, err := archive.Open(filepath.Join(env.dst, "a.zip")); err != nil || a.Files != 1 {
 		t.Fatalf("overwrite: %v", err)
 	}
+	h.dismissCompression()
 	// A slow or missing destination mount is checked by the background task,
 	// not synchronously while the archive dialog is open.
 	h.press("z", "ctrl+u")
 	h.typeText(filepath.Join(env.root, "nope", "x.zip"), true)
 	h.press("enter")
 	h.idle()
-	if h.a.dialog != nil {
-		t.Fatal("archive dialog should close when the background task starts")
+	h.waitCompressionDone()
+	if !strings.Contains(strings.ToLower(h.view()), "destination folder") || !strings.Contains(strings.ToLower(h.view()), "temporary output") {
+		t.Fatalf("persistent error/cleanup summary missing:\n%s", h.view())
 	}
+	h.dismissCompression()
 	items := h.a.tasks.newest()
 	if len(items) == 0 || items[0].state != taskFailed || !strings.Contains(items[0].summary, "destination folder") {
 		t.Fatalf("missing destination was not retained as a task failure: %+v", items)

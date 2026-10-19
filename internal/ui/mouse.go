@@ -333,7 +333,7 @@ func (a *App) panelMouse(ev tea.MouseEvent) tea.Cmd {
 }
 
 // openEntry is the double-tap action: enter a directory (as Enter does),
-// browse a ZIP archive, view an archive entry, or open the file under the
+// browse a supported archive, view an archive entry, or open the file under the
 // cursor alone in the default editor (as e does for one file).
 func (a *App) openEntry(p *panel.Panel) tea.Cmd {
 	e, ok := p.Current()

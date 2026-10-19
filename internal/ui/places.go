@@ -45,7 +45,7 @@ func (a *App) bookmarkStore() (*bookmarks.Store, error) {
 func (a *App) bookmarkHere() tea.Cmd {
 	p := a.ActivePanel()
 	if p.InArchive() {
-		a.setStatus("folders inside a ZIP archive cannot be bookmarked: bookmark the folder that contains it (Esc leaves the archive)", true)
+		a.setStatus("folders inside a read-only archive cannot be bookmarked: bookmark the folder that contains it (Esc leaves the archive)", true)
 		return nil
 	}
 	if p.InRemote() {

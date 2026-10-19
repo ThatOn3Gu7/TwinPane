@@ -102,13 +102,14 @@ type App struct {
 	quitting      bool
 
 	// phase 2 / 12: file operations and retained background task history
-	dialog        *dialog
-	tasks         taskManager
-	opSeq         int
-	comparisonSeq int
-	trasher       ops.Trasher
-	edEnv         editor.Env
-	execFn        ExecFunc
+	dialog           *dialog
+	tasks            taskManager
+	opSeq            int
+	compressProgress *compressProgressState
+	comparisonSeq    int
+	trasher          ops.Trasher
+	edEnv            editor.Env
+	execFn           ExecFunc
 
 	// phase 3
 	editing    bool      // the external editor owns the terminal
@@ -142,6 +143,7 @@ type App struct {
 	goos         string
 	launch       func(argv []string) error
 	platCache    *platCache          // the opener platform for the hint bar
+	archiveHint  *archiveHintCache   // cached ZIP/TAR browse support for the current file
 	lastFormat   compress.ID         // format chosen last in the compress dialog
 	formatLevels map[compress.ID]int // level index chosen per format
 	bookmarks    *bookmarks.Store
@@ -294,6 +296,14 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			p.SpinnerTick()
 		}
 		return a, nil // Update schedules the next frame if still loading
+
+	case compressPulseMsg:
+		if cp := a.compressProgress; cp != nil && cp.id == msg.id && !cp.finished {
+			cp.frame++
+			a.updateCompressionDialog()
+			return a, a.compressPulse(msg.id)
+		}
+		return a, nil
 
 	case openDoneMsg:
 		a.openDone(msg)

@@ -164,7 +164,11 @@ func create7z(ctx context.Context, req Request, t target, level int, hooks ops.H
 		res.Fatal = fmt.Errorf("cannot write in %s: %w", t.dir, unwrapPath(err))
 		return
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() {
+		if err := os.RemoveAll(tmpDir); err != nil {
+			res.CleanupErr = errors.Join(res.CleanupErr, fmt.Errorf("could not remove temporary 7-Zip output %s: %w", tmpDir, err))
+		}
+	}()
 	tmpInfo, err := os.Stat(tmpDir)
 	if err != nil {
 		res.Fatal = err

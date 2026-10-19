@@ -32,20 +32,23 @@ type CreateRequest struct {
 
 // CreateResult summarises a finished archive creation.
 type CreateResult struct {
-	Output   string
-	Files    int   // regular files added
-	Dirs     int   // folders added
-	Links    int   // symbolic links stored as links
-	Bytes    int64 // uncompressed bytes added
-	Size     int64 // size of the archive written
-	Excluded []string
-	Errors   []ops.ItemError // items left out of the archive
-	Canceled bool
-	Fatal    error
+	Output     string
+	Files      int   // regular files added
+	Dirs       int   // folders added
+	Links      int   // symbolic links stored as links
+	Bytes      int64 // uncompressed bytes added
+	Size       int64 // size of the archive written
+	Excluded   []string
+	Errors     []ops.ItemError // items left out of the archive
+	Canceled   bool
+	Fatal      error
+	CleanupErr error
 }
 
-// OK reports a complete archive with every item included.
-func (r CreateResult) OK() bool { return !r.Canceled && r.Fatal == nil && len(r.Errors) == 0 }
+// OK reports a complete archive with every item included and no cleanup error.
+func (r CreateResult) OK() bool {
+	return !r.Canceled && r.Fatal == nil && len(r.Errors) == 0 && r.CleanupErr == nil
+}
 
 // Created reports whether the archive file was written.
 func (r CreateResult) Created() bool { return !r.Canceled && r.Fatal == nil }
@@ -59,15 +62,20 @@ func (r CreateResult) Summary() string {
 	if r.Links > 0 {
 		items += ", " + plural(r.Links, "link")
 	}
+	var s string
 	switch {
 	case r.Fatal != nil:
-		return fmt.Sprintf("ZIP not created: %v", r.Fatal)
+		s = fmt.Sprintf("ZIP not created: %v", r.Fatal)
 	case r.Canceled:
-		return "ZIP creation cancelled — no archive was written"
+		s = "ZIP creation cancelled — no archive was written"
+	default:
+		s = fmt.Sprintf("Created %s (%s, %s)", filepath.Base(r.Output), items, humanSize(r.Size))
+		if len(r.Errors) > 0 {
+			s += fmt.Sprintf(" — %s could not be added", plural(len(r.Errors), "item"))
+		}
 	}
-	s := fmt.Sprintf("Created %s (%s, %s)", filepath.Base(r.Output), items, humanSize(r.Size))
-	if len(r.Errors) > 0 {
-		s += fmt.Sprintf(" — %s could not be added", plural(len(r.Errors), "item"))
+	if r.CleanupErr != nil {
+		s += " — temporary cleanup failed: " + r.CleanupErr.Error()
 	}
 	return s
 }
@@ -101,8 +109,8 @@ type addItem struct {
 //     Overwrite (otherwise the rename refuses to replace anything).
 //   - The output (and the temporary file) are never added to the archive
 //     itself, even when the output folder is inside a source folder.
-func Create(ctx context.Context, req CreateRequest, hooks ops.Hooks) CreateResult {
-	res := CreateResult{Output: req.Output}
+func Create(ctx context.Context, req CreateRequest, hooks ops.Hooks) (res CreateResult) {
+	res = CreateResult{Output: req.Output}
 	rep := &reporter{hooks: hooks, p: ops.Progress{Phase: "scanning"}}
 	if len(req.Sources) == 0 {
 		res.Fatal = errors.New("nothing to add")
@@ -167,9 +175,19 @@ func Create(ctx context.Context, req CreateRequest, hooks ops.Hooks) CreateResul
 	tmpName := tmp.Name()
 	placed := false
 	defer func() {
-		if !placed {
-			tmp.Close()
-			os.Remove(tmpName)
+		if placed {
+			return
+		}
+		closeErr := tmp.Close()
+		if errors.Is(closeErr, os.ErrInvalid) {
+			closeErr = nil // the failed publish path may already have closed it
+		}
+		removeErr := os.Remove(tmpName)
+		if errors.Is(removeErr, fs.ErrNotExist) {
+			removeErr = nil
+		}
+		if err := errors.Join(closeErr, removeErr); err != nil {
+			res.CleanupErr = fmt.Errorf("could not remove temporary ZIP output %s: %w", tmpName, err)
 		}
 	}()
 	tmpInfo, err := tmp.Stat()
@@ -235,6 +253,12 @@ func Create(ctx context.Context, req CreateRequest, hooks ops.Hooks) CreateResul
 
 	bw := bufio.NewWriterSize(tmp, 256<<10)
 	zw := zip.NewWriter(bw)
+	zipClosed := false
+	defer func() {
+		if !zipClosed {
+			_ = zw.Close() // release the active compressor before discarding a partial archive
+		}
+	}()
 	if req.Level != 0 {
 		level := req.Level
 		zw.RegisterCompressor(zip.Deflate, func(w io.Writer) (io.WriteCloser, error) {
@@ -265,6 +289,7 @@ func Create(ctx context.Context, req CreateRequest, hooks ops.Hooks) CreateResul
 		res.Fatal = err
 		return res
 	}
+	zipClosed = true
 	if err := bw.Flush(); err != nil {
 		res.Fatal = err
 		return res

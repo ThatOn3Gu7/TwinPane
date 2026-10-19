@@ -74,12 +74,15 @@ func (a *App) browseHints() []barItem {
 	cur, ok := p.Current()
 	targets := p.Targets()
 	nsel := len(p.Selection())
+	isBrowsable := ok && !cur.IsDir && !cur.IsParent && a.isBrowsableArchive(cur.Path)
 
 	out := []barItem{item("Tab", "switch", "tab")}
+	if isBrowsable && nsel == 0 {
+		out = append(out, item("⏎", "browse archive", "enter"), item("x", "extract", "x"))
+	}
 	if ok && cur.IsDir && nsel == 0 {
 		out = append(out, item("⏎", "open", "enter"))
 	}
-	isZip := ok && !cur.IsDir && !cur.IsParent && looksLikeZip(cur.Name)
 	if ok && !cur.IsParent {
 		if p.IsSelected(cur.Name) {
 			out = append(out, item("Space", "unselect", " "))
@@ -108,17 +111,16 @@ func (a *App) browseHints() []barItem {
 		}
 	}
 	out = append(out, item("t", "tasks", "t"))
-	// phase 5: files open in the viewer, ZIP archives are browsed
-	if ok && !cur.IsDir && !cur.IsParent && nsel == 0 {
-		if isZip {
-			out = append(out, item("⏎", "browse ZIP", "enter"), item("x", "extract", "x"))
-		} else if a.hintPrefersExternal(cur) {
+	// Files open in the viewer or external app; supported archives were
+	// given their browse/extract actions near the front of the hint bar.
+	if ok && !cur.IsDir && !cur.IsParent && nsel == 0 && !isBrowsable {
+		if a.hintPrefersExternal(cur) {
 			out = append(out, item("⏎", "open", "enter"))
 		} else {
 			out = append(out, item("⏎", "view", "enter"))
 		}
-		if !isZip && looksLikeArchive(cur.Name) {
-			out = append(out, item("x", "extract", "x")) // phase 9: TAR, 7Z, RAR, compressed files
+		if looksLikeArchive(cur.Name) {
+			out = append(out, item("x", "extract", "x")) // TAR, 7Z, RAR, compressed files
 		}
 	}
 	hidden := "show hidden"
@@ -134,7 +136,7 @@ func (a *App) browseHints() []barItem {
 	// place: the action menu (also reachable by tapping the TwinPane
 	// badge, at any width), Open with, bookmarks, storage
 	out = append(out, item("M", "menu", "M"))
-	if ok && !cur.IsDir && !cur.IsParent && nsel == 0 && !isZip {
+	if ok && !cur.IsDir && !cur.IsParent && nsel == 0 && !isBrowsable {
 		out = append(out, item("o/O", "open with", "O"))
 	}
 	out = append(out, item("b", "bookmarks", "b"), item("i", "storage", "i"))
@@ -182,17 +184,20 @@ func (a *App) remoteHints() []barItem {
 	return out
 }
 
-// archiveHints is the hint bar of a panel browsing a ZIP archive: only what
-// works on archive entries (they are read-only).
+// archiveHints is the hint bar of a panel browsing a ZIP or TAR archive: only
+// operations supported on virtual, read-only entries are shown.
 func (a *App) archiveHints() []barItem {
 	p := a.ActivePanel()
 	cur, ok := p.Current()
 	nsel := len(p.Selection())
-	out := []barItem{item("Tab", "switch", "tab"), item("t", "tasks", "t")}
+	out := []barItem{item("Tab", "switch", "tab"), item("t", "tasks", "t"), item("Esc", "leave archive", "esc")}
+	if len(p.Targets()) > 0 {
+		out = append(out, item("x", "extract", "x"))
+	}
 	if ok && nsel == 0 {
 		switch {
 		case cur.IsParent && p.ArchiveInner() == "":
-			out = append(out, item("⏎", "leave ZIP", "enter"))
+			out = append(out, item("⏎", "leave archive", "enter"))
 		case cur.IsDir:
 			out = append(out, item("⏎", "open", "enter"))
 		default:
@@ -209,10 +214,7 @@ func (a *App) archiveHints() []barItem {
 	if nsel > 0 {
 		out = append(out, item("u", "clear", "u"))
 	}
-	if len(p.Targets()) > 0 {
-		out = append(out, item("x", "extract", "x"))
-	}
-	out = append(out, item("Esc", "leave ZIP", "esc"), item("X", "extract all", "X"))
+	out = append(out, item("X", "extract all", "X"))
 	if ok && !cur.IsParent {
 		out = append(out, item("P", "info", "P"))
 	}
@@ -296,7 +298,15 @@ func (a *App) dialogHints(d *dialog) []barItem {
 	}
 	var out []barItem
 	if len(d.buttons) == 1 && d.buttons[0].key == "" {
-		out = append(out, item("⏎", "close", "enter"))
+		if d.kind == dlgCompressProgress {
+			action := "cancel"
+			if a.compressProgress != nil && a.compressProgress.finished {
+				action = "dismiss"
+			}
+			out = append(out, item("⏎", action, "enter"), item("Esc", action, "esc"))
+		} else {
+			out = append(out, item("⏎", "close", "enter"))
+		}
 		if d.scrollable {
 			out = append(out, item("↑↓", "scroll", ""))
 		}

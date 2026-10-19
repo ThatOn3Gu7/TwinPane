@@ -16,13 +16,10 @@ import (
 	"github.com/ulikunitz/xz"
 )
 
-// Extraction formats (phase 9). Browsing stays ZIP-only; extraction also
-// handles TAR (plain and compressed), the single-file formats TwinPane can
-// create, and — with an installed 7-Zip — 7Z and RAR.
-//
-// The format is recognised from the file's content (magic bytes), never
-// from its name alone: a compressed stream is peeked at to tell a
-// compressed TAR from a single compressed file.
+// Archive formats are recognised primarily from file content. A recognised
+// TAR-family extension is retained as a fallback when a compressed stream has
+// an invalid/short TAR header, so browsing reports the damaged archive instead
+// of treating it as an unrelated single compressed file.
 
 // Format is a recognised extractable format.
 type Format int
@@ -100,7 +97,7 @@ func (i Info) External() bool { return i.Format == Format7z || i.Format == Forma
 func (i Info) Single() bool { return i.Format == FormatSingle }
 
 // Supported lists the formats for messages.
-const Supported = "ZIP, TAR, TAR.GZ/TGZ, TAR.BZ2, TAR.XZ, TAR.ZST, TAR.LZ4, GZ, BZ2, XZ, ZST, LZ4; 7Z and RAR with 7-Zip"
+const Supported = "ZIP and TAR (TAR.GZ/TGZ, TAR.BZ2/TBZ2, TAR.XZ/TXZ, TAR.ZST/TZST, TAR.LZ4); GZ, BZ2, XZ, ZST, LZ4; 7Z and RAR with 7-Zip"
 
 // ErrNotArchive is returned for files in no supported format.
 var ErrNotArchive = errors.New("not an archive or compressed file TwinPane can extract (supported: " + Supported + ")")
@@ -161,17 +158,23 @@ func Detect(p string) (Info, error) {
 	case bytes.HasPrefix(head, magicLz4):
 		codec = CodecLz4
 	default:
+		if hint, ok := tarExtensionHint(p); ok {
+			return hint, nil
+		}
 		return Info{}, nil
 	}
-	// a compressed TAR or a single compressed file? Peek at the start of
-	// the decompressed data.
+	// A compressed TAR or a single compressed file? Peek at the start of
+	// the decompressed data. For damaged TAR streams, keep a matching
+	// extension hint so the archive reader can return a useful corruption
+	// error instead of treating the bytes as a single compressed file.
 	if _, err := f.Seek(0, io.SeekStart); err != nil {
 		return Info{}, err
 	}
 	r, closeFn, err := decompressor(codec, f)
 	if err != nil {
-		// damaged from the start: still offered (as a single file), the
-		// extraction reports the error
+		if hint, ok := tarExtensionHint(p); ok && hint.Codec == codec {
+			return hint, nil
+		}
 		return Info{Format: FormatSingle, Codec: codec}, nil
 	}
 	defer closeFn()
@@ -180,7 +183,33 @@ func Detect(p string) (Info, error) {
 	if isTarHeader(inner[:k]) {
 		return Info{Format: FormatTAR, Codec: codec}, nil
 	}
+	if hint, ok := tarExtensionHint(p); ok && hint.Codec == codec {
+		return hint, nil
+	}
 	return Info{Format: FormatSingle, Codec: codec}, nil
+}
+
+// tarExtensionHint returns the TAR codec implied by a recognised TAR-family
+// extension. It is a fallback when content inspection cannot identify a valid
+// TAR header, allowing damaged named archives to fail with a corruption error.
+func tarExtensionHint(name string) (Info, bool) {
+	n := strings.ToLower(name)
+	for _, x := range []struct {
+		ext   string
+		codec Codec
+	}{
+		{".tar.gzip", CodecGzip}, {".tar.bzip2", CodecBzip2}, {".tar.zstd", CodecZstd},
+		{".tar.gz", CodecGzip}, {".tgz", CodecGzip},
+		{".tar.bz2", CodecBzip2}, {".tbz2", CodecBzip2}, {".tbz", CodecBzip2},
+		{".tar.xz", CodecXz}, {".txz", CodecXz},
+		{".tar.zst", CodecZstd}, {".tzst", CodecZstd},
+		{".tar.lz4", CodecLz4}, {".tar", CodecNone},
+	} {
+		if strings.HasSuffix(n, x.ext) && len(n) > len(x.ext) {
+			return Info{Format: FormatTAR, Codec: x.codec}, true
+		}
+	}
+	return Info{}, false
 }
 
 // isTarHeader reports whether b starts with a TAR header: the "ustar"
@@ -237,7 +266,7 @@ func decompressor(c Codec, r io.Reader) (io.Reader, func(), error) {
 		}
 		return zr, nop, nil
 	case CodecZstd:
-		zr, err := zstd.NewReader(r, zstd.WithDecoderConcurrency(1))
+		zr, err := zstd.NewReader(r, zstd.WithDecoderConcurrency(1), zstd.WithDecoderMaxMemory(256<<20), zstd.WithDecoderMaxWindow(256<<20))
 		if err != nil {
 			return nil, nop, err
 		}
@@ -266,7 +295,7 @@ func SingleOutputName(name string, c Codec) string {
 // without its archive extension ("photos.tar.gz" → "photos").
 func FolderName(name string) string {
 	lower := strings.ToLower(name)
-	for _, ext := range []string{".tar.gz", ".tar.bz2", ".tar.xz", ".tar.zst", ".tar.lz4", ".tgz", ".tbz2", ".tbz", ".txz", ".tzst", ".tar", ".zip", ".7z", ".rar"} {
+	for _, ext := range []string{".tar.gzip", ".tar.bzip2", ".tar.zstd", ".tar.gz", ".tar.bz2", ".tar.xz", ".tar.zst", ".tar.lz4", ".tgz", ".tbz2", ".tbz", ".txz", ".tzst", ".tar", ".zip", ".7z", ".rar"} {
 		if strings.HasSuffix(lower, ext) && len(name) > len(ext) {
 			return name[:len(name)-len(ext)]
 		}

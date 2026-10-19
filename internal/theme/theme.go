@@ -71,7 +71,7 @@ type Theme struct {
 	ScrollThumbOff lipgloss.Style // inactive panel
 
 	// Phase 5
-	ArchiveBadge lipgloss.Style // "ZIP" badge on the path line of a panel browsing an archive
+	ArchiveBadge lipgloss.Style // archive format badge on the path line of a browsing panel
 	CloudBadge   lipgloss.Style // remote name badge ("drive:") on the path line of a panel showing an rclone remote
 	LocalBadge   lipgloss.Style // "LOCAL" badge while the other panel shows a remote
 	ViewerBadge  lipgloss.Style // "VIEW" / "READ-ONLY" badges of the file viewer

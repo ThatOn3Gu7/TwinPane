@@ -72,6 +72,37 @@ func names(es []fsys.Entry) []string {
 	return out
 }
 
+func TestCleanNameBoundsArchivePaths(t *testing.T) {
+	if _, _, ok := cleanName(strings.Repeat("a", maxArchivePathBytes+1)); ok {
+		t.Fatal("overlong archive path was accepted")
+	}
+	deep := strings.TrimSuffix(strings.Repeat("a/", maxArchivePathDepth+1), "/")
+	if _, _, ok := cleanName(deep); ok {
+		t.Fatal("over-deep archive path was accepted")
+	}
+}
+
+func TestFileEntryCannotBecomeAParentDirectory(t *testing.T) {
+	dir := t.TempDir()
+	p := makeZip(t, dir, "conflict.zip", []zent{
+		{name: "node", body: "file"},
+		{name: "node/child.txt", body: "not reachable"},
+	})
+	a, err := Open(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a.Duplicates != 1 || a.Files != 1 {
+		t.Fatalf("conflicting tree counts: files=%d duplicates=%d", a.Files, a.Duplicates)
+	}
+	if _, ok := a.Lookup("node"); !ok {
+		t.Fatal("first file was not kept")
+	}
+	if _, ok := a.Lookup("node/child.txt"); ok {
+		t.Fatal("child below a file was indexed")
+	}
+}
+
 func TestBrowseTreeWithoutExtracting(t *testing.T) {
 	dir := t.TempDir()
 	p := makeZip(t, dir, "t.zip", []zent{
@@ -165,13 +196,19 @@ func TestUnsafeNamesAreHiddenAndCounted(t *testing.T) {
 		{name: "/abs.txt", body: "x"},
 		{name: "C:/win.txt", body: "x"},
 		{name: `..\back.txt`, body: "x"},
+		{name: "dir:stream", body: "x"},
+		{name: "CON.txt", body: "x"},
+		{name: "CON .txt", body: "x"},
+		{name: "NUL", body: "x"},
+		{name: "trailing.", body: "x"},
+		{name: "COM¹.txt", body: "x"},
 		{name: "ok/./fine.txt", body: "fine"},
 	})
 	a, err := Open(p)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(a.Unsafe) != 5 {
+	if len(a.Unsafe) != 11 {
 		t.Fatalf("unsafe %v", a.Unsafe)
 	}
 	if _, ok := a.Lookup("ok/fine.txt"); !ok {

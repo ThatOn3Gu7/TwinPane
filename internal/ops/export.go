@@ -1,7 +1,7 @@
 package ops
 
 // Exported building blocks for other packages that write files with the
-// same safety rules (internal/archive: ZIP extraction and creation).
+// same safety rules (internal/archive: ZIP/TAR extraction and ZIP creation).
 
 // TempPrefix starts the names of TwinPane's temporary files.
 const TempPrefix = tmpPrefix

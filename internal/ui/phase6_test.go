@@ -28,6 +28,25 @@ func (h *harness) keyType(t tea.KeyType) {
 	h.settle()
 }
 
+func (h *harness) waitCompressionDone() {
+	h.t.Helper()
+	h.until("compression summary", func() bool { return h.a.compressProgress != nil && h.a.compressProgress.finished })
+	if !h.dialogKind(dlgCompressProgress) {
+		h.t.Fatalf("compression completed without retaining its modal: %v", h.a.dialog)
+	}
+}
+
+func (h *harness) dismissCompression() {
+	h.t.Helper()
+	if !h.dialogKind(dlgCompressProgress) || h.a.compressProgress == nil || !h.a.compressProgress.finished {
+		h.t.Fatalf("no completed compression dialog to dismiss: %v", h.a.dialog)
+	}
+	h.press("enter")
+	if h.a.dialog != nil || h.a.compressProgress != nil {
+		h.t.Fatal("compression summary did not dismiss")
+	}
+}
+
 // chooseFormat moves the compression dialog's format selector to name.
 func (h *harness) chooseFormat(name string) {
 	h.t.Helper()
@@ -112,12 +131,19 @@ func TestCompressDialogFormatAndLevel(t *testing.T) {
 		t.Fatalf("edited name became %q", got)
 	}
 	h.press("enter")
-	h.until("created", func() bool { return strings.Contains(h.status(), "mine.tar.gz") && !h.a.busy() })
+	h.waitCompressionDone()
+	if !strings.Contains(h.view(), "Final archive size") || !strings.Contains(h.view(), "Elapsed:") || !strings.Contains(h.view(), "mine.tar.gz") {
+		t.Fatalf("completion summary lacks metadata:\n%s", h.view())
+	}
+	if !strings.Contains(h.status(), "mine.tar.gz") {
+		t.Fatalf("status %q", h.status())
+	}
 	got := tarGzNames(t, filepath.Join(env.dst, "mine.tar.gz"))
 	want := []string{"sub/", "sub/deep/", "sub/deep/c.txt"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("entries %v, want %v", got, want)
 	}
+	h.dismissCompression()
 	// the format is remembered for the next dialog
 	h.focus("a.txt")
 	h.press("z")
@@ -140,7 +166,7 @@ func TestCompressMultipleItemsKeepStructure(t *testing.T) {
 		t.Fatalf("default for a selection %q", got)
 	}
 	h.press("enter")
-	h.until("created", func() bool { return strings.Contains(h.status(), "src.tar.gz") && !h.a.busy() })
+	h.waitCompressionDone()
 	got := tarGzNames(t, filepath.Join(env.dst, "src.tar.gz"))
 	want := []string{"a.txt", "sub/", "sub/deep/", "sub/deep/c.txt"}
 	if !reflect.DeepEqual(got, want) {
@@ -155,6 +181,7 @@ func TestCompressMultipleItemsKeepStructure(t *testing.T) {
 		}
 		return false
 	})
+	h.dismissCompression()
 }
 
 func TestCompressSingleFileFormats(t *testing.T) {
@@ -195,7 +222,10 @@ func TestCompressSingleFileFormats(t *testing.T) {
 	h.press("ctrl+u")
 	h.typeText(filepath.Join(env.dst, "a.txt.gz"), true)
 	h.press("enter")
-	h.until("created", func() bool { return strings.Contains(h.status(), "a.txt.gz") && !h.a.busy() })
+	h.waitCompressionDone()
+	if !strings.Contains(h.view(), "Compressed file size") {
+		t.Fatalf("single-file summary lacks output size:\n%s", h.view())
+	}
 	f, err := os.Open(filepath.Join(env.dst, "a.txt.gz"))
 	if err != nil {
 		t.Fatal(err)
@@ -208,6 +238,7 @@ func TestCompressSingleFileFormats(t *testing.T) {
 	if b, _ := io.ReadAll(zr); string(b) != "new-a" {
 		t.Fatalf("content %q", b)
 	}
+	h.dismissCompression()
 }
 
 func TestCompressUnavailableFormatExplained(t *testing.T) {
@@ -269,7 +300,10 @@ func TestCompressAwkwardNames(t *testing.T) {
 	h.waitDialog(dlgCompress)
 	h.chooseFormat("TAR.GZ")
 	h.press("enter")
-	h.until("created", func() bool { return !h.a.busy() && h.a.dialog == nil && strings.Contains(h.status(), "Created") })
+	h.waitCompressionDone()
+	if !strings.Contains(h.status(), "Created") {
+		t.Fatalf("status %q", h.status())
+	}
 	es, _ := os.ReadDir(env.dst)
 	if len(es) != 1 || !strings.HasSuffix(es[0].Name(), ".tar.gz") {
 		t.Fatalf("dst: %v", es)
@@ -277,6 +311,7 @@ func TestCompressAwkwardNames(t *testing.T) {
 	if got := tarGzNames(t, filepath.Join(env.dst, es[0].Name())); !reflect.DeepEqual(got, []string{name}) {
 		t.Fatalf("entries %q", got)
 	}
+	h.dismissCompression()
 }
 
 // ---- bookmarks -------------------------------------------------------------------
@@ -841,16 +876,25 @@ func TestCompressCancelLeavesNothing(t *testing.T) {
 	h.waitDialog(dlgCompress)
 	h.chooseFormat("TAR.XZ")
 	h.send(key("enter"))                 // starts
-	h.send(tea.KeyMsg{Type: tea.KeyEsc}) // cancel at once
+	h.send(tea.KeyMsg{Type: tea.KeyEsc}) // request cancellation; the modal stays open
+	if h.a.compressProgress == nil {
+		t.Skip("compression finished before the cancel took effect")
+	}
 	h.idle()
-	if fileExists(filepath.Join(env.dst, "big.tar.xz")) && !strings.Contains(h.status(), "cancel") {
-		t.Skip("finished before the cancel took effect")
+	h.waitCompressionDone()
+	if !h.a.compressProgress.result.Canceled {
+		h.dismissCompression()
+		t.Skip("compression finished before the cancel took effect")
 	}
 	if !strings.Contains(strings.ToLower(h.status()), "cancel") || h.a.statusLevel != lvlWarn {
 		t.Fatalf("status %q level %d", h.status(), h.a.statusLevel)
+	}
+	if !strings.Contains(h.view(), "No temporary output remains") {
+		t.Fatalf("cancel summary does not report cleanup:\n%s", h.view())
 	}
 	es, _ := os.ReadDir(env.dst)
 	if len(es) != 0 {
 		t.Fatalf("left behind after cancel: %v", es)
 	}
+	h.dismissCompression()
 }

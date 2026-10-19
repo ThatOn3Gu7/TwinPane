@@ -871,10 +871,12 @@ exit 130/143 after the cleanup trap removed the temporary folder.
   interruption, under dash and bash.
 
 ## Extension points for later phases
-- **Browsing more archive formats**: browsing is ZIP-only; TAR and
-  compressed TAR are extracted as a whole (phase 9). The panel only needs
-  `List`, `InnerOf`/`VirtualPath`, `Display`, `Changed` and `OpenEntry`, so
-  a TAR index could provide the same methods behind an interface.
+- **Archive browsing:** ZIP and TAR-family archives use the virtual read-only
+  panel interface (`List`, `InnerOf`/`VirtualPath`, `Display`, `Changed` and
+  `OpenEntry`). TAR indexes are streamed with entry/path/decompressed-size
+  bounds; entry payloads are read on demand, and selective extraction reuses
+  the same validated paths. New codecs should preserve those bounds and the
+  no-in-place-editing rule.
 - **Storage analysis (future)**: deliberately not implemented. `fileinfo`
   and `fsys` have no recursive sizing, so a future analyser can add its own
   cancellable walker (like `ops.PlanDelete`) without touching the panels.

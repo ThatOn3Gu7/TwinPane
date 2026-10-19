@@ -29,7 +29,7 @@ func drain(a *App, cmd tea.Cmd) (quit bool) {
 		return quit
 	case tea.QuitMsg:
 		return true
-	case nil, spinTickMsg:
+	case nil, spinTickMsg, compressPulseMsg:
 		// Spinner frames are dropped: drain runs commands one at a time,
 		// so a load queued behind the tick would never finish and the
 		// spinner would reschedule itself forever. (The real runtime runs
