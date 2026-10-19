@@ -108,4 +108,9 @@ jobs:
 
       - name: Cross-compile every target
         if: ${{ !cancelled() }}
-        run: ./build.sh
+        run: |
+          ./build.sh
+          expected="twinpane $(cat VERSION) (linux/amd64)"
+          actual="$(./dist/twinpane-linux-amd64 --version)"
+          echo "$actual"
+          [ "$actual" = "$expected" ] || { echo "::error::binary smoke check failed: expected '$expected', got '$actual'"; exit 1; }
