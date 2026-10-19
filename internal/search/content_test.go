@@ -188,7 +188,7 @@ func TestRunContentCancellationAndRootErrors(t *testing.T) {
 	}
 
 	missing := filepath.Join(t.TempDir(), "not-a-directory")
-	updates = runContentForTest(context.Background(), missing, "needle", ContentOptions{})
+	updates := runContentForTest(context.Background(), missing, "needle", ContentOptions{})
 	finalUpdate := lastContentUpdate(t, updates)
 	if finalUpdate.Err == nil {
 		t.Fatalf("missing root was not reported: %+v", finalUpdate)
