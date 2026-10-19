@@ -380,8 +380,8 @@ including those of the viewer, dialogs, search and bulk rename.
 
 **Environment variables:** `VISUAL` / `EDITOR` (the editor),
 `TWINPANE_NO_MOUSE=1` (same as `--no-mouse`), `TWINPANE_CONFIG_DIR` (an
-absolute path for the bookmarks file; default `~/.config/twinpane`, on macOS
-`~/Library/Application Support/twinpane`).
+absolute path for the bookmarks and settings files; default
+`~/.config/twinpane`, on macOS `~/Library/Application Support/twinpane`).
 
 ## Building from source
 
