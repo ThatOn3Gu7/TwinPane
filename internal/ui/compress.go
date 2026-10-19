@@ -289,15 +289,25 @@ func (a *App) startZip(srcIdx int, req compress.Request) tea.Cmd {
 	}
 	s, ctx := a.newSession(title, srcIdx, req.Sources)
 	s.to = req.Output
+	a.compressProgress = &compressProgressState{
+		id: s.id, req: req, format: f, started: s.started,
+		progress: ops.Progress{Phase: "starting"},
+	}
+	a.dialog = &dialog{kind: dlgCompressProgress, width: 72}
+	a.updateCompressionDialog()
 	h := a.hooks(ctx, s)
 	go func() {
 		res := compress.Create(ctx, req, h)
 		s.events <- opZipDoneMsg{s.id, res}
 	}()
-	return a.startCmds(s)
+	return tea.Batch(a.startCmds(s), a.compressPulse(s.id))
 }
 
 func (a *App) finishZip(s *opSession, res compress.Result) tea.Cmd {
+	if cp := a.compressProgress; cp != nil && cp.id == s.id {
+		cp.finished, cp.finishedAt, cp.result = true, a.now(), res
+		a.updateCompressionDialog()
+	}
 	focus := ""
 	var cmd tea.Cmd
 	if res.Created() {
@@ -307,10 +317,15 @@ func (a *App) finishZip(s *opSession, res compress.Result) tea.Cmd {
 	summary := res.Summary()
 	details := appendTaskDetail(nil, "Stopped", res.Fatal)
 	details = append(details, itemErrorDetails(res.Errors)...)
+	details = appendTaskDetail(details, "Temporary output cleanup", res.CleanupErr)
 	for _, excluded := range res.Excluded {
 		details = append(details, "Not included: "+excluded)
 	}
-	state := taskOutcome(res.Canceled, res.Fatal, len(res.Errors), res.Created() && (res.Files+res.Dirs+res.Links > 0))
+	cleanupErrors := 0
+	if res.CleanupErr != nil {
+		cleanupErrors = 1
+	}
+	state := taskOutcome(res.Canceled, res.Fatal, len(res.Errors)+cleanupErrors, res.Created() && (res.Files+res.Dirs+res.Links > 0))
 	switch {
 	case res.OK():
 		a.setStatusLevel(summary, lvlOK)

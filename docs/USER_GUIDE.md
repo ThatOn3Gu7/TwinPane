@@ -110,8 +110,8 @@ password needs `RCLONE_CONFIG_PASS` set in the environment.
 
 | Format | How |
 |---|---|
-| ZIP (also `.jar`, `.apk`, `.epub`, …) | built in, as before (browse with `Enter`) |
-| TAR, TAR.GZ / TGZ, TAR.BZ2, TAR.XZ, TAR.ZST, TAR.LZ4 | built in |
+| ZIP (also `.jar`, `.apk`, `.epub`, …) | built in; browse with `Enter`, extract whole or selected entries |
+| TAR, TAR.GZ / TGZ, TAR.BZ2 / TBZ2, TAR.XZ / TXZ, TAR.ZST / TZST, TAR.LZ4 | built in; browse read-only and extract whole or selected entries |
 | single GZ, BZ2, XZ, ZST, LZ4 files | built in: *Decompress* writes one file, the name without the extension (`notes.txt.gz` → `notes.txt`) |
 | 7Z, RAR | the installed 7-Zip (`7zz`, `7z`, `7za` or `7zr`; Termux: `pkg install 7zip`) |
 
@@ -242,15 +242,22 @@ level, and the destination path can be edited:
 - **Contents:** several items keep their folder structure, relative to the
   folder they are in. Symbolic links are stored as links; FIFOs, sockets and
   devices are left out and reported. The new file is never added to itself.
-- **Safety:** the archive is written to a temporary file in the destination
-  folder and renamed when complete. Cancelling (`Esc`) or an error removes it.
-  An existing file is replaced only after a confirmation. Progress is shown
-  as for copies. 7-Zip is started directly, without a shell (file names are
+- **Safety and progress:** the output is written to an operation-owned
+  temporary file in the destination folder and published only when complete.
+  Cancelling (`Esc`) or an error removes that temporary output; an existing
+  file is replaced only after a confirmation. A modal dialog stays above the
+  file manager and shows the format, destination, current status/file and
+  progress. It uses a percentage only when the total is known; otherwise it
+  shows indeterminate progress. The dialog stays open for the completion or
+  cleanup/error summary. Cancellation remains pending while an uninterruptible
+  codec finishes its current work. 7-Zip is started directly, without a shell (file names are
   passed after `--`, with `-spd` so `*`, `?` and `@` stay literal), and
   cancelling stops its whole process group.
-- Only ZIP archives can be **browsed** and extracted entry by entry. The
-  other formats can be created and extracted as a whole (`x`, since
-  v0.8.0), never browsed or partially extracted.
+- ZIP and TAR-family archives can be **browsed read-only** and selectively
+  extracted entry by entry. Supported TAR names include `.tar`, `.tar.gz` /
+  `.tgz`, `.tar.bz2` / `.tbz2`, `.tar.xz` / `.txz`, and `.tar.zst` / `.tzst`.
+  Single compressed files and 7Z/RAR can be extracted as a whole but are not
+  browsable or partially extracted.
 
 #### Bookmarks (`B` add, `b` list)
 
@@ -445,6 +452,26 @@ overflows. Tap targets cover the whole chip and description.
   - Encrypted entries and unsupported compression methods are reported per
     entry. Corrupt or non-ZIP files are refused when opened, and the panel
     stays where it was.
+
+**TAR archives (including compressed TAR).**
+- **Browse without extracting:** `Enter` (or a double tap) opens `.tar`,
+  `.tar.gz` / `.tgz`, `.tar.bz2` / `.tbz2`, `.tar.xz` / `.txz`, and
+  `.tar.zst` / `.tzst` as virtual, read-only folders. The archive is streamed
+  to build a bounded directory index; file payloads are not retained in RAM
+  or unpacked to disk. Entries show the available type, size and modification
+  time. Nested and implicit folders can be navigated with the same `..`,
+  `Backspace`/`←`, `Esc` and `=` controls described above. The status line
+  identifies the TAR format and read-only mode.
+- **Extract:** `x` extracts the selected entries (or the entry under the
+  cursor); `X` extracts the entire archive. Folders are extracted recursively.
+  Only regular files and directories are materialized. Unsafe paths, links,
+  duplicate/conflicting names, unsupported entry types, malformed archives
+  and decompression failures are rejected or reported without writing outside
+  the chosen destination. Extraction uses bounded buffers and operation-owned
+  temporary files; existing files remain unchanged unless Overwrite is
+  explicitly confirmed.
+- **Read-only means read-only:** browsing never edits an archive in place.
+  Delete, rename, move, edit, and archive creation from inside are refused.
 
 **Viewer (`v` / `F3`, `Enter` on a file).**
 - Replaces the panels with a large read-only view. The title, status and
@@ -1144,16 +1171,16 @@ including the end-to-end test scripts, are in
   touch-only users need the keyboard to type a filter.
 - A double tap on a text file always asks first, even after you've used the
   editor many times; `e` opens it without asking.
-- Archives: browsing is ZIP only (also `.jar`, `.apk`, `.epub` and other
-  ZIP-based files); TAR, compressed TAR, single compressed
-  files, 7Z and RAR can be extracted as a whole (not partially, not
-  browsed; 7Z/RAR need 7-Zip, encrypted ones are refused). Only "stored" and "deflate" entries can be read. Encrypted entries
-  (ZipCrypto/AES) and other methods are listed but can't be viewed or
-  extracted. Archives can't be modified in place (no adding or deleting
-  entries). Symbolic links inside archives are not extracted, and extracted
-  files get 0644/0755 permissions. Very large archives are listed from the
-  central directory, so opening one costs memory proportional to the number
-  of entries, not their size.
+- Archives: ZIP (including `.jar`, `.apk`, `.epub` and other ZIP-based files)
+  and TAR-family archives can be browsed read-only and selectively extracted.
+  Single compressed files and 7Z/RAR can be extracted as a whole, but not
+  browsed or selectively extracted; 7Z/RAR need 7-Zip, and encrypted archives
+  are refused. ZIP entries using methods other than "stored" and "deflate"
+  are listed but can't be viewed or extracted. Archives can't be modified in
+  place. Unsafe paths, links and special TAR entries are never materialized;
+  extracted regular files and directories get reduced permissions. ZIP is
+  indexed from its central directory; TAR is indexed by streaming headers,
+  with limits on entry count, retained path data, nesting and expanded bytes.
 - Cloud remotes: need rclone and a remote set up with
   `rclone config`; TwinPane does not create or edit remotes. Remote files
   can't be viewed, edited or opened in place (copy them to a local panel).
@@ -1172,8 +1199,9 @@ including the end-to-end test scripts, are in
 - Properties: no recursive folder size (by design: storage analysis is out
   of scope). No chown/chgrp, and no ACLs or extended attributes. Permissions
   apply to one item at a time.
-- Compression: only ZIP archives can be browsed; the other formats can be
-  created and extracted as a whole, never browsed or extracted partially.
+- Compression/archive support: ZIP and TAR-family archives can be browsed
+  read-only and selectively extracted. Single compressed files and 7Z/RAR
+  can be extracted as a whole, not browsed or selectively extracted.
   7Z needs an installed 7-Zip; creating and extracting 7Z
   were tested on Linux x86_64 with 7-Zip 21.07, 22.01, 23.01, 25.01, 26.04
   and p7zip 16.02 (not with Termux's `7zip` package on a phone). XZ has a single

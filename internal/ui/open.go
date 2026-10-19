@@ -10,7 +10,6 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/ThatOn3Gu7/TwinPane/internal/archive"
 	"github.com/ThatOn3Gu7/TwinPane/internal/editor"
 	"github.com/ThatOn3Gu7/TwinPane/internal/fsys"
 	"github.com/ThatOn3Gu7/TwinPane/internal/opener"
@@ -134,7 +133,7 @@ func (a *App) openDone(m openDoneMsg) {
 }
 
 // preferExternal reports whether Enter / double tap should open the file
-// with the default app: media and documents (not the ZIP family TwinPane
+// with the default app: media and documents (not a supported archive TwinPane
 // browses itself), when the platform has an opener.
 func (a *App) preferExternal(e fsys.Entry) (opener.Platform, bool) {
 	t := opener.ByName(e.Name)
@@ -162,8 +161,8 @@ func (a *App) openWith() tea.Cmd {
 	}
 	plat := a.platform()
 	t := opener.Detect(e.Path)
-	zip := archive.Sniff(e.Path)
-	choices := plat.Choices(t, e.Path, zip)
+	browse := a.isBrowsableArchive(e.Path)
+	choices := plat.Choices(t, e.Path, browse)
 	d := &dialog{kind: dlgOpenWith, title: "Open " + fsys.SanitizeName(e.Name) + " with…", width: 60}
 	kind := t.Kind.String()
 	if t.MIME != "" {

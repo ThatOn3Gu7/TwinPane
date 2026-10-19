@@ -323,6 +323,10 @@ func (a *App) handleOpMsg(msg tea.Msg) (tea.Cmd, bool) {
 			return nil, true
 		}
 		s.prog = m.p
+		if cp := a.compressProgress; cp != nil && cp.id == m.id && !cp.finished {
+			cp.progress = m.p
+			a.updateCompressionDialog()
+		}
 		return s.listen(), true
 	case opConflictMsg:
 		s := lookup(m.id)

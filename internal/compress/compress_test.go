@@ -14,6 +14,7 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/klauspost/compress/zstd"
 	"github.com/pierrec/lz4/v4"
@@ -551,6 +552,7 @@ func TestExistingOutputNeedsOverwrite(t *testing.T) {
 	if b, _ := os.ReadFile(out); string(b) != "precious" {
 		t.Fatal("existing file changed")
 	}
+	noLeftovers(t, root)
 	res = Create(context.Background(), Request{Format: TBZ2, Sources: []string{src}, Output: out, Overwrite: true}, ops.Hooks{})
 	if !res.OK() {
 		t.Fatal(res.Summary())
@@ -562,7 +564,7 @@ func TestExistingOutputNeedsOverwrite(t *testing.T) {
 }
 
 func TestCancelLeavesNothing(t *testing.T) {
-	for _, id := range []ID{TZST, XZ, ZIP} {
+	for _, id := range []ID{ZIP, TAR, TGZ, TGZ2, TXZ, TZST, TBZ2, TLZ4, GZ, XZ, ZST, BZ2, LZ4} {
 		t.Run(string(id), func(t *testing.T) {
 			root := t.TempDir()
 			src := filepath.Join(root, "big.bin")
@@ -675,5 +677,110 @@ func TestSevenWarnings(t *testing.T) {
 	}
 	if lastLine(stderr) != "Scan WARNINGS: 1" {
 		t.Errorf("lastLine %q", lastLine(stderr))
+	}
+}
+
+func TestCancelPartialOutputPreservesExistingDestination(t *testing.T) {
+	for _, id := range []ID{ZIP, TAR, TGZ, GZ} {
+		t.Run(string(id), func(t *testing.T) {
+			root := t.TempDir()
+			src := filepath.Join(root, "large.bin")
+			if err := os.WriteFile(src, bytes.Repeat([]byte("partial-output-check-"), 1<<18), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			f, _ := Lookup(id)
+			out := filepath.Join(root, "existing"+f.Ext)
+			if err := os.WriteFile(out, []byte("keep this destination"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			delayed, wrote := false, false
+			res := Create(ctx, Request{Format: id, Sources: []string{src}, Output: out, Overwrite: true}, ops.Hooks{Progress: func(p ops.Progress) {
+				if p.Phase == "compressing" && p.DoneBytes == 0 && !delayed {
+					delayed = true
+					time.Sleep(120 * time.Millisecond)
+				}
+				if p.DoneBytes > 0 && !wrote {
+					wrote = true
+					cancel()
+				}
+			}})
+			if !res.Canceled || res.Created() || !wrote {
+				t.Fatalf("expected cancellation after writing part of the temporary %s: %+v", f.Name, res)
+			}
+			if got, err := os.ReadFile(out); err != nil || string(got) != "keep this destination" {
+				t.Fatalf("existing destination changed: %q (%v)", got, err)
+			}
+			noLeftovers(t, root)
+		})
+	}
+}
+
+func TestFailureAfterPartialTARWriteCleansTemporaryOutput(t *testing.T) {
+	for _, id := range []ID{TAR, TGZ} {
+		t.Run(string(id), func(t *testing.T) {
+			root := t.TempDir()
+			src := filepath.Join(root, "large.bin")
+			if err := os.WriteFile(src, bytes.Repeat([]byte("partial-failure-check-"), 1<<17), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			f, _ := Lookup(id)
+			out := filepath.Join(root, "existing"+f.Ext)
+			if err := os.WriteFile(out, []byte("keep this destination"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			delayed, truncated := false, false
+			res := Create(context.Background(), Request{Format: id, Sources: []string{src}, Output: out, Overwrite: true}, ops.Hooks{Progress: func(p ops.Progress) {
+				if p.Phase == "compressing" && p.DoneBytes == 0 && !delayed {
+					delayed = true
+					time.Sleep(120 * time.Millisecond)
+					return
+				}
+				if p.Phase == "compressing" && p.DoneBytes > 0 && !truncated {
+					truncated = true
+					if err := os.Truncate(src, 0); err != nil {
+						t.Errorf("truncate source mid-stream: %v", err)
+					}
+				}
+			}})
+			if !truncated || res.Fatal == nil || res.Created() {
+				t.Fatalf("expected a fatal read failure after partial output, truncated=%v result=%+v", truncated, res)
+			}
+			if got, err := os.ReadFile(out); err != nil || string(got) != "keep this destination" {
+				t.Fatalf("existing destination changed: %q (%v)", got, err)
+			}
+			noLeftovers(t, root)
+		})
+	}
+}
+
+func TestDestinationCreatedDuringCompressionIsPreserved(t *testing.T) {
+	for _, id := range []ID{ZIP, TAR, TGZ, TGZ2, TXZ, TZST, TBZ2, TLZ4, GZ, XZ, ZST, BZ2, LZ4} {
+		t.Run(string(id), func(t *testing.T) {
+			root := t.TempDir()
+			src := filepath.Join(root, "input.txt")
+			if err := os.WriteFile(src, []byte("source"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			f, _ := Lookup(id)
+			out := filepath.Join(root, "late"+f.Ext)
+			created := false
+			res := Create(context.Background(), Request{Format: id, Sources: []string{src}, Output: out}, ops.Hooks{Progress: func(p ops.Progress) {
+				if p.Phase == "compressing" && !created {
+					created = true
+					if err := os.WriteFile(out, []byte("appeared during operation"), 0o644); err != nil {
+						t.Errorf("create destination during operation: %v", err)
+					}
+				}
+			}})
+			if !created || !errors.Is(res.Fatal, ErrExists) {
+				t.Fatalf("late conflict not refused: %s", res.Summary())
+			}
+			if got, err := os.ReadFile(out); err != nil || string(got) != "appeared during operation" {
+				t.Fatalf("late destination changed: %q (%v)", got, err)
+			}
+			noLeftovers(t, root)
+		})
 	}
 }

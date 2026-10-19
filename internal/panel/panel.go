@@ -80,8 +80,8 @@ type Panel struct {
 	seq     uint64 // sequence of the most recent load request
 	loading bool
 
-	// arc is set while the panel shows the inside of a ZIP archive (a
-	// virtual directory). Paths are then virtual: archive path + "/" +
+	// arc is set while the panel shows the inside of a ZIP or TAR-family
+	// archive (a virtual directory). Paths are then virtual: archive path + "/" +
 	// inner path (see archive.VirtualPath). The UI checks InArchive before
 	// any operation that would treat them as real paths.
 	arc *archive.Archive
@@ -423,8 +423,8 @@ func (p *Panel) CancelLoad() bool {
 	return p.loading
 }
 
-// OpenArchive reads the ZIP archive at path and shows its root folder. On
-// failure the panel stays where it is (Apply returns the error).
+// OpenArchive indexes a supported ZIP or TAR-family archive at path and shows
+// its root folder. On failure the panel stays where it is (Apply returns the error).
 func (p *Panel) OpenArchive(path string) tea.Cmd {
 	p.seq++
 	p.beginLoad(path)

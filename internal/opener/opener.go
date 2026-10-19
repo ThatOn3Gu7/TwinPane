@@ -86,7 +86,7 @@ const (
 	ActShare                  // run Argv: Android share sheet
 	ActView                   // TwinPane's text viewer
 	ActEdit                   // the text editor
-	ActBrowse                 // browse as a ZIP archive
+	ActBrowse                 // browse a supported archive read-only
 	ActCustom                 // ask for a program to run with the file
 )
 
@@ -134,8 +134,8 @@ var asTypes = []struct{ label, mime string }{
 }
 
 // Choices returns the Open-with list for a file of type t at the absolute
-// path. zip reports that the file can be browsed as a ZIP archive.
-func (p Platform) Choices(t Type, path string, zip bool) []Choice {
+// path. browse reports that the file can be browsed as a supported archive.
+func (p Platform) Choices(t Type, path string, browse bool) []Choice {
 	var out []Choice
 	defLabel := "Default app"
 	if p.Termux {
@@ -149,7 +149,7 @@ func (p Platform) Choices(t Type, path string, zip bool) []Choice {
 		out = append(out, Choice{Action: ActExternal, Label: defLabel, Disabled: true, Why: p.Why})
 	}
 	if p.Termux && p.HasOpener() {
-		if (t.Kind == Unknown || t.Kind == Program) && !zip {
+		if (t.Kind == Unknown || t.Kind == Program) && !browse {
 			// Android cannot tell what the file is: let the user say,
 			// then choose an app for that type
 			for _, at := range asTypes {
@@ -163,8 +163,8 @@ func (p Platform) Choices(t Type, path string, zip bool) []Choice {
 	}
 	out = append(out, Choice{Action: ActView, Label: "Built-in viewer", Detail: "text, read-only"})
 	out = append(out, Choice{Action: ActEdit, Label: "Text editor", Detail: "$VISUAL / $EDITOR"})
-	if zip {
-		out = append(out, Choice{Action: ActBrowse, Label: "Browse as ZIP archive", Detail: "inside TwinPane"})
+	if browse {
+		out = append(out, Choice{Action: ActBrowse, Label: "Browse archive (read-only)", Detail: "inside TwinPane"})
 	}
 	if argv, ok := p.ShareArgv(path); ok {
 		out = append(out, Choice{Action: ActShare, Label: "Share…", Detail: "send to another app (Android share sheet)", Argv: argv})
@@ -173,10 +173,9 @@ func (p Platform) Choices(t Type, path string, zip bool) []Choice {
 	return out
 }
 
-// Prefers reports whether Enter should open a file of type t with the
-// default app instead of the built-in viewer: media and documents, when an
-// external opener exists. Text, unknown files, archives and Android
-// packages (browsed as ZIP) keep their built-in handling.
+// Prefers reports whether Enter should open a media file of type t with the
+// default app instead of the built-in viewer. Archive recognition and
+// browsing are handled separately before this check.
 func (p Platform) Prefers(t Type) bool {
 	return p.HasOpener() && t.Kind.Media()
 }

@@ -44,21 +44,24 @@ type Request struct {
 
 // Result summarises a finished creation.
 type Result struct {
-	Format   Format
-	Output   string
-	Files    int   // regular files added
-	Dirs     int   // folders added
-	Links    int   // symbolic links stored as links
-	Bytes    int64 // uncompressed bytes added
-	Size     int64 // size of the file written
-	Excluded []string
-	Errors   []ops.ItemError // items left out
-	Canceled bool
-	Fatal    error
+	Format     Format
+	Output     string
+	Files      int   // regular files added
+	Dirs       int   // folders added
+	Links      int   // symbolic links stored as links
+	Bytes      int64 // uncompressed bytes added
+	Size       int64 // size of the file written
+	Excluded   []string
+	Errors     []ops.ItemError // items left out
+	Canceled   bool
+	Fatal      error
+	CleanupErr error // failure to remove this operation's temporary output
 }
 
-// OK reports a complete file with every item included.
-func (r Result) OK() bool { return !r.Canceled && r.Fatal == nil && len(r.Errors) == 0 }
+// OK reports a complete file with every item included and no cleanup failure.
+func (r Result) OK() bool {
+	return !r.Canceled && r.Fatal == nil && len(r.Errors) == 0 && r.CleanupErr == nil
+}
 
 // Created reports whether the output file was written.
 func (r Result) Created() bool { return !r.Canceled && r.Fatal == nil }
@@ -69,30 +72,35 @@ func (r Result) Summary() string {
 	if name == "" {
 		name = "Archive"
 	}
+	var s string
 	switch {
 	case r.Fatal != nil:
-		return fmt.Sprintf("%s not created: %v", name, r.Fatal)
+		s = fmt.Sprintf("%s not created: %v", name, r.Fatal)
 	case r.Canceled:
 		if r.Format.Kind == Single {
-			return name + " compression cancelled — no file was written"
+			s = name + " compression cancelled — no file was written"
+		} else {
+			s = name + " creation cancelled — no archive was written"
 		}
-		return name + " creation cancelled — no archive was written"
+	default:
+		if r.Format.Kind == Single {
+			s = fmt.Sprintf("Created %s (%s → %s)", filepath.Base(r.Output), humanSize(r.Bytes), humanSize(r.Size))
+		} else {
+			items := plural(r.Files, "file")
+			if r.Dirs > 0 {
+				items += ", " + plural(r.Dirs, "folder")
+			}
+			if r.Links > 0 {
+				items += ", " + plural(r.Links, "link")
+			}
+			s = fmt.Sprintf("Created %s (%s, %s)", filepath.Base(r.Output), items, humanSize(r.Size))
+		}
+		if len(r.Errors) > 0 {
+			s += fmt.Sprintf(" — %s could not be added", plural(len(r.Errors), "item"))
+		}
 	}
-	var s string
-	if r.Format.Kind == Single {
-		s = fmt.Sprintf("Created %s (%s → %s)", filepath.Base(r.Output), humanSize(r.Bytes), humanSize(r.Size))
-	} else {
-		items := plural(r.Files, "file")
-		if r.Dirs > 0 {
-			items += ", " + plural(r.Dirs, "folder")
-		}
-		if r.Links > 0 {
-			items += ", " + plural(r.Links, "link")
-		}
-		s = fmt.Sprintf("Created %s (%s, %s)", filepath.Base(r.Output), items, humanSize(r.Size))
-	}
-	if len(r.Errors) > 0 {
-		s += fmt.Sprintf(" — %s could not be added", plural(len(r.Errors), "item"))
+	if r.CleanupErr != nil {
+		s += " — temporary cleanup failed: " + r.CleanupErr.Error()
 	}
 	return s
 }
@@ -124,7 +132,7 @@ func Create(ctx context.Context, req Request, hooks ops.Hooks) Result {
 	case f.ID == ZIP:
 		z := archive.Create(ctx, archive.CreateRequest{Sources: req.Sources, Output: t.out, Overwrite: req.Overwrite, Level: level}, hooks)
 		return Result{Format: f, Output: z.Output, Files: z.Files, Dirs: z.Dirs, Links: z.Links, Bytes: z.Bytes,
-			Size: z.Size, Excluded: z.Excluded, Errors: z.Errors, Canceled: z.Canceled, Fatal: z.Fatal}
+			Size: z.Size, Excluded: z.Excluded, Errors: z.Errors, Canceled: z.Canceled, Fatal: z.Fatal, CleanupErr: z.CleanupErr}
 	case f.ID == SevenZ:
 		create7z(ctx, req, t, level, hooks, &res)
 	case f.Kind == Single:
@@ -308,18 +316,29 @@ func newTempOut(dir string) (*tempOut, error) {
 	}
 	t := &tempOut{f: f, name: f.Name()}
 	if t.info, err = f.Stat(); err != nil {
-		t.discard()
-		return nil, err
+		return nil, errors.Join(err, t.discard())
 	}
 	return t, nil
 }
 
-// discard removes the temporary file unless it was placed.
-func (t *tempOut) discard() {
-	if !t.placed {
-		t.f.Close()
-		os.Remove(t.name)
+// discard removes the temporary file unless it was placed. Only this
+// operation's uniquely named output is touched; cleanup errors are retained.
+func (t *tempOut) discard() error {
+	if t.placed {
+		return nil
 	}
+	var closeErr error
+	if t.f != nil {
+		closeErr = t.f.Close()
+		if errors.Is(closeErr, os.ErrInvalid) {
+			closeErr = nil // finish may already have closed it
+		}
+	}
+	removeErr := os.Remove(t.name)
+	if errors.Is(removeErr, fs.ErrNotExist) {
+		removeErr = nil
+	}
+	return errors.Join(closeErr, removeErr)
 }
 
 // finish syncs and closes the file and renames it onto out.
@@ -327,10 +346,11 @@ func (t *tempOut) finish(out string, overwrite bool) (int64, error) {
 	if err := t.f.Sync(); err != nil && !errors.Is(err, os.ErrInvalid) {
 		return 0, err
 	}
-	var size int64
-	if fi, err := t.f.Stat(); err == nil {
-		size = fi.Size()
+	fi, err := t.f.Stat()
+	if err != nil {
+		return 0, err
 	}
+	size := fi.Size()
 	if err := t.f.Close(); err != nil {
 		return 0, err
 	}
@@ -480,7 +500,11 @@ func createTar(ctx context.Context, req Request, t target, f Format, level int, 
 		res.Fatal = err
 		return
 	}
-	defer tmp.discard()
+	defer func() {
+		if err := tmp.discard(); err != nil {
+			res.CleanupErr = errors.Join(res.CleanupErr, fmt.Errorf("could not remove temporary output %s: %w", tmp.name, err))
+		}
+	}()
 	skip := func(fi fs.FileInfo) bool {
 		return fi.Mode().IsRegular() && (os.SameFile(fi, tmp.info) || (t.outInfo != nil && os.SameFile(fi, t.outInfo)))
 	}
@@ -503,8 +527,20 @@ func createTar(ctx context.Context, req Request, t target, f Format, level int, 
 		res.Fatal = err
 		return
 	}
+	cwClosed := false
+	defer func() {
+		if !cwClosed {
+			_ = cw.Close() // release codec resources; the partial output is discarded below
+		}
+	}()
 	counter := &countWriter{w: cw}
 	tw := tar.NewWriter(counter)
+	twClosed := false
+	defer func() {
+		if !twClosed {
+			_ = tw.Close()
+		}
+	}()
 	buf := make([]byte, 256<<10)
 	for _, it := range sr.items {
 		if ctx.Err() != nil {
@@ -523,11 +559,19 @@ func createTar(ctx context.Context, req Request, t target, f Format, level int, 
 		rep.p.DoneItems++
 		rep.report(false)
 	}
-	for _, step := range []func() error{tw.Close, cw.Close, bw.Flush} {
-		if err := step(); err != nil {
-			res.Fatal = fatal(err)
-			return
-		}
+	if err := tw.Close(); err != nil {
+		res.Fatal = fatal(err)
+		return
+	}
+	twClosed = true
+	if err := cw.Close(); err != nil {
+		res.Fatal = fatal(err)
+		return
+	}
+	cwClosed = true
+	if err := bw.Flush(); err != nil {
+		res.Fatal = fatal(err)
+		return
 	}
 	if res.Size, err = tmp.finish(t.out, req.Overwrite); err != nil {
 		res.Fatal = fatal(err)
@@ -638,7 +682,11 @@ func createSingle(ctx context.Context, req Request, t target, f Format, level in
 		res.Fatal = err
 		return
 	}
-	defer tmp.discard()
+	defer func() {
+		if err := tmp.discard(); err != nil {
+			res.CleanupErr = errors.Join(res.CleanupErr, fmt.Errorf("could not remove temporary output %s: %w", tmp.name, err))
+		}
+	}()
 	rep.p = ops.Progress{Phase: "compressing", TotalItems: 1, TotalBytes: fi.Size(), Current: src}
 	rep.report(true)
 	bw := bufio.NewWriterSize(tmp.f, 256<<10)
@@ -647,6 +695,12 @@ func createSingle(ctx context.Context, req Request, t target, f Format, level in
 		res.Fatal = err
 		return
 	}
+	cwClosed := false
+	defer func() {
+		if !cwClosed {
+			_ = cw.Close() // release codec resources; the partial output is discarded below
+		}
+	}()
 	n, err := copyData(ctx, cw, in, -1, make([]byte, 256<<10), rep)
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
@@ -656,11 +710,14 @@ func createSingle(ctx context.Context, req Request, t target, f Format, level in
 		}
 		return
 	}
-	for _, step := range []func() error{cw.Close, bw.Flush} {
-		if err := step(); err != nil {
-			res.Fatal = fatal(err)
-			return
-		}
+	if err := cw.Close(); err != nil {
+		res.Fatal = fatal(err)
+		return
+	}
+	cwClosed = true
+	if err := bw.Flush(); err != nil {
+		res.Fatal = fatal(err)
+		return
 	}
 	if res.Size, err = tmp.finish(t.out, req.Overwrite); err != nil {
 		res.Fatal = fatal(err)

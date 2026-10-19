@@ -8,6 +8,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/ThatOn3Gu7/TwinPane/internal/archive"
 	"github.com/ThatOn3Gu7/TwinPane/internal/fsys"
 	"github.com/ThatOn3Gu7/TwinPane/internal/scrollbar"
 	"github.com/ThatOn3Gu7/TwinPane/internal/theme"
@@ -104,8 +105,8 @@ func (p *Panel) View(th theme.Theme, active bool) string {
 		pathText := " " + fitLeft(fsys.SanitizeName(disp), w-1-ansi.StringWidth(suffix)) + suffix
 		lines = append(lines, badge+pathStyle.Render(fit(pathText, w)))
 	case p.arc != nil:
-		// Inside an archive: a "ZIP" badge, then "archive ▸ folder".
-		badge := th.ArchiveBadge.Render("ZIP")
+		// Inside an archive: its format badge, then "archive ▸ folder".
+		badge := th.ArchiveBadge.Render(p.arc.Format.Name())
 		bw := lipgloss.Width(badge)
 		if bw+4 > l.innerW {
 			badge, bw = "", 0
@@ -484,9 +485,16 @@ func (p *Panel) archiveInfo(e fsys.Entry) string {
 	case ae.IsDir:
 		s = "folder"
 	case ae.Symlink:
-		s = "symbolic link (not extracted)"
+		s = "link (never followed or extracted)"
+		if ae.LinkTarget != "" {
+			s += " → " + fsys.SanitizeName(ae.LinkTarget)
+		}
 	default:
-		s = fsys.HumanSize(int64(ae.Size)) + " (" + fsys.HumanSize(int64(ae.Packed)) + " packed, " + ae.MethodName() + ")"
+		if p.arc.Format.Format == archive.FormatTAR {
+			s = fsys.HumanSize(int64(ae.Size)) + " (" + ae.MethodName() + ")"
+		} else {
+			s = fsys.HumanSize(int64(ae.Size)) + " (" + fsys.HumanSize(int64(ae.Packed)) + " packed, " + ae.MethodName() + ")"
+		}
 	}
 	if !ae.Modified.IsZero() {
 		s += "  " + ae.Modified.Format("2006-01-02 15:04")
@@ -500,7 +508,7 @@ func (p *Panel) archiveInfo(e fsys.Entry) string {
 func (p *Panel) summaryText(w int) string {
 	left := fmt.Sprintf(" %d dirs  %d files", p.listing.Dirs, p.listing.Files)
 	if p.arc != nil {
-		left = " ZIP, read-only ·" + left[1:]
+		left = " " + p.arc.Format.Name() + ", read-only ·" + left[1:]
 	}
 	if p.rem != nil {
 		left = " " + p.rem.Remote.Name + ": ·" + left[1:]

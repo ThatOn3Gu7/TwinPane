@@ -17,7 +17,7 @@ import (
 
 // ExtractRequest describes an extraction.
 type ExtractRequest struct {
-	Archive string   // path of the ZIP file
+	Archive string   // path of the archive or compressed file
 	Members []string // inner paths to extract (files or folders, recursively); empty = the whole archive
 	Base    string   // inner folder the members are relative to: Base/x/y is written to DestDir/x/y
 	DestDir string   // absolute path; created if it does not exist
@@ -29,19 +29,20 @@ type ExtractRequest struct {
 
 // ExtractResult summarises a finished extraction.
 type ExtractResult struct {
-	Dest       string
-	Files      int   // files written
-	Dirs       int   // folders created
-	Bytes      int64 // bytes written
-	Skipped    int   // existing files kept (conflict: skip)
-	Links      int   // symbolic links in the selection (never extracted)
-	Unsafe     int   // unsafe names in the archive (never extracted)
-	Special    int   // devices, FIFOs and other special files (never extracted)
-	Duplicates int   // repeated names in a TAR archive (the first one is kept)
-	Errors     []ops.ItemError
-	Canceled   bool
-	Fatal      error
-	Top        []string // top-level names written in Dest, in order
+	Dest        string
+	Files       int   // files written
+	Dirs        int   // folders created
+	Bytes       int64 // bytes written
+	Skipped     int   // existing files kept (conflict: skip)
+	Links       int   // symbolic links in the selection (never extracted)
+	UnsafeLinks int   // TAR links with absolute or escaping targets (never followed)
+	Unsafe      int   // unsafe names in the archive (never extracted)
+	Special     int   // devices, FIFOs and other special files (never extracted)
+	Duplicates  int   // repeated names in a TAR archive (the first one is kept)
+	Errors      []ops.ItemError
+	Canceled    bool
+	Fatal       error
+	Top         []string // top-level names written in Dest, in order
 }
 
 // OK reports a complete run without errors (skips and links are not errors).
@@ -57,7 +58,10 @@ func (r ExtractResult) Summary() string {
 		s += fmt.Sprintf(", kept %d existing", r.Skipped)
 	}
 	if r.Links > 0 {
-		s += fmt.Sprintf(", %s not extracted", plural(r.Links, "symbolic link"))
+		s += fmt.Sprintf(", %s not extracted", plural(r.Links, "link"))
+	}
+	if r.UnsafeLinks > 0 {
+		s += fmt.Sprintf(", %s refused", plural(r.UnsafeLinks, "unsafe link"))
 	}
 	if r.Special > 0 {
 		s += fmt.Sprintf(", %s not extracted", plural(r.Special, "special file"))
@@ -139,7 +143,7 @@ func Extract(ctx context.Context, req ExtractRequest, hooks ops.Hooks) ExtractRe
 	}
 	defer zr.Close()
 	a := build(zr.File)
-	res.Unsafe = len(a.Unsafe)
+	res.Unsafe = a.UnsafeCount
 	byRaw := map[string]*zip.File{}
 	for _, f := range zr.File {
 		if _, ok := byRaw[f.Name]; !ok {

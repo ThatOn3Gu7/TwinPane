@@ -201,7 +201,7 @@ func TestChoices(t *testing.T) {
 		t.Errorf("termux unknown: %s", got)
 	}
 	got = labels(termux.Choices(Type{Kind: APK}, "/s/a.apk", true))
-	if got != "Android: default app, Android: choose app…, Built-in viewer, Text editor, Browse as ZIP archive, Share…, Run a program…" {
+	if got != "Android: default app, Android: choose app…, Built-in viewer, Text editor, Browse archive (read-only), Share…, Run a program…" {
 		t.Errorf("termux apk: %s", got)
 	}
 	for _, c := range termux.Choices(Type{Kind: Unknown}, "/s/blob", false) {

@@ -41,9 +41,9 @@ func ExtractAny(ctx context.Context, req ExtractRequest, hooks ops.Hooks) Extrac
 	switch info.Format {
 	case FormatZIP:
 		return Extract(ctx, req, hooks)
-	case FormatTAR, FormatSingle, Format7z, FormatRAR:
+	case FormatSingle, Format7z, FormatRAR:
 		if len(req.Members) > 0 {
-			return ExtractResult{Dest: req.DestDir, Fatal: fmt.Errorf("%s archives can only be extracted as a whole", info.Name())}
+			return ExtractResult{Dest: req.DestDir, Fatal: fmt.Errorf("%s can only be extracted as a whole", info.Name())}
 		}
 	}
 	switch info.Format {
@@ -105,69 +105,193 @@ func lowSpace(dest string, need int64, hooks ops.Hooks) bool {
 // ---- TAR ----------------------------------------------------------------------
 
 func extractTar(ctx context.Context, req ExtractRequest, codec Codec, hooks ops.Hooks) ExtractResult {
-	res := ExtractResult{}
+	res := ExtractResult{Dest: req.DestDir}
 	if ctx.Err() != nil {
 		res.Canceled = true
-		res.Dest = req.DestDir
 		return res
 	}
-	rep := &reporter{hooks: hooks, p: ops.Progress{Phase: "extracting", ByteOnly: true}}
+	index, err := Open(req.Archive)
+	if err != nil {
+		res.Fatal = err
+		return res
+	}
+	if index.Format.Format != FormatTAR || index.Format.Codec != codec {
+		res.Fatal = errors.New("the archive format changed while extraction was starting")
+		return res
+	}
+	res.Unsafe, res.Duplicates = index.UnsafeCount, index.Duplicates
+
+	base := strings.Trim(req.Base, "/")
+	if base != "" {
+		clean, _, ok := cleanName(base)
+		if !ok || clean != base {
+			res.Fatal = fmt.Errorf("unsafe extraction base %q", req.Base)
+			return res
+		}
+	}
+	members := append([]string(nil), req.Members...)
+	if len(members) == 0 {
+		members = []string{base}
+	}
+	for i, member := range members {
+		if member == "" && base == "" {
+			members[i] = ""
+			continue
+		}
+		clean, _, ok := cleanName(member)
+		if !ok || clean != member {
+			res.Fatal = fmt.Errorf("unsafe archive member %q", member)
+			return res
+		}
+		if base != "" && clean != base && !strings.HasPrefix(clean, base+"/") {
+			res.Fatal = fmt.Errorf("archive member %q is outside %s", member, base)
+			return res
+		}
+		members[i] = clean
+	}
+
+	type selectedEntry struct {
+		entry *Entry
+		rel   string
+	}
+	var todo []selectedEntry
+	seen := map[string]bool{}
+	for _, member := range members {
+		entries := index.Walk(member)
+		if entries == nil {
+			res.Errors = append(res.Errors, ops.ItemError{Path: member, Op: "extract", Err: ErrNotFound})
+			continue
+		}
+		for _, e := range entries {
+			if e.Implicit {
+				continue // created with its selected descendants, never a TAR record
+			}
+			if seen[e.Inner] {
+				continue
+			}
+			seen[e.Inner] = true
+			rel := e.Inner
+			if base != "" {
+				switch {
+				case e.Inner == base:
+					rel = ""
+				case strings.HasPrefix(e.Inner, base+"/"):
+					rel = strings.TrimPrefix(e.Inner, base+"/")
+				default:
+					res.Errors = append(res.Errors, ops.ItemError{Path: e.Inner, Op: "extract", Err: fmt.Errorf("not inside %s", base)})
+					continue
+				}
+			}
+			todo = append(todo, selectedEntry{entry: e, rel: rel})
+		}
+	}
+
+	var total int64
+	files := 0
+	for _, it := range todo {
+		if it.entry.IsDir || it.entry.Symlink || it.entry.Supported() != nil {
+			continue
+		}
+		files++
+		total += int64(it.entry.Size)
+	}
+	rep := &reporter{hooks: hooks, p: ops.Progress{Phase: "extracting", TotalItems: files, TotalBytes: total, ByteOnly: true}}
 	dest, err := prepareDest(req.DestDir)
 	res.Dest = dest
 	if err != nil {
 		res.Fatal = err
 		return res
 	}
-	r, closeFn, fi, err := openStream(req, codec, rep)
+	if codec == CodecNone && lowSpace(dest, total, hooks) {
+		res.Canceled = true
+		return res
+	}
+	r, closeFn, _, err := openStream(req, codec, rep)
 	if err != nil {
 		res.Fatal = err
 		return res
 	}
 	defer closeFn()
-	if codec == CodecNone && lowSpace(dest, fi.Size(), hooks) {
-		res.Canceled = true
-		return res
-	}
 	rep.report(true)
 	x := &extractor{ctx: ctx, dest: dest, res: &res, rep: rep, hooks: hooks, top: map[string]bool{}, srcBytes: true}
-	tr := tar.NewReader(r)
-	seen := map[string]bool{}
-	for {
+	probe := &tarProbeReader{r: &tarLimitReader{r: r}}
+	tr := tar.NewReader(probe)
+	selected := make(map[string]selectedEntry, len(todo))
+	for _, it := range todo {
+		selected[it.entry.Inner] = it
+	}
+	written := map[string]bool{}
+	for n := 0; ; n++ {
+		if n >= maxTARIndexEntries {
+			res.Fatal = ErrTARLimit
+			break
+		}
 		if ctx.Err() != nil {
 			res.Canceled = true
 			break
 		}
 		h, err := tr.Next()
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
+			if endErr := verifyTAREnd(probe); endErr != nil {
+				res.Fatal = damaged(endErr)
+			}
 			break
+		}
+		if errors.Is(err, tar.ErrInsecurePath) && h != nil {
+			err = nil
 		}
 		if err != nil {
 			res.Fatal = damaged(err)
 			break
 		}
-		inner, _, ok := cleanName(h.Name)
-		if !ok {
-			res.Unsafe++
+		if h.Typeflag == tar.TypeXGlobalHeader {
 			continue
 		}
+		inner, _, ok := cleanName(h.Name)
+		if !ok {
+			continue
+		}
+		it, ok := selected[inner]
+		if !ok || written[inner] {
+			continue
+		}
+		written[inner] = true
 		switch h.Typeflag {
 		case tar.TypeDir:
-			x.dir(inner)
-		case tar.TypeReg, '\x00', tar.TypeGNUSparse:
-			if seen[inner] {
-				res.Duplicates++
-				continue
+			if !it.entry.IsDir {
+				res.Fatal = errors.New("the archive changed while extracting a selected entry")
+				break
 			}
-			seen[inner] = true
-			x.file(inner, inner, tr, h.FileInfo(), damaged)
+			if it.rel != "" {
+				x.dir(it.rel)
+			}
+		case tar.TypeReg, tar.TypeRegA, tar.TypeGNUSparse:
+			if it.entry.IsDir || it.entry.Symlink || it.entry.Supported() != nil {
+				res.Fatal = errors.New("the archive changed while extracting a selected entry")
+				break
+			}
+			x.file(inner, it.rel, tr, h.FileInfo(), damaged)
 		case tar.TypeSymlink, tar.TypeLink:
-			res.Links++
-		case tar.TypeXGlobalHeader:
+			if !it.entry.Symlink {
+				res.Fatal = errors.New("the archive changed while extracting a selected entry")
+				break
+			}
+			res.Links++ // links are reported but are never followed or created
+			if it.entry.UnsafeLink {
+				res.UnsafeLinks++
+			}
 		default:
-			res.Special++ // devices, FIFOs, …
+			res.Special++ // devices, FIFOs and other unsupported types
 		}
 		if res.Canceled || res.Fatal != nil {
 			break
+		}
+	}
+	if !res.Canceled && res.Fatal == nil {
+		for _, it := range todo {
+			if !written[it.entry.Inner] {
+				res.Errors = append(res.Errors, ops.ItemError{Path: it.entry.Inner, Op: "extract", Err: ErrNotFound})
+			}
 		}
 	}
 	rep.p.Current = ""

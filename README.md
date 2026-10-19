@@ -103,17 +103,17 @@ The [user guide](docs/USER_GUIDE.md) describes every feature in detail.
   generated. See the [directory comparison guide](docs/USER_GUIDE.md#directory-comparison-d).
 
 **Archives**
-- ZIP files (including `.jar`, `.apk` and `.epub`): browse like a folder
-  without extracting, view entries, and extract safely (`x`, `X`). Only
-  "stored" and "deflate" entries can be read; encrypted entries are listed
-  but not extracted.
+- ZIP files (including `.jar`, `.apk` and `.epub`) and TAR archives (`.tar`,
+  `.tar.gz`/`.tgz`, `.tar.bz2`/`.tbz2`, `.tar.xz`/`.txz`, `.tar.zst`/`.tzst`)
+  browse like read-only folders without extracting everything. View entries
+  and selectively extract them with `x`; `X` extracts the whole archive.
+  Encrypted ZIP entries and unsafe or unsupported entries are not extracted.
 - Create archives (`z`): ZIP, TAR, TAR.GZ, TAR.XZ, TAR.ZST, TAR.BZ2, TAR.LZ4,
-  and single-file GZIP, XZ, ZSTD, BZIP2 and LZ4, all built in. 7Z needs an
-  installed 7-Zip (`7zz`, `7z`, `7za` or `7zr`).
-- Only ZIP archives can be browsed and extracted entry by entry. TAR,
-  compressed TAR, single compressed files, and 7Z and RAR (with an
-  installed 7-Zip) can be extracted as a whole with `x`, never browsed or
-  partially extracted.
+  and single-file GZIP, XZ, ZSTD, BZIP2 and LZ4, all built in. A modal progress
+  dialog stays open through completion or failure. 7Z needs an installed
+  7-Zip (`7zz`, `7z`, `7za` or `7zr`).
+- Single compressed files and 7Z/RAR (with an installed 7-Zip) can be
+  extracted as a whole with `x`; they are not browsable or partially extracted.
 
 **Viewing, editing and opening**
 - Read-only text viewer (`v`, or `Enter` on a text file) with wrapping, line
@@ -156,7 +156,8 @@ archives in place.
 - **Extraction of more formats** (`x` on the file): TAR, TAR.GZ/TGZ,
   TAR.BZ2, TAR.XZ, TAR.ZST, TAR.LZ4 and single GZ, BZ2, XZ, ZST, LZ4 files
   are built in; 7Z and RAR use an installed 7-Zip (links inside them are
-  never created). Browsing stays ZIP-only.
+  never created). ZIP and TAR-family archives are browsable read-only and
+  support selective extraction; single compressed files and 7Z/RAR are not.
 - **Refresh moved from `Ctrl+R` to `Ctrl+L`** (`Ctrl+R` now opens Sources).
 
 ## Supported platforms

@@ -95,8 +95,8 @@ func (a *App) menuEntries() (title string, entries []menuEntry) {
 		switch {
 		case e.IsDir:
 			add(menuEntry{label: "Open folder", send: "enter"})
-		case archive.Sniff(e.Path) && looksLikeZip(e.Name):
-			add(menuEntry{label: "Browse ZIP archive", send: "enter"})
+		case a.isBrowsableArchive(e.Path):
+			add(menuEntry{label: "Browse archive (read-only)", send: "enter"})
 		default:
 			if plat, ok := a.preferExternal(e); ok {
 				add(menuEntry{label: "Open (default app)", detail: plat.Name, key: "o", send: "o"})
