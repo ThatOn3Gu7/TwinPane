@@ -6,6 +6,8 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
+
+	"github.com/ThatOn3Gu7/TwinPane/internal/foldersize"
 )
 
 // barItem is one item of the context hint bar at the bottom of the screen.
@@ -454,4 +456,41 @@ func keyFor(s string) tea.KeyMsg {
 		return tea.KeyMsg{Type: tea.KeySpace, Runes: []rune{' '}}
 	}
 	return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(s)}
+}
+
+// advancedSearchHints is the hint bar of Advanced Search: read-only result
+// navigation, plus the mode switch and help.
+func (a *App) advancedSearchHints() []barItem {
+	return []barItem{
+		item("↑↓", "move", ""),
+		item("Enter", "inspect read-only", "enter"),
+		item("^T", "toggle files/content", "ctrl+t"),
+		item("?", "help", "?"),
+		item("Esc", "close", "esc"),
+	}
+}
+
+// folderSizeHints is the hint bar of folder-size analysis. It follows the
+// scan state: only Esc while loading, retry after a failure, and the sort /
+// navigation keys once there is a result.
+func (a *App) folderSizeHints() []barItem {
+	v := a.folderSize
+	if v == nil {
+		return nil
+	}
+	if v.loading {
+		return []barItem{item("Esc", "cancel scan", "esc")}
+	}
+	if v.result == nil || v.root == nil {
+		return []barItem{item("r", "retry scan", "r"), item("?", "keys/semantics", "?"), item("Esc", "close", "esc")}
+	}
+	out := []barItem{
+		item("Enter", "open directory", "enter"), item("←", "parent", "left"),
+		item("s", "size", "s"), item("n", "name", "n"), item("r", "refresh", "r"),
+	}
+	if foldersize.AllocatedSizeSupported() {
+		out = append(out, item("a", "allocated sort", "a"))
+	}
+	out = append(out, item("?", "keys/semantics", "?"), item("Esc", "close", "esc"))
+	return out
 }

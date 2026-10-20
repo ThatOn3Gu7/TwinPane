@@ -9,6 +9,26 @@ The complete description of every feature is in
 
 ## [Unreleased]
 
+### Changed
+- **One visual language for search and analysis.** Live filename search (`/`),
+  Advanced Search and folder-size analysis (`A`) now share the same bordered
+  sections, aligned columns, selection highlight, scroll thumbs and status
+  lines, and reflow instead of breaking on narrow or short terminals.
+- **Advanced Search:** the query and progress live in their own bordered
+  section; results (`Results · N`) and the preview (`Preview · name`) are
+  separate panels that stack when space is tight. Previews are syntax
+  highlighted with Chroma and paint content matches in the match colour, so
+  they no longer blend into strings and comments.
+- **Live filename search:** a `Find files by name` section shows the search
+  root and the `Type a filename or path…` placeholder above a separate
+  `Results · N` list; counts and hidden-file information no longer share a
+  line with the keyboard hints.
+- **Folder-size analysis:** a compact bordered summary (target, path,
+  apparent/allocated size, counts), a `Largest items` table with aligned
+  `NAME`/`TYPE`/`SIZE`/`SHARE` columns and proportional bars, a details panel
+  for the selection when it fits, and a separate status line for progress,
+  issues and sorting.
+
 ## [0.9.0]
 
 Advanced Search, reviewable directory comparison, folder-size analysis,

@@ -3,52 +3,93 @@ package ui
 import (
 	"fmt"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/ThatOn3Gu7/TwinPane/internal/fsys"
+	"github.com/ThatOn3Gu7/TwinPane/internal/scrollbar"
 	"github.com/ThatOn3Gu7/TwinPane/internal/textview"
+	"github.com/ThatOn3Gu7/TwinPane/internal/theme"
 )
 
+// advancedSearchLayout is the responsive geometry of Advanced Search. The
+// top section always holds the query; the results and the preview get their
+// own bordered panels. Wide terminals show the panes side by side, narrow or
+// short ones stack them (results first), and very small terminals fall back to
+// a borderless list so the content is never squeezed out.
 type advancedSearchLayout struct {
-	wide                    bool
-	compact                 bool
-	width, height           int
-	leftWidth, rightWidth   int
-	resultTop, resultRows   int // resultTop is an absolute screen row
-	previewTop, previewRows int
+	compact bool
+	wide    bool
+
+	width, height int
+	searchH       int // height of the bordered search section
+
+	resultsW, resultsH int
+	previewW, previewH int
+	gap                int
+
+	resultTop  int // body row of the first result row
+	resultRows int
+	previewTop int // body row of the first preview row
 }
 
 func (a *App) advancedLayout(bodyHeight int) advancedSearchLayout {
 	h := max(1, bodyHeight)
 	w := max(1, a.width)
-	layout := advancedSearchLayout{width: w, height: h, wide: w >= 80}
-	if layout.wide && h >= 6 {
-		inner := max(1, w-2)
-		layout.leftWidth = max(28, inner*42/100)
-		layout.rightWidth = max(1, inner-layout.leftWidth-1)
-		layout.resultTop, layout.resultRows = 6, max(1, h-5)
-		return layout
-	}
-	if !layout.wide && h >= 8 {
-		layout.leftWidth = max(1, w-2)
-		layout.rightWidth = layout.leftWidth
-		available := h - 6 // four shared header rows and two pane headings
-		layout.resultRows = max(1, (available+1)/2)
-		layout.previewRows = max(0, available-layout.resultRows)
-		layout.resultTop = 6
-		layout.previewTop = 7 + layout.resultRows
-		return layout
+	l := advancedSearchLayout{width: w, height: h, searchH: 4, gap: 1}
+
+	if w < 24 || h < 9 {
+		l.compact = true
+		head := 1 // title
+		switch {
+		case h >= 5:
+			head = 4 // title, root, field, status
+		case h == 4:
+			head = 3 // title (with the root on its right), field, status
+		case h == 3:
+			head = 3
+		case h == 2:
+			head = 2
+		}
+		l.resultTop = min(head, h)
+		l.resultRows = max(0, h-l.resultTop)
+		return l
 	}
 
-	layout.compact = true
-	if h <= 4 {
-		layout.resultTop, layout.resultRows = 4, max(1, h-3)
+	remaining := h - l.searchH
+	if w >= 80 && remaining >= 8 {
+		l.wide = true
+		left := max(34, (w-1)*44/100)
+		if left > w-1-30 {
+			left = w - 1 - 30
+		}
+		l.resultsW, l.previewW = left, w-1-left
+		l.resultsH, l.previewH = remaining, remaining
 	} else {
-		layout.resultTop, layout.resultRows = 5, max(1, h-4)
+		l.resultsW, l.previewW = w, w
+		if h >= 14 && remaining >= 10 && w >= 40 {
+			l.previewH = max(5, remaining*45/100)
+			l.resultsH = remaining - l.previewH
+			if l.resultsH < 5 {
+				l.resultsH = 5
+				l.previewH = remaining - 5
+			}
+			if l.previewH < 5 {
+				l.previewH = 0
+				l.resultsH = remaining
+			}
+		} else {
+			l.resultsH = remaining
+		}
 	}
-	return layout
+	l.resultTop = l.searchH + 1
+	l.resultRows = max(0, l.resultsH-2)
+	if l.previewH > 0 {
+		l.previewTop = l.searchH + l.resultsH + 1
+	}
+	return l
 }
 
 func (a *App) advancedSearchResultRows() int {
@@ -69,114 +110,148 @@ func (a *App) advancedSearchRender(bodyHeight int) string {
 	var lines []string
 	if layout.compact {
 		lines = a.advancedCompactLines(layout)
-	} else if layout.wide {
-		lines = a.advancedWideLines(layout)
 	} else {
-		lines = a.advancedStackedLines(layout)
+		lines = a.advancedSearchSection(layout)
+		if layout.wide {
+			left := a.advancedResultsBox(layout)
+			right := a.advancedPreviewBox(layout)
+			lines = append(lines, joinBlocks(left, right, layout.gap)...)
+		} else {
+			lines = append(lines, a.advancedResultsBox(layout)...)
+			if layout.previewH > 0 {
+				lines = append(lines, a.advancedPreviewBox(layout)...)
+			}
+		}
 	}
-	for len(lines) < layout.height {
-		lines = append(lines, strings.Repeat(" ", layout.width))
+	return strings.Join(fitBlock(lines, layout.height, layout.width), "\n")
+}
+
+// advancedSearchSection is the bordered query section: mode and root in the
+// heading, the input on the first row and the current search information on
+// the second. Keyboard hints stay in the hint bar at the bottom of the screen.
+func (a *App) advancedSearchSection(layout advancedSearchLayout) []string {
+	v := a.advancedSearch
+	inner := max(2, layout.width-2)
+	root := "in " + fsys.SanitizeName(shortPath(v.root))
+	title := "Advanced Search · " + a.advancedModeName()
+	body := []string{
+		a.advancedQueryLine(inner),
+		a.advancedStatusLine(inner),
 	}
-	if len(lines) > layout.height {
-		lines = lines[:layout.height]
+	return sectionBox(a.theme, title, root, body, layout.width, layout.searchH, true, nil)
+}
+
+func (a *App) advancedResultsBox(layout advancedSearchLayout) []string {
+	v := a.advancedSearch
+	inner := max(1, layout.resultsW-2)
+	title := fmt.Sprintf("Results · %d", a.advancedResultCount())
+	right := ""
+	if layout.resultsW >= 46 {
+		if v.mode == advancedFilenameMode {
+			right = "of " + plural(len(v.entries), "entry")
+		} else {
+			right = plural(int(v.contentStatus.ScannedFiles), "file") + " scanned"
+		}
 	}
-	for i := range lines {
-		lines[i] = fitWidth(lines[i], layout.width)
+	body := make([]string, layout.resultRows)
+	for row := 0; row < layout.resultRows; row++ {
+		index := v.offset + row
+		switch {
+		case index < a.advancedResultCount():
+			body[row] = a.advancedResultRow(index, inner)
+		case a.advancedResultCount() == 0 && row == 0:
+			body[row] = a.theme.Empty.Render(truncRight(a.advancedEmptyText(), inner))
+		}
 	}
-	return strings.Join(lines, "\n")
+	thumb := scrollbar.Cells(a.advancedResultCount(), layout.resultRows, v.offset, layout.resultRows)
+	return sectionBox(a.theme, title, right, body, layout.resultsW, layout.resultsH, true, thumb)
+}
+
+func (a *App) advancedPreviewBox(layout advancedSearchLayout) []string {
+	title, right := a.advancedPreviewHeading()
+	inner := max(1, layout.previewW-2)
+	body := make([]string, layout.previewH-2)
+	for row := range body {
+		body[row] = a.advancedPreviewRow(row, inner, len(body))
+	}
+	return sectionBox(a.theme, title, right, body, layout.previewW, layout.previewH, false, nil)
+}
+
+// advancedPreviewHeading names the file being previewed, mirroring the
+// "Results · N" heading of the list.
+func (a *App) advancedPreviewHeading() (title, right string) {
+	v := a.advancedSearch
+	if v == nil {
+		return "Preview", ""
+	}
+	name := ""
+	if v.mode == advancedContentMode {
+		if v.cursor >= 0 && v.cursor < len(v.contentResults) {
+			result := v.contentResults[v.cursor]
+			name = filepath.Base(result.Rel)
+			right = plural(len(result.Matches), "match")
+		}
+	} else if v.previewPath != "" {
+		name = filepath.Base(v.previewPath)
+	}
+	if name == "" {
+		return "Preview", ""
+	}
+	return "Preview · " + fsys.SanitizeName(name), right
 }
 
 func (a *App) advancedCompactLines(layout advancedSearchLayout) []string {
 	v := a.advancedSearch
 	th := a.theme
-	lines := []string{
-		fitWidth(th.HelpTitle.Render("Advanced Search · "+a.advancedModeName()), layout.width),
+	head := th.HelpTitle.Render("Advanced Search · " + a.advancedModeName())
+	rootText := "in " + fsys.SanitizeName(shortPath(v.root))
+	if layout.height >= 5 {
+		lines := []string{fitWidth(head, layout.width)}
+		lines = append(lines, th.Summary.Render(truncRight(rootText, layout.width)))
+		lines = append(lines, a.advancedQueryLine(layout.width))
+		lines = append(lines, fitWidth(a.advancedStatusLine(layout.width), layout.width))
+		return a.advancedCompactRows(layout, lines)
 	}
-	if layout.height > 4 {
-		lines = append(lines, fitWidth(th.Info.Render("in "+fsys.SanitizeName(v.root)), layout.width))
-	}
-	lines = append(lines,
-		a.advancedQueryLine(layout.width),
-		fitWidth(a.advancedStatusLine(layout.width), layout.width),
-	)
-	if len(lines) < layout.height {
-		index := v.cursor
-		if a.advancedResultCount() == 0 {
-			lines = append(lines, fitWidth(th.Empty.Render(a.advancedEmptyText()), layout.width))
-		} else {
-			lines = append(lines, a.advancedResultRow(index, layout.width))
+	if layout.width < 42 {
+		name := "Adv. search · Files"
+		if v.mode == advancedContentMode {
+			name = "Adv. search · Text"
 		}
+		head = th.HelpTitle.Render(name)
 	}
-	return lines
+	lines := []string{splitLine(head, th.Summary.Render(" "+rootText), layout.width)}
+	if layout.height >= 2 {
+		lines = append(lines, a.advancedQueryLine(layout.width))
+	}
+	if layout.height >= 3 {
+		lines = append(lines, fitWidth(a.advancedStatusLine(layout.width), layout.width))
+	}
+	return a.advancedCompactRows(layout, lines)
 }
 
-func (a *App) advancedWideLines(layout advancedSearchLayout) []string {
+// advancedCompactRows appends the visible result rows after the compact
+// header lines.
+func (a *App) advancedCompactRows(layout advancedSearchLayout, lines []string) []string {
 	v := a.advancedSearch
 	th := a.theme
-	lines := []string{
-		fitWidth(th.HelpTitle.Render("Advanced Search · "+a.advancedModeName()), layout.width),
-		fitWidth(th.Info.Render("in "+fsys.SanitizeName(v.root)), layout.width),
-		a.advancedQueryLine(layout.width),
-		fitWidth(a.advancedStatusLine(layout.width), layout.width),
-	}
-	leftHeader := th.HelpTitle.Render(fmt.Sprintf("Results · %s", plural(a.advancedResultCount(), "match")))
-	rightHeader := th.HelpTitle.Render("Preview")
-	lines = append(lines, a.advancedJoinColumns(leftHeader, rightHeader, layout))
 	for row := 0; row < layout.resultRows; row++ {
 		index := v.offset + row
-		left := strings.Repeat(" ", layout.leftWidth)
 		if index < a.advancedResultCount() {
-			left = a.advancedResultRow(index, layout.leftWidth)
-		} else if a.advancedResultCount() == 0 && row == 0 {
-			left = th.Empty.Render(truncRight(a.advancedEmptyText(), layout.leftWidth))
-		}
-		right := a.advancedPreviewRow(row, layout.rightWidth, layout.resultRows)
-		lines = append(lines, a.advancedJoinColumns(left, right, layout))
-	}
-	return lines
-}
-
-func (a *App) advancedStackedLines(layout advancedSearchLayout) []string {
-	v := a.advancedSearch
-	th := a.theme
-	lines := []string{
-		fitWidth(th.HelpTitle.Render("Advanced Search · "+a.advancedModeName()), layout.width),
-		fitWidth(th.Info.Render("in "+fsys.SanitizeName(v.root)), layout.width),
-		a.advancedQueryLine(layout.width),
-		fitWidth(a.advancedStatusLine(layout.width), layout.width),
-		fitWidth(th.HelpTitle.Render(fmt.Sprintf("Results · %s", plural(a.advancedResultCount(), "match"))), layout.width),
-	}
-	for row := 0; row < layout.resultRows; row++ {
-		index := v.offset + row
-		if index >= a.advancedResultCount() {
-			if a.advancedResultCount() == 0 && row == 0 {
-				lines = append(lines, fitWidth(th.Empty.Render(a.advancedEmptyText()), layout.width))
-				continue
-			}
-			lines = append(lines, strings.Repeat(" ", layout.width))
+			lines = append(lines, a.advancedResultRow(index, layout.width))
 			continue
 		}
-		lines = append(lines, a.advancedResultRow(index, layout.width))
-	}
-	lines = append(lines, fitWidth(th.HelpTitle.Render("Preview"), layout.width))
-	for row := 0; row < layout.previewRows; row++ {
-		lines = append(lines, a.advancedPreviewRow(row, layout.width, layout.previewRows))
+		if a.advancedResultCount() == 0 && row == 0 && layout.height > len(lines) {
+			lines = append(lines, th.Empty.Render(truncRight(a.advancedEmptyText(), layout.width)))
+		}
 	}
 	return lines
-}
-
-func (a *App) advancedJoinColumns(left, right string, layout advancedSearchLayout) string {
-	divider := a.theme.Divider.Render("│")
-	left = fitWidth(left, layout.leftWidth)
-	right = fitWidth(right, layout.rightWidth)
-	return left + divider + right
 }
 
 func (a *App) advancedModeName() string {
 	if a.advancedSearch != nil && a.advancedSearch.mode == advancedContentMode {
-		return "CONTENT"
+		return "Content"
 	}
-	return "FILENAME"
+	return "Filename"
 }
 
 func (a *App) advancedQueryLine(width int) string {
@@ -184,15 +259,11 @@ func (a *App) advancedQueryLine(width int) string {
 	if v == nil {
 		return ""
 	}
-	label := "Files: "
+	label, placeholder := "Files: ", "Type a filename or path…"
 	if v.mode == advancedContentMode {
-		label = "Text: "
+		label, placeholder = "Text: ", "Search file contents…"
 	}
-	if width < ansi.StringWidth(label)+2 {
-		label = ""
-	}
-	fieldWidth := max(2, width-ansi.StringWidth(label))
-	return fitWidth(a.theme.DialogText.Render(label)+v.input.View(a.theme, fieldWidth), width)
+	return fitWidth(inputLine(a.theme, label, placeholder, v.input, true, width), width)
 }
 
 func (a *App) advancedStatusLine(width int) string {
@@ -209,30 +280,51 @@ func (a *App) advancedStatusLine(width int) string {
 		case v.filtering:
 			message = fmt.Sprintf("Filtering %s indexed entries…", plural(len(v.entries), "entry"))
 		default:
-			message = fmt.Sprintf("%s · %s indexed", plural(len(v.filenameResults), "match"), plural(len(v.entries), "entry"))
+			if width < 56 {
+				message = fmt.Sprintf("%s · %d indexed", plural(len(v.filenameResults), "match"), len(v.entries))
+			} else {
+				message = fmt.Sprintf("%s · %s indexed", plural(len(v.filenameResults), "match"), plural(len(v.entries), "entry"))
+			}
 			if v.indexing {
 				message += " · scanning…"
 			}
 		}
 		if v.indexStatus.Truncated {
-			message += " · index limit reached"
+			if width < 56 {
+				message += " · limit"
+			} else {
+				message += " · index limit reached"
+			}
 		}
 		if v.indexStatus.Errors > 0 {
-			message += fmt.Sprintf(" · %d unreadable folders", v.indexStatus.Errors)
+			message += fmt.Sprintf(" · %d unreadable", v.indexStatus.Errors)
 		}
 		if !v.showHidden {
-			message += " · hidden names skipped"
+			if width < 56 {
+				message += " · hidden off"
+			} else {
+				message += " · hidden names skipped"
+			}
 		}
 	} else {
 		query := strings.TrimSpace(v.input.Value())
 		switch {
 		case query == "":
-			message = "Type a phrase to search file contents · exact .git directories skipped"
+			if width < 60 {
+				message = "Type a phrase · .git skipped"
+			} else {
+				message = "Type a phrase to search file contents · exact .git directories skipped"
+			}
 		case v.contentStatus.Err != nil:
 			message, style = "Content search failed: "+errText(v.contentStatus.Err), a.theme.Error
 		default:
-			message = fmt.Sprintf("%s · %s scanned · %s read", plural(len(v.contentResults), "file match"),
-				plural(v.contentStatus.ScannedFiles, "file"), fsys.HumanSize(v.contentStatus.BytesRead))
+			if width < 56 {
+				message = fmt.Sprintf("%s · %d scanned · %s read", plural(len(v.contentResults), "file"),
+					v.contentStatus.ScannedFiles, fsys.HumanSize(v.contentStatus.BytesRead))
+			} else {
+				message = fmt.Sprintf("%s · %s scanned · %s read", plural(len(v.contentResults), "file match"),
+					plural(int(v.contentStatus.ScannedFiles), "file"), fsys.HumanSize(v.contentStatus.BytesRead))
+			}
 			if v.contentLoading {
 				message += " · scanning…"
 			}
@@ -279,22 +371,31 @@ func (a *App) advancedEmptyText() string {
 	return "No content matches"
 }
 
+// advancedResultRow draws one result in exactly width cells. The cursor row
+// is one continuous highlight; other rows keep the type colours (directories,
+// links) and a muted line column for content matches so the two columns stay
+// aligned.
 func (a *App) advancedResultRow(index, width int) string {
 	v := a.advancedSearch
 	th := a.theme
-	if index < 0 || index >= a.advancedResultCount() {
+	if index < 0 || index >= a.advancedResultCount() || width <= 0 {
 		return strings.Repeat(" ", max(0, width))
 	}
-	label := ""
+	selected := index == v.cursor
+	marker := "  "
+	if selected {
+		marker = "▸ "
+	}
+	plain := ""
 	style := th.File
 	if v.mode == advancedFilenameMode {
 		entryIndex := v.filenameResults[index]
 		if entryIndex < 0 || entryIndex >= len(v.entries) {
-			return strings.Repeat(" ", max(0, width))
+			return strings.Repeat(" ", width)
 		}
 		entry := &v.entries[entryIndex]
 		entry.Resolve()
-		label = fsys.SanitizeName(filepath.ToSlash(entry.Rel))
+		label := fsys.SanitizeName(filepath.ToSlash(entry.Rel))
 		switch {
 		case entry.IsLink:
 			label += "@"
@@ -303,28 +404,40 @@ func (a *App) advancedResultRow(index, width int) string {
 			label += "/"
 			style = th.Dir
 		}
+		plain = marker + cellText(label, max(0, width-ansi.StringWidth(marker)), false)
 	} else {
 		result := v.contentResults[index]
 		line := 0
 		if len(result.Matches) > 0 {
 			line = result.Matches[0].Line
 		}
-		label = fmt.Sprintf("%s:%d", fsys.SanitizeName(filepath.ToSlash(result.Rel)), line)
-		style = th.File
+		label := fsys.SanitizeName(filepath.ToSlash(result.Rel))
+		if width >= 26 {
+			lineCell := cellText(strconv.Itoa(line), 5, true)
+			if !selected {
+				return fitWidth(marker+th.MatchCurrent.Render(lineCell)+"  "+styleCell(th.File, label, max(0, width-ansi.StringWidth(marker)-7), false), width)
+			}
+			plain = marker + lineCell + "  " + cellText(label, max(0, width-ansi.StringWidth(marker)-7), false)
+		} else {
+			plain = marker + cellText(label, max(0, width-ansi.StringWidth(marker)), false)
+		}
 	}
-	label = truncLeft(label, width)
-	label += strings.Repeat(" ", max(0, width-ansi.StringWidth(label)))
-	if index == v.cursor {
-		return th.CursorActive.Render(label)
+	plain = fitWidth(plain, width)
+	if selected {
+		return th.CursorActive.Render(plain)
 	}
-	return style.Render(label)
+	return style.Render(plain)
 }
 
+// advancedPreviewRow draws one preview row: syntax-coloured code for filename
+// search, and only the matching lines (with the query highlighted) for
+// content search. Row 0 of a content preview summarises the file; the
+// remaining rows are its matches.
 func (a *App) advancedPreviewRow(row, width, rows int) string {
 	v := a.advancedSearch
 	th := a.theme
 	blank := strings.Repeat(" ", max(0, width))
-	if v == nil || row < 0 || row >= rows {
+	if v == nil || row < 0 || row >= rows || width <= 0 {
 		return blank
 	}
 	if v.mode == advancedContentMode {
@@ -335,95 +448,110 @@ func (a *App) advancedPreviewRow(row, width, rows int) string {
 			return blank
 		}
 		result := v.contentResults[v.cursor]
-		if row == 0 {
-			if rows == 1 && len(result.Matches) > 0 {
-				match := result.Matches[0]
-				label := fmt.Sprintf("%d: %s", match.Line, textview.Expand(match.Text))
-				return fitWidth(a.highlight(ansi.Truncate(label, width, "…"), v.input.Value()), width)
-			}
+		if row == 0 && rows > 1 {
 			label := fmt.Sprintf("%s · %d matching line(s)", fsys.SanitizeName(filepath.ToSlash(result.Rel)), len(result.Matches))
-			return fitWidth(th.Info.Render(truncRight(label, width)), width)
+			return fitWidth(th.Summary.Render(truncRight(label, width)), width)
 		}
 		lineIndex := row - 1
-		if lineIndex >= len(result.Matches) {
+		if rows == 1 {
+			lineIndex = 0
+		}
+		if lineIndex < 0 || lineIndex >= len(result.Matches) {
 			return blank
 		}
 		match := result.Matches[lineIndex]
-		text := fmt.Sprintf("%6d  %s", match.Line, textview.Expand(match.Text))
-		text = ansi.Truncate(text, width, "…")
-		return fitWidth(a.highlight(text, v.input.Value()), width)
+		return contentMatchRow(th, match.Line, textview.Expand(match.Text), v.input.Value(), width)
 	}
 
-	if v.previewPath == "" {
-		if row == 0 {
-			return fitWidth(th.Empty.Render(a.advancedEmptyText()), width)
-		}
-		return blank
-	}
-	if row == 0 {
-		label := filepath.ToSlash(v.previewPath)
-		if v.cursor >= 0 && v.cursor < len(v.filenameResults) {
-			entryIndex := v.filenameResults[v.cursor]
-			if entryIndex >= 0 && entryIndex < len(v.entries) {
-				label = filepath.ToSlash(v.entries[entryIndex].Rel)
-			}
-		}
-		return fitWidth(th.Info.Render(truncLeft(fsys.SanitizeName(label), width)), width)
-	}
 	if v.previewLoading {
-		if row == 1 {
+		if row == 0 {
 			return fitWidth(th.Summary.Render("Loading preview…"), width)
 		}
 		return blank
 	}
 	if v.previewIsDir {
-		if row == 1 {
+		if row == 0 {
 			return fitWidth(th.Dir.Render("Directory · no text preview"), width)
 		}
 		return blank
 	}
 	if v.previewErr != nil {
-		if row == 1 {
-			return fitWidth(th.Error.Render("Cannot preview: "+errText(v.previewErr)), width)
+		if row == 0 {
+			return fitWidth(th.Error.Render(truncRight("Cannot preview: "+errText(v.previewErr), width)), width)
 		}
 		return blank
 	}
 	doc := v.previewDoc
 	if doc == nil {
-		if row == 1 {
-			return fitWidth(th.Summary.Render("Preview unavailable"), width)
+		if row == 0 {
+			return fitWidth(th.Empty.Render("No preview yet"), width)
 		}
 		return blank
 	}
 	if doc.Binary {
-		if row == 1 {
+		if row == 0 {
 			return fitWidth(th.Empty.Render("Binary file · not displayed"), width)
 		}
-		if row == 2 {
-			return fitWidth(th.Summary.Render(doc.BinaryReason), width)
+		if row == 1 && doc.BinaryReason != "" {
+			return fitWidth(th.Summary.Render(truncRight(doc.BinaryReason, width)), width)
 		}
 		return blank
 	}
 	if len(doc.Lines) == 0 {
-		if row == 1 {
+		if row == 0 {
 			return fitWidth(th.Empty.Render("(empty file)"), width)
 		}
 		return blank
 	}
-	lineIndex := row - 1
-	if lineIndex >= len(doc.Lines) {
+	if row >= len(doc.Lines) {
 		return blank
 	}
-	line := fmt.Sprintf("%5d  %s", lineIndex+1, textview.Expand(doc.Lines[lineIndex]))
-	return fitWidth(th.File.Render(ansi.Truncate(line, width, "…")), width)
+	return codePreviewRow(th, row+1, doc.Lines[row], previewSyntaxLine(v, row), len(doc.Lines), width)
 }
 
-func (a *App) advancedSearchHints() []barItem {
-	return []barItem{
-		item("↑↓", "move", ""),
-		item("Enter", "inspect read-only", "enter"),
-		item("^T", "toggle files/content", "ctrl+t"),
-		item("?", "help", "?"),
-		item("Esc", "close", "esc"),
+// previewSyntaxLine returns the Chroma-rendered line when it is available.
+func previewSyntaxLine(v *advancedSearchView, line int) string {
+	if v == nil || line < 0 || line >= len(v.previewSyntax) {
+		return ""
 	}
+	return v.previewSyntax[line]
+}
+
+// codePreviewRow renders a line-number gutter followed by syntax-coloured
+// text, clipped to the available width.
+func codePreviewRow(th theme.Theme, line int, plain, syntax string, total, width int) string {
+	if width <= 0 {
+		return ""
+	}
+	gutter := fmt.Sprintf("%*d ", gutterWidth(total), line)
+	gutter += "│ "
+	remain := width - ansi.StringWidth(gutter)
+	if remain < 0 {
+		remain = 0
+	}
+	text := syntax
+	if text == "" {
+		text = textview.Expand(plain)
+	}
+	text = ansi.Truncate(text, remain, "…")
+	return th.LineNumber.Render(gutter) + fitWidth(text, remain)
+}
+
+// contentMatchRow renders one content match with a highlighted line number
+// gutter, so matches stand apart from ordinary syntax colours.
+func contentMatchRow(th theme.Theme, line int, text, query string, width int) string {
+	if width <= 0 {
+		return ""
+	}
+	gutter := cellText(strconv.Itoa(line), 5, true) + " │ "
+	remain := max(0, width-ansi.StringWidth(gutter))
+	rendered := truncRight(text, remain)
+	rendered = highlightWith(th, rendered, query)
+	return th.MatchCurrent.Render(gutter) + fitWidth(rendered, remain)
+}
+
+// gutterWidth is the line-number column width for a document of total lines.
+func gutterWidth(total int) int {
+	digits := len(strconv.Itoa(max(1, total)))
+	return max(3, digits)
 }

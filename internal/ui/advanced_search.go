@@ -42,6 +42,7 @@ type advancedSearchEvent struct {
 	keepPath   string
 	path       string
 	doc        *textview.Doc
+	syntax     []string // Chroma-coloured doc lines (filename preview)
 	err        error
 }
 
@@ -89,6 +90,7 @@ type advancedSearchView struct {
 	previewLoading    bool
 	previewIsDir      bool
 	previewDoc        *textview.Doc
+	previewSyntax     []string // Chroma-coloured preview lines, nil = plain text
 	previewErr        error
 	previewGeneration int
 	previewCancel     context.CancelFunc
@@ -282,7 +284,7 @@ func (a *App) advancedSearchUpdate(msg advancedSearchMsg) tea.Cmd {
 			return v.listen()
 		}
 		v.previewLoading = false
-		v.previewDoc, v.previewErr = msg.event.doc, msg.event.err
+		v.previewDoc, v.previewSyntax, v.previewErr = msg.event.doc, msg.event.syntax, msg.event.err
 	}
 	return v.listen()
 }
@@ -303,6 +305,7 @@ func (a *App) scheduleFilenameFilter(reset bool, keepPath string) {
 		v.filenameResults = nil
 		v.cursor, v.offset = 0, 0
 		v.previewPath, v.previewDoc, v.previewErr = "", nil, nil
+		v.previewSyntax = nil
 		v.previewIsDir, v.previewLoading = false, false
 		if v.previewCancel != nil {
 			v.previewCancel()
@@ -398,6 +401,7 @@ func (a *App) toggleAdvancedSearchMode() {
 			v.previewCancel()
 		}
 		v.previewPath, v.previewDoc, v.previewErr = "", nil, nil
+		v.previewSyntax = nil
 		v.previewIsDir, v.previewLoading = false, false
 		a.startAdvancedContentSearch(query, "")
 		a.setStatus("content search · exact .git folders skipped", false)
@@ -589,6 +593,7 @@ func (a *App) refreshAdvancedPreview() {
 			v.previewCancel()
 		}
 		v.previewPath, v.previewDoc, v.previewErr = "", nil, nil
+		v.previewSyntax = nil
 		v.previewIsDir, v.previewLoading = false, false
 		return
 	}
@@ -602,6 +607,7 @@ func (a *App) refreshAdvancedPreview() {
 	v.previewGeneration++
 	generation := v.previewGeneration
 	v.previewPath, v.previewDoc, v.previewErr = path, nil, nil
+	v.previewSyntax = nil
 	v.previewIsDir, v.previewLoading = false, false
 	if path == "" {
 		return
@@ -620,8 +626,15 @@ func (a *App) refreshAdvancedPreview() {
 	v.previewLoading = true
 	go func() {
 		doc, err := textview.LoadFile(path, textview.Options{MaxBytes: 256 << 10, MaxLines: 10_000, MaxLineBytes: 8 << 10})
+		// Syntax colouring is computed off the UI goroutine with the same
+		// bounded document the preview draws, so painting a frame never
+		// tokenises a file.
+		var syntax []string
+		if err == nil && doc != nil && !doc.Binary && len(doc.Lines) > 0 {
+			syntax = syntaxHighlightLines(path, doc.Lines)
+		}
 		publishAdvancedEvent(v.ctx, workerCtx, v.events, advancedSearchEvent{
-			kind: advancedPreviewEvent, generation: generation, path: path, doc: doc, err: err,
+			kind: advancedPreviewEvent, generation: generation, path: path, doc: doc, syntax: syntax, err: err,
 		})
 	}()
 }
@@ -703,7 +716,8 @@ func (a *App) advancedSearchMouse(ev tea.MouseEvent) tea.Cmd {
 	return nil
 }
 
-// advancedSearchGeom is implemented with the responsive layout renderer.
+// advancedSearchGeom returns the screen row of the first result and the
+// number of result rows, as drawn by the responsive layout renderer.
 func (a *App) advancedSearchGeom() (top, rows int) {
-	return a.advancedSearchResultTop(), a.advancedSearchResultRows()
+	return a.advancedSearchResultTop() + 1, a.advancedSearchResultRows()
 }

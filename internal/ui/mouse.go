@@ -378,7 +378,8 @@ func (a *App) dragTo(y int) {
 // searchGeom returns the screen row of the first result and the number of
 // result rows, as drawn by searchViewRender.
 func (a *App) searchGeom() (top, rows int) {
-	return 2 + len(a.searchHeader(max(10, a.width-4))), a.searchRows()
+	layout := a.searchLayout(max(1, a.height-3))
+	return layout.resultTop + 1, layout.rows
 }
 
 func (a *App) searchMouse(ev tea.MouseEvent) tea.Cmd {
@@ -394,12 +395,12 @@ func (a *App) searchMouse(ev tea.MouseEvent) tea.Cmd {
 	r := ev.Y - top
 	if r < 0 || r >= rows {
 		if ev.Y >= 1 && ev.Y < top {
-			sv.list = false // tap on the header / query: type again
+			sv.list = false // tap on the input section: type again
 		}
 		a.lastClick = clickState{}
 		return nil
 	}
-	if ev.X == a.width-2 && len(sv.matches) > rows {
+	if ev.X == a.width-1 && rows > 0 && len(sv.matches) > rows {
 		a.lastClick = clickState{}
 		a.searchScrollTrack(ev.Y)
 		a.drag = dragState{area: areaSearch, active: true}

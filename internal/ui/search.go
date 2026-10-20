@@ -9,12 +9,10 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 
 	"github.com/ThatOn3Gu7/TwinPane/internal/fsys"
 	"github.com/ThatOn3Gu7/TwinPane/internal/panel"
 	"github.com/ThatOn3Gu7/TwinPane/internal/proc"
-	"github.com/ThatOn3Gu7/TwinPane/internal/scrollbar"
 	"github.com/ThatOn3Gu7/TwinPane/internal/search"
 )
 
@@ -348,130 +346,4 @@ func (a *App) searchEdit(choose bool) tea.Cmd {
 		return nil
 	}
 	return a.editPaths(paths, choose)
-}
-
-// searchHeader returns the lines above the result list.
-func (a *App) searchHeader(innerW int) []string {
-	sv := a.search
-	th := a.theme
-	backend := sv.last.Backend
-	right := th.TitleText.Render(truncRight(" "+backend+" · Ctrl+G advanced", max(0, innerW)))
-	rightWidth := lipgloss.Width(right)
-	headWidth := max(0, innerW-rightWidth)
-	head := th.HelpTitle.Render(truncRight("Find files by name", headWidth))
-	head += strings.Repeat(" ", max(0, innerW-lipgloss.Width(head)-rightWidth)) + right
-	where := th.Info.Render(truncLeft("in "+fsys.SanitizeName(sv.root), innerW))
-
-	label := "Name: "
-	field := sv.input.View(th, innerW-len(label))
-	labelSt := th.DialogText
-	if sv.list {
-		labelSt = th.DialogHint
-	}
-	lines := []string{head, where, labelSt.Render(label) + field}
-
-	n, total := len(sv.matches), len(sv.entries)
-	var state string
-	style := th.Info
-	switch {
-	case sv.last.Err != nil:
-		state, style = "Search failed: "+errText(sv.last.Err), th.Error
-	case sv.query.String() == "":
-		state = plural(total, "entry")
-		if sv.indexing {
-			state += " so far, indexing…"
-		} else {
-			state += fmt.Sprintf(" (%.1fs) · type part of a name", sv.elapsed.Seconds())
-		}
-	default:
-		state = fmt.Sprintf("%s of %s", plural(n, "match"), plural(total, "entry"))
-		if sv.indexing {
-			state += " · indexing…"
-		}
-	}
-	if sv.last.Truncated {
-		state += fmt.Sprintf(" · stopped at %d entries", total)
-	}
-	if sv.last.Errors > 0 {
-		state += fmt.Sprintf(" · %s unreadable", plural(sv.last.Errors, "folder"))
-	}
-	if len(sv.marks) > 0 {
-		state += fmt.Sprintf(" · %d marked", len(sv.marks))
-	}
-	if !sv.hidden {
-		state += " · hidden skipped"
-	}
-	lines = append(lines, style.Render(truncRight(state, innerW)))
-	if sv.qerr != "" {
-		lines = append(lines, th.StatusErr.Render(truncRight("✗ "+sv.qerr, innerW)))
-	}
-	if sv.last.Note != "" {
-		lines = append(lines, th.StatusWarn.Render(truncRight(sv.last.Note+"; using "+backend, innerW)))
-	}
-	return lines
-}
-
-// searchRows is the number of result rows that fit on screen.
-func (a *App) searchRows() int {
-	if a.search == nil {
-		return 1
-	}
-	n := a.height - 3 - 2 - len(a.searchHeader(max(10, a.width-4))) // title/status/footer, border, header (keys: hint bar)
-	if n < 1 {
-		n = 1
-	}
-	return n
-}
-
-func (a *App) searchViewRender(h int) string {
-	sv := a.search
-	th := a.theme
-	innerW := max(10, a.width-4)
-	rows := a.searchRows()
-	sv.clamp(rows)
-
-	lines := a.searchHeader(innerW)
-	n := len(sv.matches)
-	for i := sv.offset; i < sv.offset+rows; i++ {
-		if i >= n {
-			lines = append(lines, strings.Repeat(" ", innerW))
-			continue
-		}
-		e := &sv.entries[sv.matches[i]]
-		e.Resolve() // type of the rows on screen (fd/find report names only)
-		name := fsys.SanitizeName(e.Rel)
-		st := th.File
-		switch {
-		case e.IsLink:
-			name += "@"
-			st = th.Link
-		case e.IsDir:
-			name += "/"
-			st = th.Dir
-		}
-		line := truncLeft(name, innerW)
-		line += strings.Repeat(" ", max(0, innerW-lipgloss.Width(line)))
-		switch {
-		case i == sv.cursor && sv.list:
-			st = th.CursorActive
-		case i == sv.cursor:
-			st = th.CursorInactive
-		case sv.marks[e.Path]:
-			st = th.SelectedRow(st)
-		}
-		lines = append(lines, st.Render(line))
-	}
-	// The keys are listed in the hint bar at the bottom of the screen. A
-	// scroll indicator uses the right padding column of the result rows.
-	hdr := len(lines) - rows
-	cells := scrollbar.Cells(n, rows, sv.offset, rows)
-	for i := range lines {
-		col := " "
-		if j := i - hdr; j >= 0 && j < len(cells) && cells[j] {
-			col = th.ScrollThumb.Render(panel.ScrollThumbChar)
-		}
-		lines[i] = padRight(lines[i], innerW) + col
-	}
-	box := th.HelpBox.Padding(0, 0, 0, 1).Width(a.width - 2).Render(strings.Join(lines, "\n"))
-	return lipgloss.NewStyle().MaxHeight(h).MaxWidth(a.width).Render(box)
 }

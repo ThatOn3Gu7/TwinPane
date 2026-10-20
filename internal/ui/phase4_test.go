@@ -189,7 +189,7 @@ func TestSearchResultsIndicator(t *testing.T) {
 	h.searchDone()
 	h.typeText("f", false)
 	h.searchDone()
-	col := h.a.width - 2
+	col := h.a.width - 1 // the indicator is drawn on the results panel's border
 	v := h.view()
 	if len(thumbCells(v, col)) == 0 {
 		t.Fatalf("search results without indicator:\n%s", v)

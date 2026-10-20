@@ -37,6 +37,23 @@ cancellable folder-size analysis, and a background task view. It also adds
 read-only TAR browsing, persists the hidden-file preference, and includes
 several safety fixes.
 
+#### Live filename search (`/`)
+
+`/` opens a live, non-recursive filename search of the active panel's folder.
+Since the search redesign it uses the same frame as the rest of the app:
+
+- A bordered **Find files by name** section holds the search root, the
+  `Name:` field (placeholder `Type a filename or path…`) and one status line
+  with the entry and match counts (`1 match of 6 entries · hidden skipped`).
+  The keyboard hints stay in the bottom bar, so the counts never compete with
+  them for room.
+- A separate bordered **Results · N** section lists matches with an aligned
+  type column (`DIR`, `FILE`, …) when the terminal is wide enough, a `▸`
+  marker plus a full-row highlight for the selection, and a scroll thumb on
+  its right border.
+- Narrow or short terminals drop the borders and truncate the root line;
+  the query, counts, results and hints always remain, down to 30×7.
+
 #### Advanced Search (`Ctrl+G` from `/`)
 - `/` remains the familiar live filename search. While that box is open,
   `Ctrl+G` opens Advanced Search and carries the current query into its
@@ -61,6 +78,22 @@ several safety fixes.
   regular files, returns 10,000 matching files, and examines at most 1 MiB per
   file and 512 MiB total by default; matching-file previews show bounded line
   excerpts.
+- The preview pane uses the same Chroma highlighting as the viewer: line
+  numbers in their own gutter, syntax colours for the code, and content
+  matches painted with the match colour (a solid background) so they stand
+  out from strings, comments and keywords. No external tool such as `bat` is
+  needed.
+- **Layout.** A bordered section at the top holds the root, the query field
+  (`Files:` or `Text:`) and one progress/result line. Below it, **Results · N**
+  and **Preview · name** are separate bordered panels; the results panel keeps
+  its right-hand count label, a `▸` marker, a full-row highlight for the
+  selected row and a scroll thumb, while the preview names the file (and its
+  match count in content mode). When the terminal is too short or narrow for
+  two panes the panels stack (results
+  above the preview). Very short terminals (around 30×9) fall back to a
+  compact, unboxed list that keeps the heading, root, query, status and rows.
+  Long names are truncated rather than pushing columns out of place, and the
+  status line abbreviates its counters instead of overflowing.
 - The read-only inspection viewer preserves the content query, highlights
   every matching occurrence distinctly from syntax colours, and uses `n`/`N`
   to navigate matching lines. Go, JSON, YAML, shell, and many other common
@@ -452,6 +485,21 @@ down. Cancelled and partial totals are lower bounds, never presented as a
 complete result. Unreadable or disappearing entries, filesystem-boundary
 skips, and depth/directory safety limits are shown as issues; root failures
 are reported as failed.
+
+The overlay is laid out like the rest of TwinPane. A bordered summary at the
+top names the target and its path, then shows apparent and allocated size,
+directory/file/link/error counts and the scan state. A separate bordered
+**Largest items** table follows, with aligned `NAME`, `TYPE`, `SIZE` and
+`SHARE` columns: directories end in `/`, files do not, the selected row has a
+`▸` marker and a full-row highlight, and `SHARE` shows a subtle proportional
+bar plus a percentage. When there is room, a **Selected** panel below the
+table shows the item's path, type, apparent/allocated size and its share of
+the folder (for directories, also their direct directory/file/link counts and
+state). The scan state, totals and errors sit in their own
+status line above the hint bar. Narrow terminals drop the details panel
+first, then the share bar (leaving the percentage), then the frame itself,
+keeping the columns that still fit and never wrapping a row. Shares below one
+percent are shown as `<1%` rather than `0%`.
 
 The results are a navigable tree of directory aggregates and direct files.
 `Enter`/`→`/`l` drills into a directory, `Backspace`/`←` returns to its
