@@ -9,6 +9,22 @@ The complete description of every feature is in
 
 ## [Unreleased]
 
+### Added
+- **Advanced Search actions.** `Ctrl+A` in Advanced Search (filename and
+  content mode) opens a menu for the selected result: inspect read-only, open
+  with the default app, **jump to location** (closes the search, shows the
+  result's folder in the panel and selects it), edit, open with, copy/move to
+  the other panel, rename, copy path and delete. Copy, move, rename and delete
+  reuse the panel workflows, including their conflict questions, trash and
+  typed confirmations, cancellation and progress, and the results stay usable
+  afterwards (moved and deleted entries are dropped, renamed ones follow the
+  new name). Content results keep their line: inspection, the jump viewer and
+  `n`/`N` start at the matched line. `Enter` on a folder result now opens that
+  folder. The menu's letters exist only inside it, so they never clash with
+  the query, the panels, `/`, the viewer, the editor or the dialogs, and no
+  existing Advanced Search key changed. Copy path uses the terminal clipboard
+  (OSC 52) and reports the path in the status line.
+
 ### Changed
 - **One visual language for search and analysis.** Live filename search (`/`),
   Advanced Search and folder-size analysis (`A`) now share the same bordered

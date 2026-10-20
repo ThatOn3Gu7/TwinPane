@@ -445,7 +445,7 @@ func (a *App) fitSegment(it barItem, w int) string {
 func keyFor(s string) tea.KeyMsg {
 	special := map[string]tea.KeyType{
 		"esc": tea.KeyEsc, "enter": tea.KeyEnter, "tab": tea.KeyTab, "backspace": tea.KeyBackspace,
-		"ctrl+r": tea.KeyCtrlR, "ctrl+l": tea.KeyCtrlL, "f7": tea.KeyF7, "ctrl+t": tea.KeyCtrlT, "f4": tea.KeyF4, "up": tea.KeyUp, "down": tea.KeyDown,
+		"ctrl+r": tea.KeyCtrlR, "ctrl+l": tea.KeyCtrlL, "ctrl+a": tea.KeyCtrlA, "f7": tea.KeyF7, "ctrl+t": tea.KeyCtrlT, "f4": tea.KeyF4, "up": tea.KeyUp, "down": tea.KeyDown,
 		"pgup": tea.KeyPgUp, "pgdown": tea.KeyPgDown, "left": tea.KeyLeft, "right": tea.KeyRight,
 		"shift+tab": tea.KeyShiftTab, "home": tea.KeyHome, "end": tea.KeyEnd,
 	}
@@ -463,7 +463,8 @@ func keyFor(s string) tea.KeyMsg {
 func (a *App) advancedSearchHints() []barItem {
 	return []barItem{
 		item("↑↓", "move", ""),
-		item("Enter", "inspect read-only", "enter"),
+		item("^A", "actions", "ctrl+a"),
+		item("Enter", "open / inspect", "enter"),
 		item("^T", "toggle files/content", "ctrl+t"),
 		item("?", "help", "?"),
 		item("Esc", "close", "esc"),

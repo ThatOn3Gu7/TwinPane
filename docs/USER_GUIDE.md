@@ -61,9 +61,33 @@ Since the search redesign it uses the same frame as the rest of the app:
 - Advanced Search stays inside TwinPane: the left side has a query and a
   scrollable result list; the right side previews the selected file or its
   matching content lines. Type to filter, use `↑`/`↓` (or `Ctrl+P`/`Ctrl+N`)
-  to move, `Enter` to inspect a file read-only, and `Esc` to return. Closing
-  the search or inspection does not change either panel's directory, cursor,
-  or selection. `Esc` from inspection returns to the same query and result.
+  to move, `Enter` to inspect a file read-only (`Enter` on a folder opens it
+  in the panel), and `Esc` to return. Closing the search or inspection does
+  not change either panel's directory, cursor, or selection. `Esc` from
+  inspection returns to the same query and result.
+- **Actions (`Ctrl+A`).** `Ctrl+A` opens a menu for the selected result, so
+  every printable key keeps belonging to the query. Its letters are shown in
+  the menu and only work while it is open: `i` inspect read-only, `o` open
+  with the default app (`o` opens a folder on folder results), `t` jump to
+  location, `e` edit, `O` open with…, `c` copy to the other panel, `m` move to
+  the other panel, `r` rename, `y` copy path, `d` delete (last, in the danger
+  colour). `Enter` runs the highlighted row and `Esc`/`q` close only the menu.
+  Copy, move, rename and delete use the same checks, conflict questions,
+  confirmations, progress and cancellation as the panels, so a delete goes to
+  the trash unless the trash is unavailable, and destructive confirmations
+  are unchanged. The panel you searched from keeps its cursor and selection,
+  the other panel refreshes exactly as it does for the panels' own copy/move,
+  and the results stay on screen: a moved or deleted result disappears from
+  the list and a renamed one keeps its position under the new name.
+- **Jump to location (`t`)** closes the search, navigates the panel the
+  search was started from to the result's folder, selects it there, and says
+  so in the status line. A content result also opens in the regular viewer on
+  the matching line (with the matches highlighted), so `n`/`N` continue from
+  there; if the line cannot be shown the jump still lands on the file.
+- **Copy path (`y`)** places the absolute path on the terminal clipboard with
+  OSC 52 (no `xclip`/`wl-copy` needed, works over SSH and in Termux) and names
+  the path in the status line, because terminals without OSC 52 ignore the
+  sequence silently.
 - Filename mode is case-insensitive fuzzy subsequence matching over relative
   paths: `asgo` can find `src/AdvancedSearch.go`; it honors the hidden-file
   setting active in `/`. `Ctrl+T` switches in place to content mode and back
@@ -104,7 +128,10 @@ Since the search redesign it uses the same frame as the rest of the app:
   status line abbreviates its counters instead of overflowing.
 - The read-only inspection viewer preserves the content query, highlights
   every matching occurrence distinctly from syntax colours, and uses `n`/`N`
-  to navigate matching lines. Go, JSON, YAML, shell, and many other common
+  to navigate matching lines. Inspection is read-only; use `Ctrl+A` → `e` in
+  the results to hand a file to the editor, or `Ctrl+A` → `t` to jump to the
+  file and open it on the matching line in the regular viewer, where `e`
+  edits it. Go, JSON, YAML, shell, and many other common
   source/config formats receive Chroma highlighting; unknown formats stay
   plain text. Viewer loading remains bounded to 8 MiB, 500,000 lines, and
   16 KiB per line.
@@ -1239,6 +1266,7 @@ v0.3.1; the matching rules below still apply)
 | `/` | **find**: live filename search box below the active panel's folder |
 | `Ctrl+G` (while `/` is open) | open Advanced Search |
 | `Ctrl+T` (in Advanced Search) | switch between filename and content search |
+| `Ctrl+A` (in Advanced Search) | actions for the selected result: open, jump, edit, open with, copy, move, rename, copy path, delete |
 | `t` | view background task progress and results |
 | `h` / `H` / `.` | show / hide hidden files in **both** panels |
 | `s` | cycle sort: name → size → time → type |

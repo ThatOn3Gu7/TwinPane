@@ -86,6 +86,17 @@ type opSession struct {
 	kind       ops.Kind
 	isDelete   bool
 	plan       ops.DeletePlan
+	// dstPanel is the destination panel of a transfer (the other panel for
+	// panel operations, chosen explicitly when the operation starts outside
+	// the panels, as in Advanced Search where srcPanel is -1).
+	dstPanel int
+
+	// fromLabel replaces the "From:" folder in the transfer confirmation when
+	// the operation was not started from the panel's cursor (Advanced Search).
+	fromLabel string
+	// after runs once a transfer or delete finishes; overlays use it to keep
+	// their own lists in sync with the filesystem.
+	after func(*App)
 }
 
 func (s *opSession) active() bool {
@@ -106,7 +117,8 @@ func (a *App) newSession(title string, srcPanel int, targets []string) (*opSessi
 	a.opSeq++
 	s := &opSession{
 		id: a.opSeq, title: title, state: taskRunning, cancel: cancel,
-		events: make(chan tea.Msg, 32), srcPanel: srcPanel, names: map[string]bool{}, selection: map[string]bool{},
+		events: make(chan tea.Msg, 32), srcPanel: srcPanel, dstPanel: 1 - srcPanel,
+		names: map[string]bool{}, selection: map[string]bool{},
 		started: a.now(),
 	}
 	for i, p := range a.panels {
@@ -481,7 +493,11 @@ func (a *App) beginTransfer(kind ops.Kind) tea.Cmd {
 func (a *App) transferDialog(s *opSession, req ops.Request, targets []fsys.Entry) {
 	verb := capitalize(req.Kind.String())
 	d := &dialog{kind: dlgConfirm, title: fmt.Sprintf("%s %s?", verb, describe(targets))}
-	d.body = append(d.body, text("From:"), path(s.panelPaths[s.srcPanel]), text("To:"), path(req.DestDir), blank())
+	from := s.fromLabel
+	if from == "" && s.srcPanel >= 0 && s.srcPanel < len(s.panelPaths) {
+		from = s.panelPaths[s.srcPanel]
+	}
+	d.body = append(d.body, text("From:"), path(from), text("To:"), path(req.DestDir), blank())
 	d.body = append(d.body, nameList(targets)...)
 	if req.Kind == ops.Move {
 		d.body = append(d.body, blank(), hint("Items are removed from the source only after they have been moved (across filesystems: copied and verified first)."))
@@ -611,19 +627,26 @@ func (a *App) lowSpaceDialog(s *opSession, m opLowSpaceMsg) {
 }
 
 func (a *App) finishTransfer(s *opSession, res ops.Result) tea.Cmd {
-	src := a.panels[s.srcPanel]
-	if res.OK() && a.sourceSelectionUnchanged(s) {
-		src.ClearSelection()
-	}
 	var cmds []tea.Cmd
-	if s.kind == ops.Move {
-		focus := ""
-		if src.Path() == s.panelPaths[s.srcPanel] {
-			focus = src.NextFocus(s.names)
+	// A session started outside the panels (Advanced Search) has no source
+	// panel: the panel selection and cursor must stay untouched.
+	if s.srcPanel >= 0 && s.srcPanel < len(a.panels) && a.panels[s.srcPanel] != nil {
+		src := a.panels[s.srcPanel]
+		if res.OK() && a.sourceSelectionUnchanged(s) {
+			src.ClearSelection()
 		}
-		cmds = append(cmds, a.refreshPanelAt(s.srcPanel, s.panelPaths[s.srcPanel], focus))
+		if s.kind == ops.Move {
+			focus := ""
+			if src.Path() == s.panelPaths[s.srcPanel] {
+				focus = src.NextFocus(s.names)
+			}
+			cmds = append(cmds, a.refreshPanelAt(s.srcPanel, s.panelPaths[s.srcPanel], focus))
+		}
 	}
-	dstIdx := 1 - s.srcPanel
+	dstIdx := s.dstPanel
+	if dstIdx < 0 || dstIdx >= len(a.panels) || dstIdx == s.srcPanel {
+		dstIdx = 1 - s.srcPanel // sessions built by hand (tests) before dstPanel existed
+	}
 	cmds = append(cmds, a.refreshPanelAt(dstIdx, s.panelPaths[dstIdx], s.first))
 
 	summary := res.Summary()
@@ -645,6 +668,9 @@ func (a *App) finishTransfer(s *opSession, res ops.Result) tea.Cmd {
 		details = append(details, "No items were processed because the free-space check did not permit continuing")
 	}
 	a.finishTask(s, state, summary, details...)
+	if s.after != nil {
+		s.after(a)
+	}
 	switch {
 	case s.lowSpaceDeclined:
 		a.setStatusLevel(summary, lvlWarn)
@@ -797,16 +823,21 @@ func (a *App) startDelete(s *opSession, plan ops.DeletePlan) tea.Cmd {
 }
 
 func (a *App) finishDelete(s *opSession, res ops.DeleteResult) tea.Cmd {
-	p := a.panels[s.srcPanel]
 	n := len(s.plan.Paths)
-	if res.OK() && a.sourceSelectionUnchanged(s) {
-		p.ClearSelection()
+	dir, focus := "", ""
+	if s.srcPanel >= 0 && s.srcPanel < len(a.panels) && a.panels[s.srcPanel] != nil {
+		p := a.panels[s.srcPanel]
+		dir = s.panelPaths[s.srcPanel]
+		if res.OK() && a.sourceSelectionUnchanged(s) {
+			p.ClearSelection()
+		}
+		if p.Path() == dir {
+			focus = p.NextFocus(s.names)
+		}
+	} else {
+		dir = s.fromLabel // Advanced Search: the folder the result lives in
 	}
-	focus := ""
-	if p.Path() == s.panelPaths[s.srcPanel] {
-		focus = p.NextFocus(s.names)
-	}
-	cmd := a.refreshPanelsAt(s.panelPaths[s.srcPanel], focus)
+	cmd := a.refreshPanelsAt(dir, focus)
 
 	var summary string
 	removed := fmt.Sprintf("%d of %d items", res.Removed, n)
@@ -843,6 +874,9 @@ func (a *App) finishDelete(s *opSession, res ops.DeleteResult) tea.Cmd {
 		a.setStatusLevel(msg, lvlErr)
 	}
 	a.finishTask(s, state, summary, details...)
+	if s.after != nil {
+		s.after(a)
+	}
 	return cmd
 }
 

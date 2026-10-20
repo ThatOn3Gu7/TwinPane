@@ -121,6 +121,20 @@ func (a *App) openViewer(p *panel.Panel, e fsys.Entry) tea.Cmd {
 // openAdvancedViewer is the read-only inspection path from Advanced Search.
 // It deliberately leaves both panels and the search view untouched.
 func (a *App) openAdvancedViewer(path, query string, line int) tea.Cmd {
+	return a.openViewerAt(path, query, line, true)
+}
+
+// openViewerAtPath opens the regular viewer on a file at a one-based line,
+// seeding the search so the match is highlighted. Advanced Search uses it
+// after jumping to a content result: the panels are already on the folder, so
+// closing the viewer leaves the user there and its keys are the full set.
+func (a *App) openViewerAtPath(path, query string, line int) tea.Cmd {
+	return a.openViewerAt(path, query, line, false)
+}
+
+// openViewerAt loads one file into a new viewer, optionally read-only and at
+// a line (with query highlighted when it is not empty).
+func (a *App) openViewerAt(path, query string, line int, readOnly bool) tea.Cmd {
 	if path == "" {
 		return nil
 	}
@@ -128,7 +142,7 @@ func (a *App) openAdvancedViewer(path, query string, line int) tea.Cmd {
 	v := &viewer{
 		seq: a.opSeq, name: filepath.Base(path), where: filepath.Dir(path), path: path,
 		loading: true, wrap: true, numbers: true, mcur: -1,
-		fromAdvanced: true, initialQuery: query, initialLine: line,
+		fromAdvanced: readOnly, initialQuery: query, initialLine: line,
 	}
 	a.viewer = v
 	a.setStatus("", false)

@@ -505,6 +505,10 @@ func (a *App) advancedSearchKey(msg tea.KeyMsg) tea.Cmd {
 	case "ctrl+t":
 		a.toggleAdvancedSearchMode()
 		return nil
+	case "ctrl+a":
+		// The only action shortcut: a contextual menu, so every printable
+		// key still belongs to the query. Home still moves the field cursor.
+		return a.openAdvancedActions()
 	case "?", "f1":
 		a.openHelp()
 		return nil
@@ -666,8 +670,12 @@ func (a *App) inspectAdvancedResult() tea.Cmd {
 		entry := &v.entries[index]
 		entry.Resolve()
 		if entry.IsDir {
-			a.setStatusLevel("Advanced Search inspection opens files only", lvlWarn)
-			return nil
+			// Enter on a folder enters it in the main interface, like the
+			// panels do.
+			return a.advancedEnterDirectory(advancedTarget{
+				path: entry.Path, rel: entry.Rel, name: filepath.Base(entry.Path),
+				isDir: true, isLink: entry.IsLink,
+			})
 		}
 		path = entry.Path
 	} else {
