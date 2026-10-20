@@ -10,6 +10,29 @@ The complete description of every feature is in
 ## [Unreleased]
 
 ### Added
+- **Back and forward through each panel's history.** `[` / `]` (also
+  `Alt+←` / `Alt+→`) step through the folders a panel has visited during this
+  run: local folders, archives (including the folder browsed inside them) and
+  rclone remotes. Each panel has its own history, the cursor and the scroll
+  position come back with the folder, and up to 100 steps are kept. History is
+  session-local and separate from the bookmarks: nothing is saved and ignoring
+  it changed nothing else. Locations are stored as typed entries (local,
+  archive, remote with its source), so returning to a remote reconnects to that
+  remote and a local folder that looks like an rclone target is never mistaken
+  for one. A location that disappeared is skipped with a note in the status
+  line; a step whose load fails is put back for a retry; a new navigation drops
+  the forward entries. The hint bar shows `[`/`]` only when a step exists and
+  the `M` menu lists Back/Forward with their step counts.
+- **Read-only preview of remote text files.** `Enter` / `v` on a text file of
+  an rclone remote now opens it in the regular viewer, with the same
+  highlighting, wrapping, `/` search and scrolling. The preview is strictly
+  read-only (editing and Open with are refused with an explanation and a hint
+  to copy the file to a local panel), bounded by the viewer's 8 MiB limit
+  (known-oversize files are refused before any transfer; unknown sizes are
+  measured and cut), and streamed into a private temporary folder (`0700`,
+  file `0600`) outside the browsed folder that is removed whether the read
+  succeeds, fails or is cancelled. `Esc` interrupts the transfer; provider
+  errors keep rclone's own message and are distinct from cancellation.
 - **Advanced Search actions.** `Ctrl+A` in Advanced Search (filename and
   content mode) opens a menu for the selected result: inspect read-only, open
   with the default app, **jump to location** (closes the search, shows the

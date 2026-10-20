@@ -186,6 +186,17 @@ Not included: configurable keys or themes, and editing archives in place.
   largest-first results and apparent/allocated size totals.
 - **Background task view** (`t`) tracks active operations and their results;
   cancel active tasks or clear completed history.
+- **Back and forward per panel** (`[` / `]`, `Alt+←` / `Alt+→`) revisit the
+  folders a panel has seen this session — local, inside an archive or on an
+  rclone remote — restoring the cursor and scroll position. Each panel has its
+  own history; it is never saved and stays separate from the bookmarks.
+  Missing locations are skipped with a note, and a fresh navigation drops the
+  forward steps.
+- **Read-only preview of remote text files:** `Enter` / `v` streams up to the
+  viewer's 8 MiB limit through rclone into a private temporary folder that is
+  deleted afterwards. It is strictly read-only (edit and Open with are
+  refused; copy the file to a local panel to work on it), `Esc` cancels the
+  transfer, and provider errors keep rclone's own explanation.
 - **TAR browsing** lets you inspect TAR and supported compressed-TAR archives
   read-only and selectively extract entries.
 - **Hidden-file visibility** now persists across launches.
@@ -419,9 +430,12 @@ twinpane --version
 | `~` | home folder | `q` / `F10` | quit when idle; active tasks must finish or be cancelled |
 | `Ctrl+R` ¹ | sources: local / cloud | `n` / `F7` ¹ | new folder |
 | `Ctrl+L` ¹ | refresh both panels | | |
+| `[` / `Alt+←` ² | back in this panel's history | `]` / `Alt+→` ² | forward in this panel's history |
 
 ¹ New in v0.8.0. In v0.7.0, `Ctrl+R` refreshes and there is no new-folder
-key.
+key. ² New in v0.9.0: each panel keeps its own navigation history (cursor
+restored, separate from bookmarks), and remote text files open in the
+read-only viewer.
 
 The [user guide](docs/USER_GUIDE.md#keyboard-controls) lists every key,
 including those of the viewer, dialogs, search and bulk rename.

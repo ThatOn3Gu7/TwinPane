@@ -37,6 +37,73 @@ cancellable folder-size analysis, and a background task view. It also adds
 read-only TAR browsing, persists the hidden-file preference, and includes
 several safety fixes.
 
+#### Back and forward through each panel's history (`[` / `]`)
+
+Each panel remembers where it has been **during this run** — local folders,
+archives and remote folders — independently of the other panel. `[` (or
+`Alt+←`) goes back one step, `]` (or `Alt+→`) goes forward one step. The
+status line names the folder you land in (`back to /home/me/proj`).
+
+- The **cursor position and the scroll position** come back with the folder,
+  so going back to a listing puts you where you were, not at the top.
+- Only the panel you are using moves. The other panel keeps its own history,
+  its own cursor and its own folder; `Tab` switches which one the keys drive.
+- History is **session-local**: it is not saved, it does not appear in the
+  bookmarks (`b`, `B`), and quitting forgets it. Bookmarks and history are
+  therefore separate features that never overwrite each other.
+- Locations are stored as typed entries, not as text paths: a local folder, an
+  archive (with the folder you were browsing inside it) or an rclone remote
+  (with the remote's name and the source behind it). Returning to a remote
+  entry therefore reconnects to that remote, and a local folder whose name
+  looks like an rclone target (`box:stuff`) is never mistaken for a remote.
+- Up to 100 steps are kept per panel; older ones are dropped.
+- A step that can no longer be loaded is skipped, with a note in the status
+  line (`skipped /home/me/gone: no longer available`), and the next available
+  step is used. If only the skipped entry existed, nothing moves. A step whose
+  load fails (a folder that disappeared between the check and the read) puts
+  that entry back, so it can be retried instead of silently vanishing.
+- Any new navigation (opening a folder, going to the parent, changing source,
+  opening an archive) drops the forward entries, as in a browser. A refresh
+  (`Ctrl+L`), sorting, or moving the cursor does not touch the history.
+- The hint bar shows `[`/`]` only while a step is available, and `M` (the
+  action menu) lists **Back** / **Forward** with the number of steps on each
+  side.
+
+#### Read-only preview of remote text files (`Enter` / `v`)
+
+`Enter` or `v`/`F3` on a text file of an rclone remote opens it in the regular
+viewer, with the same highlighting, wrapping, line numbers, `/` search and
+scrolling as local files.
+
+- **Read-only, always.** Editing (`e`), Open with (`o`/`O`) and every other
+  write path stay unavailable for remote files: `e` explains that the preview
+  is read-only and offers the way out — copy the file to a local panel with
+  `c` and work on it there. The header says `read-only remote preview` and no
+  edit hint is shown.
+- **Bounded.** At most the viewer's current limit (8 MiB) is transferred. When
+  the provider reports a size above the limit, the file is refused *before*
+  anything is downloaded, and the message says how big it is and that copying
+  it to a local panel is the way to read all of it. When the provider reports
+  no size (several backends report 0), the transfer is measured and cut at the
+  limit, and the header then says `only the first 8.0 M shown`.
+- **Private staging.** The bytes are streamed into a private temporary folder
+  (mode `0700`, file `0600`) in the operating system's temporary area — never
+  into the folder you are browsing — and both are removed as soon as the text
+  is in memory. A cancelled, failed or oversized preview leaves nothing
+  behind, and it never appears in a panel listing.
+- **Cancellation.** `Esc` while the file is loading stops the transfer
+  immediately (`Esc cancels the transfer` is shown while it runs); rclone is
+  interrupted, its partial output is discarded with the staging folder, and
+  the panel is exactly where it was.
+- **Errors are rclone's.** A provider that refuses the read (server-side
+  documents such as Google Docs, unsupported operations, an expired login) or
+  fails halfway is reported with rclone's own explanation; a read that broke
+  off says how many bytes had arrived. Cancelling and failing are different
+  statuses, so `Esc` never looks like an error.
+- Providers are not assumed to behave alike: streams, endless streams, unknown
+  sizes, refusals and mid-transfer failures are all handled and covered by
+  tests.
+
 #### Live filename search (`/`)
 
 `/` opens a live, non-recursive filename search of the active panel's folder.
@@ -1272,6 +1339,8 @@ v0.3.1; the matching rules below still apply)
 | `s` | cycle sort: name → size → time → type |
 | `S` | reverse the sort order (↑/↓) |
 | `Ctrl+L` | refresh both panels (`Ctrl+R` in v0.7.0) |
+| `[` / `Alt+←` | **back** one step in this panel's history (cursor restored; new in v0.9.0) |
+| `]` / `Alt+→` | **forward** one step in this panel's history (new in v0.9.0) |
 | `Ctrl+R` | **sources**: local files or an rclone remote for the active panel (new in v0.8.0) |
 | `n` / `F7` | **new folder** (new in v0.8.0) |
 | `?` / `F1` | help (scroll with `↑`/`↓` `PgUp`/`PgDn` `g`/`G`; any other key closes it) |
@@ -1280,7 +1349,9 @@ v0.3.1; the matching rules below still apply)
 **Changed in v0.8.0:** refresh is `Ctrl+L` (was `Ctrl+R`);
 `Ctrl+R` opens Sources (cloud remotes); `n`/`F7` (new folder) are new. These
 keys were unused before, apart from `Ctrl+R`, whose move was decided
-deliberately and is documented here. `Ctrl+R` inside the bulk-rename dialog
+deliberately and is documented here. `[` and `]` (new in v0.9.0) were unused
+before as well; `Alt+←`/`Alt+→` join the existing `←`/`→` movement keys as
+their Alt forms, so plain `←`/`→` keep working exactly as before. `Ctrl+R` inside the bulk-rename dialog
 (regular expressions) is unchanged.
 
 **Changed in v0.3.0:** `h` now toggles hidden files (`.` still works). Parent
@@ -1425,8 +1496,10 @@ including the end-to-end test scripts, are in
   indexed from its central directory; TAR is indexed by streaming headers,
   with limits on entry count, retained path data, nesting and expanded bytes.
 - Cloud remotes: need rclone and a remote set up with
-  `rclone config`; TwinPane does not create or edit remotes. Remote files
-  can't be viewed, edited or opened in place (copy them to a local panel).
+  `rclone config`; TwinPane does not create or edit remotes. Remote text files
+  can be **previewed read-only** (`Enter`/`v`, up to the viewer's 8 MiB
+  limit); editing, Open with and every other write path stay unavailable —
+  copy the file to a local panel with `c` for that.
   Rename on a remote is one item at a time. Symbolic links are not uploaded
   (rclone does not follow them; links inside uploaded folders are skipped).
   Recursive folder-size analysis (`A`) is available only for local folders;
