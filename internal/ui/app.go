@@ -567,6 +567,10 @@ func (a *App) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case k.Parent.Matches(msg):
 		return a, p.Parent()
+	case k.Back.Matches(msg):
+		return a, a.navMove(p, true)
+	case k.Forward.Matches(msg):
+		return a, a.navMove(p, false)
 	case k.Home.Matches(msg):
 		if p.InRemote() {
 			return a, p.GoLocal(fsys.HomeDir(), "")

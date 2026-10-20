@@ -83,6 +83,9 @@ func (a *App) browseHints() []barItem {
 	isBrowsable := ok && !cur.IsDir && !cur.IsParent && a.isBrowsableArchive(cur.Path)
 
 	out := []barItem{item("Tab", "switch", "tab")}
+	// history comes right after Tab: it is contextual, and the end of the bar
+	// is what narrow terminals drop
+	out = append(out, a.navHints(p)...)
 	if isBrowsable && nsel == 0 {
 		out = append(out, item("⏎", "browse archive", "enter"), item("x", "extract", "x"))
 	}
@@ -161,6 +164,7 @@ func (a *App) remoteHints() []barItem {
 	cur, ok := p.Current()
 	nsel := len(p.Selection())
 	out := []barItem{item("Tab", "switch", "tab"), item("t", "tasks", "t")}
+	out = append(out, a.navHints(p)...)
 	if ok && cur.IsDir && nsel == 0 {
 		out = append(out, item("⏎", "open", "enter"))
 	}
@@ -186,7 +190,8 @@ func (a *App) remoteHints() []barItem {
 	if a.showHidden {
 		hidden = "hide hidden"
 	}
-	out = append(out, item("h", hidden, "h"), item("s/S", "sort", "s"), item("M", "menu", "M"), item("q", "quit", "q"))
+	out = append(out, item("h", hidden, "h"), item("s/S", "sort", "s"))
+	out = append(out, item("M", "menu", "M"), item("q", "quit", "q"))
 	return out
 }
 
@@ -197,6 +202,7 @@ func (a *App) archiveHints() []barItem {
 	cur, ok := p.Current()
 	nsel := len(p.Selection())
 	out := []barItem{item("Tab", "switch", "tab"), item("t", "tasks", "t"), item("Esc", "leave archive", "esc")}
+	out = append(out, a.navHints(p)...)
 	if len(p.Targets()) > 0 {
 		out = append(out, item("x", "extract", "x"))
 	}
@@ -228,7 +234,8 @@ func (a *App) archiveHints() []barItem {
 	if a.showHidden {
 		hidden = "hide hidden"
 	}
-	return append(out, item("h", hidden, "h"), item("s/S", "sort", "s"), item("q", "quit", "q"))
+	out = append(out, item("h", hidden, "h"), item("s/S", "sort", "s"))
+	return append(out, item("q", "quit", "q"))
 }
 
 func (a *App) searchHints() []barItem {

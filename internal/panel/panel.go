@@ -99,6 +99,10 @@ type Panel struct {
 	spinFor    time.Duration      // how long the current load has been running, as of the last tick
 
 	width, height int
+
+	// hist is this panel's own session-local back/forward history (see
+	// history.go); it is never shared with the other panel or persisted.
+	hist navHistory
 }
 
 // New creates a panel. Call Load to populate it.
@@ -326,6 +330,7 @@ func (p *Panel) Load(path, focus string, mode LoadMode) tea.Cmd {
 func (p *Panel) loadLocal(path, focus string, mode LoadMode, inArc bool) tea.Cmd {
 	p.CancelLoad()
 	p.seq++
+	p.clearPendingForget()
 	p.beginLoad(path)
 	seq, id, lister, opts := p.seq, p.id, p.lister, p.opts
 	if arc := p.arc; arc != nil && inArc {
@@ -374,6 +379,7 @@ func loadArchive(id int, seq uint64, arc *archive.Archive, inner, focus string, 
 func (p *Panel) loadRemote(src *RemoteSource, loc cloud.Path, focus string, mode LoadMode) tea.Cmd {
 	p.CancelLoad()
 	p.seq++
+	p.clearPendingForget()
 	p.beginLoad(loc.Display())
 	ctx, cancel := context.WithCancel(context.Background())
 	p.loadCancel = cancel
@@ -426,7 +432,9 @@ func (p *Panel) CancelLoad() bool {
 // OpenArchive indexes a supported ZIP or TAR-family archive at path and shows
 // its root folder. On failure the panel stays where it is (Apply returns the error).
 func (p *Panel) OpenArchive(path string) tea.Cmd {
+	p.CancelLoad()
 	p.seq++
+	p.clearPendingForget()
 	p.beginLoad(path)
 	seq, id, opts := p.seq, p.id, p.opts
 	return func() tea.Msg {
@@ -458,6 +466,9 @@ func (p *Panel) Apply(msg LoadedMsg) error {
 	if msg.Seq != p.seq {
 		return nil // stale result from a superseded request
 	}
+	// Where the panel is right now: a completed navigation records it so
+	// Back can return to it (cursor and scroll included).
+	before, hadBefore := p.navState(), p.path != ""
 	p.loading = false
 	p.loadCancel = nil
 	p.pending = ""
@@ -465,6 +476,7 @@ func (p *Panel) Apply(msg LoadedMsg) error {
 	if msg.Err != nil {
 		switch msg.Mode {
 		case LoadNavigate:
+			p.settleNav(msg, false) // a failed back/forward keeps its entry
 			return msg.Err
 		default: // Force / Refresh: show the error inside the panel
 			p.arc = msg.Arc
@@ -486,6 +498,7 @@ func (p *Panel) Apply(msg LoadedMsg) error {
 			p.listing = fsys.Listing{Path: p.path}
 			p.detach()
 			p.cursor, p.offset = 0, 0
+			p.settleNav(msg, false)
 			return msg.Warn
 		}
 	}
@@ -550,6 +563,13 @@ func (p *Panel) Apply(msg LoadedMsg) error {
 		p.offset = p.cursor - prevRow
 	}
 	p.clamp()
+	// A back/forward move already put the place we left on the other stack;
+	// any other completed navigation becomes the new back entry.
+	moved := p.hist.pending != nil && p.hist.pending.seq == msg.Seq
+	p.settleNav(msg, true)
+	if !moved {
+		p.record(before, hadBefore, p.navState())
+	}
 	return msg.Warn
 }
 

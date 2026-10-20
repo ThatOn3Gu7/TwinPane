@@ -64,6 +64,7 @@ func (a *App) menuEntries() (title string, entries []menuEntry) {
 		add(menuEntry{label: "Leave the archive", key: "esc", send: "esc"})
 		add(menuEntry{label: "Bookmarks…", key: "b", send: "b"})
 		add(menuEntry{label: "Storage info", key: "i", send: "i"})
+		entries = append(entries, a.navMenuEntries(p)...)
 		return title, entries
 	}
 
@@ -153,6 +154,7 @@ func (a *App) menuEntries() (title string, entries []menuEntry) {
 	add(menuEntry{label: "Bookmarks…", key: "b", send: "b"})
 	add(menuEntry{label: "Storage info", key: "i", send: "i"})
 	add(menuEntry{label: "Analyze folder sizes", key: "A", send: "A"})
+	entries = append(entries, a.navMenuEntries(p)...)
 	if len(targets) > 0 {
 		add(menuEntry{label: "Delete…", key: "d", send: "d", danger: true})
 	}

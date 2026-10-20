@@ -28,6 +28,7 @@ func (b Binding) Matches(msg tea.KeyMsg) bool {
 type KeyMap struct {
 	Up, Down, PageUp, PageDown, Top, Bottom            Binding
 	Open, Parent, Home, SyncOther, Compare, FolderSize Binding
+	Back, Forward                                      Binding
 	Select, SelectAll, Unselect                        Binding
 	Switch, Hidden, Sort, Reverse, Refresh             Binding
 	Search                                             Binding
@@ -51,14 +52,18 @@ type KeyMap struct {
 // DefaultKeys returns the default key bindings.
 func DefaultKeys() KeyMap {
 	return KeyMap{
-		Up:         Binding{[]string{"up", "k"}, "↑/k", "move up"},
-		Down:       Binding{[]string{"down", "j"}, "↓/j", "move down"},
-		PageUp:     Binding{[]string{"pgup", "ctrl+b"}, "PgUp", "page up"},
-		PageDown:   Binding{[]string{"pgdown", "ctrl+f"}, "PgDn", "page down"},
-		Top:        Binding{[]string{"home", "g"}, "Home/g", "first entry"},
-		Bottom:     Binding{[]string{"end", "G"}, "End/G", "last entry"},
-		Open:       Binding{[]string{"enter", "right", "l"}, "⏎/→/l", "open directory"},
-		Parent:     Binding{[]string{"backspace", "left"}, "⌫/←", "parent directory"},
+		Up:       Binding{[]string{"up", "k"}, "↑/k", "move up"},
+		Down:     Binding{[]string{"down", "j"}, "↓/j", "move down"},
+		PageUp:   Binding{[]string{"pgup", "ctrl+b"}, "PgUp", "page up"},
+		PageDown: Binding{[]string{"pgdown", "ctrl+f"}, "PgDn", "page down"},
+		Top:      Binding{[]string{"home", "g"}, "Home/g", "first entry"},
+		Bottom:   Binding{[]string{"end", "G"}, "End/G", "last entry"},
+		Open:     Binding{[]string{"enter", "right", "l"}, "⏎/→/l", "open directory"},
+		Parent:   Binding{[]string{"backspace", "left"}, "⌫/←", "parent directory"},
+		// One help row for both directions keeps the help screen a page;
+		// the keys themselves are separate bindings (see handleKey).
+		Back:       Binding{[]string{"alt+left", "["}, "[ / ]", "back / forward (history)"},
+		Forward:    Binding{[]string{"alt+right", "]"}, "[ / ]", "back / forward (history)"},
 		Home:       Binding{[]string{"~"}, "~", "go to home directory"},
 		SyncOther:  Binding{[]string{"="}, "=", "same dir in other panel"},
 		Compare:    Binding{[]string{"D"}, "D", "compare local directories"},
@@ -107,7 +112,7 @@ func (k KeyMap) helpSections() [2][]helpSection {
 	return [2][]helpSection{
 		{
 			{"Navigation", []Binding{k.Switch, k.Up, k.Down, k.PageUp, k.PageDown, k.Top, k.Bottom,
-				k.Open, k.Parent, k.Home, k.SyncOther}},
+				k.Open, k.Parent, k.Home, k.SyncOther, k.Back}},
 			{"Selection", []Binding{k.Select, k.SelectAll, k.Unselect}},
 			{"Archives", []Binding{
 				{Help: "⏎ on .zip", Desc: "browse (no extraction)"},
