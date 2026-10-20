@@ -4,8 +4,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/ThatOn3Gu7/TwinPane/internal/cloud"
 )
 
 // ---- helpers ---------------------------------------------------------------------
@@ -413,5 +416,125 @@ func TestHistoryLimitsAndLabels(t *testing.T) {
 	}
 	if l := (NavLocation{Kind: NavArchive, Path: "/tmp/a.zip", Inner: "sub"}).Label(); l != "a.zip: /sub" {
 		t.Fatalf("archive label %q", l)
+	}
+}
+
+// fakeRcloneScript writes a shell-script rclone that lists a tiny "box"
+// remote and returns its path. It lets the remote history be exercised where
+// the real rclone is not installed; the real-rclone tests above still run
+// when it is.
+func fakeRcloneScript(t *testing.T, script string) string {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("the simulated rclone is a POSIX shell script")
+	}
+	p := filepath.Join(t.TempDir(), "rclone")
+	if err := os.WriteFile(p, []byte("#!/bin/sh\n"+script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return p
+}
+
+func TestHistoryRemoteWithSimulatedRclone(t *testing.T) { // SIMULATED rclone
+	bin := fakeRcloneScript(t, `case "$1" in
+  lsjson)
+    for last; do :; done
+    case "$last" in
+      box:*) : ;;
+      *) echo "unexpected argument: $last" >&2; exit 2 ;;
+    esac
+    case "$last" in
+      box:docs) echo '[{"Path":"a.txt","Name":"a.txt","Size":3,"ModTime":"2026-01-02T03:04:05Z","IsDir":false}]' ;;
+      *) echo '[{"Path":"docs","Name":"docs","Size":-1,"ModTime":"2026-01-02T03:04:05Z","IsDir":true}]' ;;
+    esac
+    exit 0
+    ;;
+esac
+echo "unsupported: $1" >&2
+exit 2
+`)
+	src := &RemoteSource{Client: &cloud.Client{Bin: bin}, Remote: cloud.Remote{Name: "box", Type: "alias"}}
+	dir := tree(t, 2)
+	p := newLoaded(t, dir)
+	if err := apply(t, p, p.OpenRemote(src)); err != nil {
+		t.Fatalf("OpenRemote: %v", err)
+	}
+	if !p.InRemote() || !p.Location().IsRoot() {
+		t.Fatalf("remote root: %+v", p.Location())
+	}
+	focusName(t, p, "docs")
+	if err := apply(t, p, p.Open()); err != nil {
+		t.Fatalf("open the remote folder: %v", err)
+	}
+	if !p.InRemote() || entryList(p) != "..,a.txt" {
+		t.Fatalf("inside the remote folder: remote=%v %s", p.InRemote(), entryList(p))
+	}
+
+	// back: the remote root, cursor on the folder, still on the same source
+	runNav(t, p, p.Back())
+	if !p.InRemote() || !p.Location().IsRoot() || currentName(p) != "docs" {
+		t.Fatalf("back on the remote: remote=%v loc=%+v cursor=%q", p.InRemote(), p.Location(), currentName(p))
+	}
+	if p.Source() == nil || p.Source().Remote.Name != "box" {
+		t.Fatalf("the typed source must come back: %+v", p.Source())
+	}
+	// back: the local folder it started from
+	runNav(t, p, p.Back())
+	if p.InRemote() || p.Path() != dir {
+		t.Fatalf("back to local: remote=%v path=%s", p.InRemote(), p.Path())
+	}
+	// forward returns to the remote (source re-attached), then into the folder
+	runNav(t, p, p.Forward())
+	if !p.InRemote() || p.Location().Remote != "box" {
+		t.Fatalf("forward to the remote: %v %+v", p.InRemote(), p.Location())
+	}
+	runNav(t, p, p.Forward())
+	if !p.InRemote() || entryList(p) != "..,a.txt" {
+		t.Fatalf("forward into the remote folder: remote=%v %s", p.InRemote(), entryList(p))
+	}
+	if p.Location().Path != "docs" {
+		t.Fatalf("location: %+v", p.Location())
+	}
+}
+
+func TestHistoryRemoteEntryWithoutSourceIsSkipped(t *testing.T) { // SIMULATED rclone
+	bin := fakeRcloneScript(t, `case "$1" in
+  lsjson) for last; do :; done
+    case "$last" in
+      box:docs) echo '[{"Path":"a.txt","Name":"a.txt","Size":3,"IsDir":false}]' ;;
+      *) echo '[{"Path":"docs","Name":"docs","Size":-1,"IsDir":true}]' ;;
+    esac
+    exit 0 ;;
+esac
+exit 2
+`)
+	src := &RemoteSource{Client: &cloud.Client{Bin: bin}, Remote: cloud.Remote{Name: "box", Type: "alias"}}
+	dir := tree(t, 1)
+	p := newLoaded(t, dir)
+	if err := apply(t, p, p.OpenRemote(src)); err != nil {
+		t.Fatal(err)
+	}
+	focusName(t, p, "docs")
+	if err := apply(t, p, p.Open()); err != nil {
+		t.Fatal(err)
+	}
+	// the remote behind the recorded entries is gone (for example the user
+	// removed it from rclone): the entry cannot be restored
+	for i := range p.hist.back {
+		if p.hist.back[i].Kind == NavRemote {
+			p.hist.back[i].Source = nil
+		}
+	}
+	// the dead entry is skipped, explained, and the step before it is used
+	m := p.Back()
+	if !m.OK || !strings.Contains(m.Note, "no longer available") || !strings.Contains(m.Note, "box") {
+		t.Fatalf("a remote entry without its source must be skipped: %+v", m)
+	}
+	runNav(t, p, m)
+	if p.Path() != dir || p.InRemote() {
+		t.Fatalf("back past the dead remote entry: %s remote=%v", p.Path(), p.InRemote())
+	}
+	if p.CanBack() {
+		t.Fatal("the dead remote entry must be gone for good")
 	}
 }

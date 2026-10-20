@@ -69,11 +69,7 @@ func (l NavLocation) Label() string {
 		}
 		return display
 	case NavRemote:
-		loc, ok := cloud.Parse(l.Path)
-		if !ok {
-			return l.Remote + ": " + l.Path
-		}
-		return loc.Display()
+		return cloud.Path{Remote: l.Remote, Path: l.Path}.Display()
 	default:
 		return l.Path
 	}
@@ -113,10 +109,13 @@ func (p *Panel) navState() NavLocation {
 	loc := NavLocation{Offset: p.offset}
 	switch {
 	case p.rem != nil:
+		// the parsed location, not the rclone argument: the entry is rebuilt
+		// as a typed path if the panel (or the other panel) changed sources
+		rem := p.Location()
 		loc.Kind = NavRemote
 		loc.Remote = p.rem.Remote.Name
 		loc.Source = p.rem
-		loc.Path = p.path
+		loc.Path = rem.Path
 	case p.arc != nil:
 		loc.Kind = NavArchive
 		loc.Path = p.arc.Path
