@@ -23,6 +23,11 @@ The complete description of every feature is in
   root and the `Type a filename or path…` placeholder above a separate
   `Results · N` list; counts and hidden-file information no longer share a
   line with the keyboard hints.
+- **Advanced Search previews scroll:** the mouse wheel (or a swipe) over the
+  preview scrolls the file or the matching lines instead of the result list,
+  and the preview's border carries a scroll indicator that can be tapped or
+  dragged. The result list keeps its own wheel scrolling; selecting another
+  result resets the preview to the top.
 - **Folder-size analysis:** a compact bordered summary (target, path,
   apparent/allocated size, counts), a `Largest items` table with aligned
   `NAME`/`TYPE`/`SIZE`/`SHARE` columns and proportional bars, a details panel

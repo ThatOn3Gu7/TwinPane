@@ -88,7 +88,15 @@ Since the search redesign it uses the same frame as the rest of the app:
   and **Preview · name** are separate bordered panels; the results panel keeps
   its right-hand count label, a `▸` marker, a full-row highlight for the
   selected row and a scroll thumb, while the preview names the file (and its
-  match count in content mode). When the terminal is too short or narrow for
+  match count in content mode).
+- **Preview scrolling.** Point at the preview and use the mouse wheel (or
+  swipe on Termux) to scroll through the file; the right border shows a
+  scroll indicator, which can be tapped or dragged like the other panels.
+  Scrolling always follows the pointer: over the result list it moves the
+  selection, over the preview it moves the preview. Content previews keep the
+  file summary pinned at the top and scroll the matching lines below it.
+  Choosing another result starts its preview at the top again. When the
+  terminal is too short or narrow for
   two panes the panels stack (results
   above the preview). Very short terminals (around 30×9) fall back to a
   compact, unboxed list that keeps the heading, root, query, status and rows.

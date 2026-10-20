@@ -32,7 +32,7 @@ type advancedSearchLayout struct {
 
 	resultTop  int // body row of the first result row
 	resultRows int
-	previewTop int // body row of the first preview row
+	previewTop int // screen row of the preview panel's top border
 }
 
 func (a *App) advancedLayout(bodyHeight int) advancedSearchLayout {
@@ -87,7 +87,12 @@ func (a *App) advancedLayout(bodyHeight int) advancedSearchLayout {
 	l.resultTop = l.searchH + 1
 	l.resultRows = max(0, l.resultsH-2)
 	if l.previewH > 0 {
-		l.previewTop = l.searchH + l.resultsH + 1
+		if l.wide {
+			// Both panels start directly below the search section.
+			l.previewTop = l.searchH + 1
+		} else {
+			l.previewTop = l.searchH + l.resultsH + 1
+		}
 	}
 	return l
 }
@@ -170,11 +175,28 @@ func (a *App) advancedResultsBox(layout advancedSearchLayout) []string {
 func (a *App) advancedPreviewBox(layout advancedSearchLayout) []string {
 	title, right := a.advancedPreviewHeading()
 	inner := max(1, layout.previewW-2)
-	body := make([]string, layout.previewH-2)
+	a.clampAdvancedPreview()
+	rows := layout.previewH - 2
+	body := make([]string, max(0, rows))
 	for row := range body {
 		body[row] = a.advancedPreviewRow(row, inner, len(body))
 	}
-	return sectionBox(a.theme, title, right, body, layout.previewW, layout.previewH, false, nil)
+	// The scroll indicator lives on the preview's right border, like the
+	// file panels and the result lists.
+	total, visible := a.advancedPreviewWindow(layout)
+	thumb := scrollbar.Cells(total, visible, a.advancedSearch.previewOffset, visible)
+	thumbRows := make([]bool, len(body))
+	for i := range thumb {
+		// Content previews keep their summary row pinned above the matches.
+		shift := 0
+		if a.advancedSearch.mode == advancedContentMode && rows > 1 {
+			shift = 1
+		}
+		if i+shift < len(thumbRows) {
+			thumbRows[i+shift] = thumb[i]
+		}
+	}
+	return sectionBox(a.theme, title, right, body, layout.previewW, layout.previewH, false, thumbRows)
 }
 
 // advancedPreviewHeading names the file being previewed, mirroring the
@@ -456,6 +478,7 @@ func (a *App) advancedPreviewRow(row, width, rows int) string {
 		if rows == 1 {
 			lineIndex = 0
 		}
+		lineIndex += v.previewOffset
 		if lineIndex < 0 || lineIndex >= len(result.Matches) {
 			return blank
 		}
@@ -503,10 +526,11 @@ func (a *App) advancedPreviewRow(row, width, rows int) string {
 		}
 		return blank
 	}
-	if row >= len(doc.Lines) {
+	line := row + v.previewOffset
+	if line < 0 || line >= len(doc.Lines) {
 		return blank
 	}
-	return codePreviewRow(th, row+1, doc.Lines[row], previewSyntaxLine(v, row), len(doc.Lines), width)
+	return codePreviewRow(th, line+1, doc.Lines[line], previewSyntaxLine(v, line), len(doc.Lines), width)
 }
 
 // previewSyntaxLine returns the Chroma-rendered line when it is available.

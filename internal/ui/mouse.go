@@ -53,6 +53,7 @@ const (
 	areaViewer
 	areaFolderSize
 	areaAdvancedSearch
+	areaAdvancedPreview
 )
 
 // pressState remembers a left-button press on a hint-bar item, so that the
@@ -369,6 +370,10 @@ func (a *App) dragTo(y int) {
 	case areaViewer:
 		if a.viewer != nil {
 			a.viewerScrollTrack(y)
+		}
+	case areaAdvancedPreview:
+		if a.advancedSearch != nil {
+			a.advancedPreviewScrollTrack(y, a.advancedLayout(max(1, a.height-3)))
 		}
 	}
 }
