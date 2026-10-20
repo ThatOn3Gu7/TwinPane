@@ -113,8 +113,9 @@ func (a *App) refuseArchiveDest(what string) bool {
 // for a double tap, the editor as in phase 4).
 func (a *App) openFile(p *panel.Panel, e fsys.Entry, tap bool) tea.Cmd {
 	if p.InRemote() {
-		a.setStatus("files on a remote cannot be opened directly — copy it to a local panel first (c)", true)
-		return nil
+		// remote files open in the read-only preview (viewer_remote.go): no
+		// local app can read them, and nothing on the remote is ever written
+		return a.openViewer(p, e)
 	}
 	if p.InArchive() {
 		return a.openViewer(p, e)

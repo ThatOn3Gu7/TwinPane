@@ -12,6 +12,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/ThatOn3Gu7/TwinPane/internal/cloud"
 	"github.com/ThatOn3Gu7/TwinPane/internal/fsys"
 	"github.com/ThatOn3Gu7/TwinPane/internal/panel"
 	"github.com/ThatOn3Gu7/TwinPane/internal/scrollbar"
@@ -36,6 +37,13 @@ type viewer struct {
 	loading bool
 	doc     *textview.Doc
 	err     error
+
+	// remote previews (rclone): read-only, staged privately and removed as
+	// soon as the text is in memory (see viewer_remote.go)
+	remote     bool
+	remoteLoc  cloud.Path
+	remoteSize int64
+	loadCancel context.CancelFunc
 
 	fromAdvanced  bool // Advanced Search inspection is read-only and returns to its results
 	initialQuery  string
@@ -83,6 +91,9 @@ func (a *App) openViewer(p *panel.Panel, e fsys.Entry) tea.Cmd {
 	if e.IsDir {
 		a.setStatus(fsys.SanitizeName(e.Name)+" is a folder: Enter opens it", true)
 		return nil
+	}
+	if p.InRemote() {
+		return a.openRemoteViewer(p, e)
 	}
 	a.opSeq++
 	v := &viewer{seq: a.opSeq, name: e.Name, loading: true, wrap: true, numbers: true, mcur: -1}
@@ -176,6 +187,7 @@ func (a *App) viewerLoaded(m viewLoadedMsg) tea.Cmd {
 	if v == nil || v.seq != m.seq {
 		return nil // closed or superseded
 	}
+	a.setStatus("", false)
 	v.loading = false
 	v.doc, v.err = m.doc, m.err
 	if m.doc == nil {
@@ -230,6 +242,9 @@ func (a *App) viewerSyntaxLoaded(m viewSyntaxMsg) {
 func (a *App) closeViewer() {
 	if a.viewer != nil && a.viewer.syntaxCancel != nil {
 		a.viewer.syntaxCancel()
+	}
+	if a.viewer != nil && a.viewer.loadCancel != nil {
+		a.viewer.loadCancel() // stops the rclone read and removes the staging
 	}
 	a.viewer = nil
 	a.setStatus("", false)
@@ -356,6 +371,10 @@ func (a *App) viewerKey(msg tea.KeyMsg) tea.Cmd {
 	case "e", "f4":
 		if v.fromAdvanced {
 			a.setStatus("Advanced Search inspection is read-only", true)
+			return nil
+		}
+		if v.remote {
+			a.setStatus("remote previews are read-only — copy the file to a local panel (c) to edit it", true)
 			return nil
 		}
 		if v.path == "" {
@@ -659,6 +678,9 @@ func (a *App) viewerInfo() string {
 	var parts []string
 	if v.fromAdvanced {
 		parts = append(parts, "read-only search inspection")
+	} else if v.remote {
+		// the location is appended below, like for every other document
+		parts = append(parts, "read-only remote preview")
 	} else if v.path != "" {
 		parts = append(parts, "e edits in your external editor")
 	} else {
@@ -702,20 +724,29 @@ func (a *App) viewerMessage() []string {
 	th := a.theme
 	switch {
 	case v.loading:
+		if v.remote {
+			return []string{th.Empty.Render("Reading from " + remoteLabel(v) + "…"), th.Summary.Render("Esc cancels the transfer")}
+		}
 		return []string{th.Empty.Render("Loading…")}
 	case v.err != nil:
 		return []string{th.Error.Render("Cannot show this file"), th.Summary.Render(errText(v.err))}
 	case v.doc.Binary:
 		out := []string{th.Empty.Render("This looks like a binary file, so it is not shown."),
 			th.Summary.Render("(" + v.doc.BinaryReason + ")")}
-		if v.path != "" && !v.fromAdvanced {
+		if v.path != "" && !v.fromAdvanced && !v.remote {
 			out = append(out, th.Summary.Render("e opens it in your external editor anyway."))
+		}
+		if v.remote {
+			out = append(out, th.Summary.Render("Remote previews are read-only: copy the file to a local panel (c) to work with it."))
 		}
 		return out
 	default:
 		out := []string{th.Empty.Render("(empty file)")}
-		if v.path != "" && !v.fromAdvanced {
+		if v.path != "" && !v.fromAdvanced && !v.remote {
 			out = append(out, th.Summary.Render("e opens it in your external editor."))
+		}
+		if v.remote {
+			out = append(out, th.Summary.Render("Remote previews are read-only: copy the file to a local panel (c) to work with it."))
 		}
 		return out
 	}
@@ -725,7 +756,7 @@ func (a *App) viewerHints() []barItem {
 	v := a.viewer
 	out := []barItem{item("Esc", "close", "esc")}
 	if !v.showsText() {
-		if v.path != "" && !v.fromAdvanced && v.err == nil && !v.loading {
+		if v.path != "" && !v.fromAdvanced && !v.remote && v.err == nil && !v.loading {
 			out = append(out, item("e", "edit externally", "e"))
 		}
 		return out

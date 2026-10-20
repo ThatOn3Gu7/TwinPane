@@ -231,8 +231,6 @@ func (a *App) remoteOpened(p *panel.Panel) {
 func (a *App) remoteUnsupported(msg tea.KeyMsg) string {
 	k := a.keys
 	switch {
-	case k.View.Matches(msg):
-		return "Viewing"
 	case k.Edit.Matches(msg), k.EditWith.Matches(msg):
 		return "Editing"
 	case k.Properties.Matches(msg):
