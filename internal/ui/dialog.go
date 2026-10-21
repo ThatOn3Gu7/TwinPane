@@ -415,11 +415,14 @@ func (a *App) renderDialog(d *dialog) string {
 			}
 		}
 		for i, it := range d.list {
-			num := "   "
+			// The key column is always followed by a separating space: a
+			// three-cell key ("esc") must never run into its label
+			// ("escLeave the archive").
+			num := "    "
 			if keyed {
-				num = runewidth.FillRight(it.key, 3)
+				num = runewidth.FillRight(it.key, 3) + " "
 			} else if i < 9 {
-				num = string(rune('1'+i)) + "  "
+				num = string(rune('1'+i)) + "   "
 			}
 			row := num + it.label + strings.Repeat(" ", labelW-runewidth.StringWidth(it.label))
 			if it.detail != "" {

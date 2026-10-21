@@ -17,6 +17,11 @@ import (
 type barItem struct {
 	key, desc string
 	send      string // key string (tea.KeyMsg.String()) to synthesise; "" = not clickable
+	// keepChip draws the padded key alone (no description) instead of
+	// dropping the item when the bar is too full for both. The focus-mode
+	// toggle uses it: on a narrow terminal "^O" still tells you how to get
+	// back to two panes.
+	keepChip bool
 }
 
 func item(key, desc, send string) barItem { return barItem{key: key, desc: desc, send: send} }
@@ -399,25 +404,50 @@ func (a *App) footerView() string {
 	avail := a.width - pinW
 	var b strings.Builder
 	used := 0
+	draw := func(it barItem, s string) {
+		w := lipgloss.Width(s)
+		if it.send != "" {
+			a.footerHits = append(a.footerHits, footerHit{used, used + w, it.send})
+		}
+		b.WriteString(s)
+		used += w
+	}
+	rest := items
 	for i, it := range items {
 		s := seg(it)
 		w := lipgloss.Width(s)
 		if used+w > avail {
 			if i > 0 {
+				rest = items[i:]
 				break
 			}
 			// the first item alone is too wide: shorten its description
 			s = a.fitSegment(it, avail)
 			w = lipgloss.Width(s)
 			if w == 0 || used+w > avail {
+				rest = items[i:]
 				break
 			}
 		}
-		if it.send != "" {
-			a.footerHits = append(a.footerHits, footerHit{used, used + w, it.send})
+		draw(it, s)
+		rest = items[i+1:]
+	}
+	// Chips that must stay reachable (keepChip: the focus-mode toggle) are
+	// drawn into whatever room is left, with their description when it fits
+	// and as a bare padded key otherwise. They are the lowest priority, so
+	// nothing that fits today moves: the chip only takes leftover cells.
+	for _, it := range rest {
+		if !it.keepChip {
+			continue
 		}
-		b.WriteString(s)
-		used += w
+		s := seg(it)
+		if used+lipgloss.Width(s) > avail {
+			s = a.theme.FooterKey.Render(it.key)
+		}
+		if used+lipgloss.Width(s) > avail {
+			continue
+		}
+		draw(it, s)
 	}
 	if pinned != nil && avail >= 0 {
 		// right-align the pinned item

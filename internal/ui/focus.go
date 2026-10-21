@@ -51,11 +51,14 @@ const (
 	focusPreviewMaxLines = 400
 )
 
+// focusKey is the shortcut, as tea reports it: a plain Ctrl-only combination
+// that Termux and on-screen keyboards (Gboard) send as an ordinary key
+// event, with no enhanced keyboard protocol. Ctrl+F stays Page Down.
+const focusKey = "ctrl+o"
+
 // keyFocusMode is a synthetic key used by the hint-bar chip and the action
-// menu to run the toggle, exactly like the other menu entries re-send their
-// shortcut. Terminals report Ctrl+Shift+F as a raw escape sequence rather
-// than a KeyMsg (see focusSequence), so the toggle has this third route and
-// stays reachable by touch and by mouse anywhere.
+// menu to run the same toggle, exactly like the other menu entries re-send
+// their shortcut, so the mode stays reachable by touch and by mouse anywhere.
 const keyFocusMode tea.KeyType = 200
 
 // FocusMode reports whether focus mode (one panel, full width) is active.
@@ -131,13 +134,11 @@ func (a *App) toggleFocus() tea.Cmd {
 	a.layout()
 	a.syncMode()
 	if a.focus {
-		what := "left"
-		if a.active == 1 {
-			what = "right"
-		}
-		a.setStatusLevel("focus mode: the "+what+" panel at full width — Tab switches panels, ^⇧F or M → Two panes shows both again", lvlOK)
+		// The title bar already names the panel ("focus · left panel"), so
+		// the status line spends its room on the ways out.
+		a.setStatusLevel("focus mode — Tab switches panels, Ctrl+O or M → Two panes shows both again", lvlOK)
 	} else {
-		a.setStatusLevel("two panes — ^⇧F or M → Focus mode shows one panel at full width", lvlOK)
+		a.setStatusLevel("two panes — Ctrl+O or M → Focus mode shows one panel at full width", lvlOK)
 	}
 	return nil
 }
@@ -363,93 +364,15 @@ func (a *App) previewTextLines(e fsys.Entry) []string {
 	return out
 }
 
-// ---- keys ---------------------------------------------------------------------
-
-// focusSequence reports whether msg is the raw escape sequence a terminal
-// sends for Ctrl+Shift+F. Bubble Tea reports sequences it does not know (CSI
-// 27;6;102~ from xterm's modifyOtherKeys, CSI 102;6u from the kitty keyboard
-// protocol) as "?CSI[…]?"; they are not KeyMsgs, so a dialog, a text field or
-// any other overlay can never mistake one for a command, and Ctrl+F stays
-// Page Down.
-func focusSequence(msg tea.Msg) bool {
-	s, ok := msg.(fmt.Stringer)
-	if !ok {
-		return false
-	}
-	txt := s.String()
-	if !strings.HasPrefix(txt, "?CSI[") || !strings.HasSuffix(txt, "]?") {
-		return false
-	}
-	return ctrlShiftF(strings.TrimSuffix(strings.TrimPrefix(txt, "?CSI["), "]?"))
-}
-
-// ctrlShiftF reports whether CSI parameters describe Ctrl+Shift+F.
-func ctrlShiftF(params string) bool {
-	if params == "" || strings.HasPrefix(params, "<") || strings.HasPrefix(params, "?") {
-		return false
-	}
-	// the final byte ends the parameter list
-	final := params[len(params)-1]
-	body := strings.TrimSuffix(params[:len(params)-1], "~")
-	if final != '~' && final != 'u' {
-		return false
-	}
-	fields := strings.Split(body, ";")
-	atoi := func(s string) (int, bool) {
-		n := 0
-		if s == "" {
-			return 0, false
-		}
-		for _, r := range s {
-			if r < '0' || r > '9' {
-				return 0, false
-			}
-			n = n*10 + int(r-'0')
-		}
-		return n, true
-	}
-	if final == '~' {
-		// CSI 27 ; modifier ; key ~
-		if len(fields) != 3 || fields[0] != "27" {
-			return false
-		}
-		mod, ok1 := atoi(fields[1])
-		key, ok2 := atoi(fields[2])
-		return ok1 && ok2 && mod == 6 && (key == 102 || key == 70)
-	}
-	// CSI key ; modifier u  (optionally: ; event-type u)
-	if len(fields) < 2 || len(fields) > 3 {
-		return false
-	}
-	key, ok1 := atoi(fields[0])
-	mod, ok2 := atoi(fields[1])
-	if !ok1 || !ok2 || mod != 6 || (key != 102 && key != 70) {
-		return false
-	}
-	if len(fields) == 3 {
-		ev, ok := atoi(fields[2])
-		if !ok || ev != 1 { // 1 = press; releases and repeats are ignored
-			return false
-		}
-	}
-	return true
-}
-
-// focusKeyAllowed reports whether the focus toggle may run right now: never
-// while the terminal belongs to the editor, and never while an overlay that
-// owns the keyboard is open.
-func (a *App) focusKeyAllowed() bool {
-	if a.keyBlocked() || a.quitting {
-		return false
-	}
-	if a.dialog != nil || a.showHelp || a.tasks.showing || a.props != nil || a.viewer != nil ||
-		a.search != nil || a.advancedSearch != nil || a.bulk != nil || a.folderSize != nil || a.comparison != nil {
-		return false
-	}
-	return true
-}
-
 // ---- hints and menu -------------------------------------------------------------
+
+// chipItem is a hint whose shortcut stays visible even when the bar has no
+// room left for its description.
+func chipItem(key, desc, send string) barItem {
+	it := item(key, desc, send)
+	it.keepChip = true
+	return it
+}
 
 // focusHints returns the focus-mode chips (the toggle, the preview pane and
 // go to path). They are contextual, so they come right after Tab.
@@ -457,7 +380,7 @@ func (a *App) focusHints() []barItem {
 	if !a.focus {
 		return nil
 	}
-	out := []barItem{item("^⇧F", "two panes", "focus")}
+	out := []barItem{chipItem("^O", "two panes", "focus")}
 	if a.focusPreviewAvail() {
 		label := "preview"
 		if a.focusPreview {
@@ -475,7 +398,7 @@ func (a *App) focusToggleHint() []barItem {
 	if a.focus {
 		return nil
 	}
-	return []barItem{item("^⇧F", "focus", "focus")}
+	return []barItem{chipItem("^O", "focus", "focus")}
 }
 
 // focusMenuEntries adds the mode entries to the action menu, which is the
@@ -483,7 +406,7 @@ func (a *App) focusToggleHint() []barItem {
 // the TwinPane badge).
 func (a *App) focusMenuEntries() []menuEntry {
 	if !a.focus {
-		return []menuEntry{{label: "Focus mode", detail: "one panel, full width", key: "^⇧F",
+		return []menuEntry{{label: "Focus mode", detail: "one panel, full width", key: "^O",
 			run: func() tea.Cmd { return a.toggleFocus() }}}
 	}
 	preview := "on"
@@ -493,7 +416,7 @@ func (a *App) focusMenuEntries() []menuEntry {
 		detail = "show details beside the list"
 	}
 	out := []menuEntry{
-		{label: "Two panes", detail: "show both panels again", key: "^⇧F", run: func() tea.Cmd { return a.toggleFocus() }},
+		{label: "Two panes", detail: "show both panels again", key: "^O", run: func() tea.Cmd { return a.toggleFocus() }},
 	}
 	if a.focusPreviewAvail() {
 		out = append(out, menuEntry{label: "Preview pane: " + preview, detail: detail, key: "p",

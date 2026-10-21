@@ -16,22 +16,24 @@ import (
 
 // ---- helpers --------------------------------------------------------------------
 
-// focusOn toggles focus mode the way the hint chip and the menu do (the
-// synthetic key), so the key path is covered too.
+// ctrlO is the shortcut as a terminal sends it: an ordinary key event.
+func ctrlO() tea.KeyMsg { return tea.KeyMsg{Type: tea.KeyCtrlO} }
+
+// focusOn turns focus mode on with the real shortcut (Ctrl+O).
 func focusOn(t *testing.T, a *App) {
 	t.Helper()
 	if a.FocusMode() {
 		return
 	}
-	_, cmd := a.Update(tea.KeyMsg{Type: keyFocusMode})
+	_, cmd := a.Update(ctrlO())
 	drain(a, cmd)
 	if !a.FocusMode() {
-		t.Fatal("focus mode did not turn on")
+		t.Fatal("Ctrl+O did not turn focus mode on")
 	}
 }
 
-// toggleFocusKey sends the synthetic key the hint chip and menu send; it
-// flips the mode (focusOn only ever turns it on).
+// toggleFocusKey flips the mode with the synthetic key that the hint chip
+// and the menu send (the touch / mouse route).
 func toggleFocusKey(t *testing.T, a *App) {
 	t.Helper()
 	was := a.FocusMode()
@@ -41,12 +43,6 @@ func toggleFocusKey(t *testing.T, a *App) {
 		t.Fatalf("focus mode did not toggle (still %v)", was)
 	}
 }
-
-// csiMsg stands in for bubbletea's unknownCSISequenceMsg, which is
-// unexported but only needs a String method.
-type csiMsg string
-
-func (c csiMsg) String() string { return string(c) }
 
 // panelLineWidth is the rendered width of a panel (all rows are equal).
 func panelLineWidth(a *App, i int) int {
@@ -219,61 +215,110 @@ func TestFocusModeWithoutRoomForPreview(t *testing.T) {
 	}
 }
 
-// ---- the Ctrl+Shift+F sequence ----------------------------------------------------
+// ---- the shortcut (Ctrl+O) -----------------------------------------------------------
 
-func TestCtrlShiftFSequenceDecoding(t *testing.T) {
-	good := []string{"27;6;102~", "27;6;70~", "102;6u", "70;6u", "102;6;1u", "70;6;1u"}
-	for _, p := range good {
-		if !ctrlShiftF(p) {
-			t.Fatalf("%q should be Ctrl+Shift+F", p)
-		}
+func TestCtrlOTogglesFocusMode(t *testing.T) {
+	a, _ := setup(t)
+	if a.FocusMode() {
+		t.Fatal("focus mode should start off")
 	}
-	bad := []string{"", "27;5;102~", "27;6;99~", "102;5u", "102;6;3u", "102;6;0u",
-		"<27;6;102~", "?27;6;102~", "27;6;102", "102", "x;y;z~"}
-	for _, p := range bad {
-		if ctrlShiftF(p) {
-			t.Fatalf("%q must not toggle focus mode", p)
-		}
+	press(a, "ctrl+o")
+	if !a.FocusMode() {
+		t.Fatal("Ctrl+O did not turn focus mode on")
 	}
-	// Whole messages: only the "?CSI[...]?" form bubbletea uses for
-	// sequences it does not recognise; a key never matches.
-	if !focusSequence(csiMsg("?CSI[27;6;102~]?")) {
-		t.Fatal("xterm modifyOtherKeys Ctrl+Shift+F not recognised")
+	press(a, "ctrl+o")
+	if a.FocusMode() {
+		t.Fatal("Ctrl+O did not turn focus mode off")
 	}
-	if !focusSequence(csiMsg("?CSI[102;6u]?")) {
-		t.Fatal("kitty keyboard Ctrl+Shift+F not recognised")
+	// It is a plain Ctrl-only key event: bubbletea reports KeyCtrlO, and
+	// nothing about an enhanced keyboard protocol is involved.
+	if got := ctrlO().String(); got != focusKey {
+		t.Fatalf("shortcut reports %q, want %q", got, focusKey)
 	}
-	if focusSequence(csiMsg("?CSI[27;5;102~]?")) {
-		t.Fatal("Ctrl+F must stay page down")
+	if focusKey != "ctrl+o" {
+		t.Fatalf("shortcut = %q, want the plain Ctrl-only ctrl+o", focusKey)
 	}
-	if focusSequence(tea.KeyMsg{Type: tea.KeyCtrlF}) {
-		t.Fatal("a plain key was treated as the sequence")
-	}
-	if focusSequence(nil) {
-		t.Fatal("nil message must not toggle focus mode")
+	// Ctrl+F is a different key and stays Page Down.
+	if ctrlF := (tea.KeyMsg{Type: tea.KeyCtrlF}); ctrlF.String() == focusKey {
+		t.Fatal("the shortcut collides with Ctrl+F")
 	}
 }
 
-func TestFocusSequenceIgnoredWhileOverlayOwnsKeyboard(t *testing.T) {
+func TestCtrlOIgnoredWhileOverlayOwnsKeyboard(t *testing.T) {
 	a, _ := setup(t)
+	// Help screen.
 	a.showHelp = true
-	a.Update(csiMsg("?CSI[102;6u]?"))
+	press(a, "ctrl+o")
 	if a.FocusMode() {
-		t.Fatal("focus mode toggled while help was open")
+		t.Fatal("Ctrl+O toggled focus mode while the help screen was open")
 	}
 	a.showHelp = false
-	a.Update(csiMsg("?CSI[102;6u]?"))
-	if !a.FocusMode() {
-		t.Fatal("focus mode did not toggle after help closed")
-	}
-	// A dialog swallows the sequence too (it is not a KeyMsg, so it can
-	// never press a button).
-	a.dialog = &dialog{kind: dlgConfirm, title: "x"}
-	a.Update(csiMsg("?CSI[102;6u]?"))
-	if !a.FocusMode() {
-		t.Fatal("a dialog changed focus mode")
+
+	// A modal dialog (also the menu, which is one).
+	a.dialog = &dialog{kind: dlgMenu, title: "menu", list: []listItem{{label: "x"}}}
+	press(a, "ctrl+o")
+	if a.FocusMode() {
+		t.Fatal("Ctrl+O toggled focus mode while a dialog was open")
 	}
 	a.dialog = nil
+
+	// The task view.
+	a.tasks.showing = true
+	press(a, "ctrl+o")
+	if a.FocusMode() {
+		t.Fatal("Ctrl+O toggled focus mode while the task view was open")
+	}
+	a.tasks.showing = false
+
+	// The read-only viewer.
+	press(a, "G", "enter")
+	if a.viewer == nil {
+		t.Fatal("the viewer did not open")
+	}
+	press(a, "ctrl+o")
+	if a.FocusMode() {
+		t.Fatal("Ctrl+O toggled focus mode while the viewer was open")
+	}
+	press(a, "esc")
+
+	// Back in browsing, the shortcut works again.
+	press(a, "ctrl+o")
+	if !a.FocusMode() {
+		t.Fatal("Ctrl+O no longer works after the overlays closed")
+	}
+}
+
+func TestCtrlFStaysPageDown(t *testing.T) {
+	h, _, _ := p4App(t, nil)
+	a := h.a
+	before := a.Panel(0).Cursor()
+	h.press("ctrl+f")
+	if a.FocusMode() {
+		t.Fatal("Ctrl+F toggled focus mode")
+	}
+	if a.Panel(0).Cursor() <= before {
+		t.Fatalf("Ctrl+F did not page down (cursor %d → %d)", before, a.Panel(0).Cursor())
+	}
+	// ... and in focus mode too.
+	focusOn(t, a)
+	pageTop := a.Panel(0).Cursor()
+	h.press("ctrl+f")
+	if !a.FocusMode() {
+		t.Fatal("Ctrl+F left focus mode")
+	}
+	if a.Panel(0).Cursor() <= pageTop {
+		t.Fatalf("Ctrl+F did not page down in focus mode (cursor %d → %d)", pageTop, a.Panel(0).Cursor())
+	}
+}
+
+func TestCtrlODoesNothingWhileQuitting(t *testing.T) {
+	a, _ := setup(t)
+	a.quitting = true
+	press(a, "ctrl+o")
+	if a.FocusMode() {
+		t.Fatal("Ctrl+O toggled focus mode while quitting")
+	}
+	a.quitting = false
 }
 
 // ---- preview pane -----------------------------------------------------------------
@@ -433,7 +478,7 @@ func TestFocusPreviewWheelScrollsThePane(t *testing.T) {
 func TestFocusHintsAndMenu(t *testing.T) {
 	a, _ := setup(t)
 	two := tickLabels(a)
-	if !strings.Contains(two, "^⇧F") {
+	if !strings.Contains(two, "^O") {
 		t.Fatalf("two-pane hints do not offer focus mode: %q", two)
 	}
 	focusOn(t, a)
@@ -488,6 +533,150 @@ func TestFocusModeInHelp(t *testing.T) {
 	for _, want := range []string{"focus mode", "preview", "go to a local folder", "copy / move"} {
 		if !strings.Contains(strings.ToLower(help), want) {
 			t.Fatalf("help lacks %q:\n%s", want, help)
+		}
+	}
+}
+
+// TestFocusAlternativesStillWork keeps the two non-keyboard routes working:
+// the hint chip (touch, mouse) and the action menu (opened by M, a tap on the
+// TwinPane badge, or the menu chip).
+func TestFocusAlternativesStillWork(t *testing.T) {
+	h, _, _ := p4App(t, nil)
+	h.settle()
+	// the chip: one tap turns focus mode on, another turns it off
+	h.tapHint("focus")
+	if !h.a.FocusMode() {
+		t.Fatal("tapping the ^O chip did not turn focus mode on")
+	}
+	h.settle()
+	h.tapHint("focus")
+	if h.a.FocusMode() {
+		t.Fatal("tapping the ^O chip did not turn focus mode off")
+	}
+	// the menu: M -> Focus mode
+	h.press("M")
+	if !h.dialogKind(dlgMenu) {
+		t.Fatalf("M opened %v, want the action menu", h.a.dialog)
+	}
+	picked := false
+	for i, it := range h.a.dialog.list {
+		if strings.Contains(it.label, "Focus mode") {
+			h.a.dialog.listCursor, picked = i, true
+			break
+		}
+	}
+	if !picked {
+		t.Fatal("the menu has no Focus mode entry")
+	}
+	h.press("enter")
+	if !h.a.FocusMode() {
+		t.Fatal("the menu's Focus mode entry did not work")
+	}
+	// and back, through the menu's Two panes entry
+	h.press("M")
+	for i, it := range h.a.dialog.list {
+		if strings.Contains(it.label, "Two panes") {
+			h.a.dialog.listCursor = i
+			break
+		}
+	}
+	h.press("enter")
+	if h.a.FocusMode() {
+		t.Fatal("the menu's Two panes entry did not work")
+	}
+}
+
+// TestFocusShortcutLabelsAreSeparated guards the rendering bug where a
+// shortcut as wide as the key column ran into its label ("^OFocus mode",
+// "escLeave the archive"): the key and its text are always separated by at
+// least one visible space, in the hint bar (wide and narrow) and in the
+// action menu.
+func TestFocusShortcutLabelsAreSeparated(t *testing.T) {
+	h, _, _ := p4App(t, nil)
+	for _, w := range []int{40, 60, 100, 160} {
+		h.send(tea.WindowSizeMsg{Width: w, Height: 24})
+		h.settle()
+		// Focus mode: the toggle chip is contextual and comes right after
+		// Tab, so it is there from 40 columns on.
+		toggleFocusKey(t, h.a)
+		h.settle()
+		focused := ansi.Strip(h.footerRaw())
+		if !strings.Contains(focused, "^O") {
+			t.Fatalf("width %d: no focus chip in focus mode: %q", w, focused)
+		}
+		if strings.Contains(focused, "^Otwo") || strings.Contains(focused, "^Ofocus") {
+			t.Fatalf("width %d: chip runs into its description: %q", w, focused)
+		}
+		if got := ansi.StringWidth(h.footerRaw()); got != w {
+			t.Fatalf("width %d: focus bar is %d wide", w, got)
+		}
+		// ... and the action menu shows the key, a separator, then the label.
+		h.press("M")
+		view := ansi.Strip(h.view())
+		shown := 0
+		for _, line := range strings.Split(view, "\n") {
+			for _, label := range []string{"Two panes", "Focus mode"} {
+				i := strings.Index(line, label)
+				if i <= 0 {
+					continue
+				}
+				shown++
+				if line[i-1] != ' ' {
+					t.Fatalf("width %d: %q runs into the key column: %q", w, label, line)
+				}
+				if !strings.Contains(line[:i], "^O") {
+					t.Fatalf("width %d: %q has no shortcut: %q", w, label, line)
+				}
+			}
+		}
+		if w >= 100 && shown == 0 {
+			t.Fatalf("width %d: the menu does not show the focus entries:\n%s", w, view)
+		}
+		h.press("esc")
+		toggleFocusKey(t, h.a) // back to two panes
+		h.settle()
+		// Two panes: the chip is the lowest priority item and takes leftover
+		// cells only, so it appears where the bar has room for it.
+		plain := ansi.Strip(h.footerRaw())
+		if w >= 90 && !strings.Contains(plain, "^O") {
+			t.Fatalf("width %d: no focus chip in the two-pane bar: %q", w, plain)
+		}
+		if strings.Contains(plain, "^Otwo") || strings.Contains(plain, "^Ofocus") {
+			t.Fatalf("width %d: chip runs into its description: %q", w, plain)
+		}
+		if got := ansi.StringWidth(h.footerRaw()); got != w {
+			t.Fatalf("width %d: bar is %d wide", w, got)
+		}
+		checkScreen(t, h.a.View(), w, 24)
+	}
+}
+
+// TestFocusHintChipFitsNarrowTerminals keeps the compact label readable when
+// there is no room for a long one: the chip is padded, its hit range still
+// matches what is drawn, and the bar is exactly as wide as the terminal.
+func TestFocusHintChipFitsNarrowTerminals(t *testing.T) {
+	for _, w := range []int{30, 40, 50} {
+		a, _ := setup(t)
+		a.Update(tea.WindowSizeMsg{Width: w, Height: 20})
+		focusOn(t, a)
+		bar := a.footerView()
+		plain := ansi.Strip(bar)
+		if got := ansi.StringWidth(bar); got != w {
+			t.Fatalf("width %d: bar is %d wide: %q", w, got, plain)
+		}
+		if strings.Contains(plain, "^Otwo") || strings.Contains(plain, "^Ofocus") {
+			t.Fatalf("width %d: chip runs into its description: %q", w, plain)
+		}
+		if w >= 40 && !strings.Contains(plain, "^O") {
+			t.Fatalf("width %d: the way back to two panes is not shown: %q", w, plain)
+		}
+		// every drawn chip still starts with its padding and its hit range
+		// covers exactly the drawn cells (taps keep working)
+		for _, fh := range a.footerHits {
+			seg := []rune(plain)[fh.x0:fh.x1]
+			if !strings.HasPrefix(string(seg), "  ") || fh.x1 > w {
+				t.Fatalf("width %d: hit %v covers %q", w, fh, string(seg))
+			}
 		}
 	}
 }

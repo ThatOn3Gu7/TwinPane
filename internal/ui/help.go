@@ -85,7 +85,7 @@ var searchModeHelp = []Binding{
 }
 
 var focusModeHelp = []Binding{
-	{Help: "^⇧F", Desc: "focus mode: one panel at full width, with a details pane"},
+	{Help: "Ctrl+O", Desc: "focus mode: one panel at full width, with a details pane"},
 	{Help: "p", Desc: "preview pane on / off (wide terminals)"},
 	{Help: "Ctrl+G", Desc: "go to a local folder or a remote location (box:photos)"},
 	{Help: "c / m", Desc: "copy / move: pick the destination (last used folders first)"},

@@ -155,7 +155,11 @@ func TestHintChipsArePaddedAndColoured(t *testing.T) {
 				t.Fatalf("chip %q lacks two spaces each side: %q", it.key, ansi.Strip(chip))
 			}
 			if !strings.Contains(bar, chip+th.FooterDesc.Render(" "+it.desc+" ")) && !strings.Contains(bar, chip+th.FooterDesc.Render(" "+ansi.Truncate(it.desc, w, "…"))) {
-				t.Fatalf("chip %q not followed by its description", it.key)
+				// keepChip hints (the focus-mode toggle "^O") fall back to
+				// the bare padded key when the bar has no room for text.
+				if !it.keepChip {
+					t.Fatalf("chip %q not followed by its description", it.key)
+				}
 			}
 		}
 		if shown == 0 || !strings.Contains(bar, "48;5;249") || !strings.Contains(bar, "38;5;250") {

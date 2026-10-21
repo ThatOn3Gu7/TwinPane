@@ -278,12 +278,6 @@ func (a *App) DialogOpen() bool { return a.dialog != nil }
 
 // Update handles messages.
 func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	if focusSequence(msg) && a.focusKeyAllowed() {
-		// Ctrl+Shift+F arrives as an unknown CSI sequence, never as a key
-		// binding, so it cannot collide with Ctrl+F (Page Down) and no
-		// overlay above can trigger it.
-		return a, a.toggleFocus()
-	}
 	m, cmd := a.update(msg)
 	if !a.quitting {
 		a.showNextTaskPrompt()
@@ -539,6 +533,18 @@ func (a *App) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if a.showHelp {
 		return a, a.helpKey(msg) // help.go
 	}
+	if a.quitting {
+		return a, nil
+	}
+	if msg.Type == keyFocusMode || msg.String() == focusKey {
+		// The focus-mode toggle. Ctrl+O is a plain Ctrl-only key event, so
+		// it works in terminals and on-screen keyboards (Termux, Gboard)
+		// that cannot report modified keys without an enhanced protocol.
+		// Every overlay (dialog, tasks, help, viewer, search, properties,
+		// bulk rename, folder sizes, comparison) returned above, so the
+		// toggle can never fire from inside one.
+		return a, a.toggleFocus()
+	}
 
 	a.setStatus("", false)
 	p := a.panels[a.active]
@@ -549,8 +555,6 @@ func (a *App) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 	switch {
-	case msg.Type == keyFocusMode:
-		return a, a.toggleFocus()
 	case k.Tasks.Matches(msg):
 		a.openTasks()
 	case k.Quit.Matches(msg):

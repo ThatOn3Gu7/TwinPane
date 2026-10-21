@@ -104,17 +104,17 @@ scrolling as local files.
   sizes, refusals and mid-transfer failures are all handled and covered by
   tests.
 
-#### Focus mode: one panel at full width (`Ctrl+Shift+F`)
+#### Focus mode: one panel at full width (`Ctrl+O`)
 
-`Ctrl+Shift+F` (also `M` → **Focus mode**, or a tap on the TwinPane badge)
-turns the two-pane view into one panel that uses the whole terminal. It is a
+`Ctrl+O` (also `M` → **Focus mode**, or a tap on the TwinPane badge) turns the
+two-pane view into one panel that uses the whole terminal. It is a
 presentation switch, not a second file manager: both panels stay loaded and
 nothing about them changes.
 
 - **Nothing is lost.** The panel that is not shown keeps its folder, cursor,
   scroll position, selection, sort order, hidden-file setting, source and
   navigation history. It is never resized while hidden, so leaving focus mode
-  (`Ctrl+Shift+F` again, `M` → **Two panes**) restores the exact two-pane view.
+  (`Ctrl+O` again, `M` → **Two panes**) restores the exact two-pane view.
   `Tab` switches which panel is shown, as it switches which panel the keys
   drive in two-pane mode.
 - **More columns and a path line.** The full width is used for a `Type`
@@ -147,12 +147,13 @@ nothing about them changes.
   previews, history, bookmarks, tasks and the menu all behave as before;
   only the drawing and the two additions above (`p`, `Ctrl+G`) are new, and
   both exist only in focus mode.
-- **Terminal support for the shortcut.** Terminals that report
-  `Ctrl+Shift+F` (xterm's modifyOtherKeys, the kitty keyboard protocol) toggle
-  the mode with the key. `Ctrl+F` still pages down everywhere. Where the
-  shortcut cannot be reported — or on touch screens — use `M` → **Focus
-  mode**, the `^⇧F focus` chip when it fits in the hint bar, or a tap on the
-  TwinPane badge.
+- **A plain Ctrl-only shortcut.** `Ctrl+O` is an ordinary key event — no
+  Shift-modified key and no enhanced keyboard protocol — so it works in
+  terminals and with the on-screen keyboards of Termux and Gboard alike.
+  `Ctrl+F` still pages down everywhere and is unaffected. The hint bar shows
+  the toggle as `^O focus` (or just `^O` when there is room for the key but
+  not for the words), and the alternatives always work too: `M` → **Focus
+  mode**, that chip, and a tap on the TwinPane badge.
 
 #### Live filename search (`/`)
 
@@ -1349,7 +1350,7 @@ v0.3.1; the matching rules below still apply)
 | Key | Action |
 |---|---|
 | `Tab` / `Shift+Tab` | switch active panel |
-| `Ctrl+Shift+F` | **focus mode**: one panel at full width (see Focus mode) |
+| `Ctrl+O` | **focus mode**: one panel at full width (see Focus mode) |
 | `p` (focus mode) | show / hide the details preview pane |
 | `Ctrl+G` (focus mode) | go to a local folder, `~/path` or a remote location (`box:photos`) |
 | `↑` `↓` / `k` `j` | move cursor |
