@@ -104,6 +104,56 @@ scrolling as local files.
   sizes, refusals and mid-transfer failures are all handled and covered by
   tests.
 
+#### Focus mode: one panel at full width (`Ctrl+Shift+F`)
+
+`Ctrl+Shift+F` (also `M` → **Focus mode**, or a tap on the TwinPane badge)
+turns the two-pane view into one panel that uses the whole terminal. It is a
+presentation switch, not a second file manager: both panels stay loaded and
+nothing about them changes.
+
+- **Nothing is lost.** The panel that is not shown keeps its folder, cursor,
+  scroll position, selection, sort order, hidden-file setting, source and
+  navigation history. It is never resized while hidden, so leaving focus mode
+  (`Ctrl+Shift+F` again, `M` → **Two panes**) restores the exact two-pane view.
+  `Tab` switches which panel is shown, as it switches which panel the keys
+  drive in two-pane mode.
+- **More columns and a path line.** The full width is used for a `Type`
+  column, and the panel title row becomes a breadcrumb with a source badge
+  (`LOCAL`, the remote's name, or the archive) and the folders leading to the
+  current one, shortened from the left when it does not fit.
+- **Details pane.** On terminals at least 100 columns wide and 18 rows high a
+  details pane sits to the right of the list (38% of the width, at most 64
+  columns, leaving the list at least 50). It shows the selected entry's name,
+  folder, size, time, mode and type, plus a preview of the first 64 KiB /
+  400 lines of a local text file. Binary and very large files are described
+  instead of shown, remote and archive entries report their location and what
+  is possible there, and the wheel or a swipe over the pane scrolls it.
+  `p` hides and shows it; on narrower terminals there is no pane and `v`
+  still opens the read-only viewer at full width.
+- **Copy and move ask where they go.** With one pane there is no obvious
+  "other panel", so `c` / `m` first show a destination chooser: the hidden
+  panel's folder (the two-pane default) comes first, followed by the
+  destinations used earlier in this run. Everything after the choice is the
+  ordinary path — validation, the confirmation with the exact destination,
+  conflict and free-space prompts, the background task and its result — and
+  `Esc` at the chooser transfers nothing. The hidden panel is refreshed when
+  the transfer finishes, as the destination panel would be.
+- **`Ctrl+G` goes to a path.** Type an absolute path, `~/notes`, a path
+  relative to the panel's folder, or a remote location such as `box:photos`.
+  A file is shown in its folder with the cursor on it; a remote location
+  reuses rclone exactly like the Sources picker (`Ctrl+R`). Mistakes are
+  reported inside the dialog, which stays open.
+- **The keys stay the same.** Opening, viewers, search, extraction, remote
+  previews, history, bookmarks, tasks and the menu all behave as before;
+  only the drawing and the two additions above (`p`, `Ctrl+G`) are new, and
+  both exist only in focus mode.
+- **Terminal support for the shortcut.** Terminals that report
+  `Ctrl+Shift+F` (xterm's modifyOtherKeys, the kitty keyboard protocol) toggle
+  the mode with the key. `Ctrl+F` still pages down everywhere. Where the
+  shortcut cannot be reported — or on touch screens — use `M` → **Focus
+  mode**, the `^⇧F focus` chip when it fits in the hint bar, or a tap on the
+  TwinPane badge.
+
 #### Live filename search (`/`)
 
 `/` opens a live, non-recursive filename search of the active panel's folder.
@@ -1299,6 +1349,9 @@ v0.3.1; the matching rules below still apply)
 | Key | Action |
 |---|---|
 | `Tab` / `Shift+Tab` | switch active panel |
+| `Ctrl+Shift+F` | **focus mode**: one panel at full width (see Focus mode) |
+| `p` (focus mode) | show / hide the details preview pane |
+| `Ctrl+G` (focus mode) | go to a local folder, `~/path` or a remote location (`box:photos`) |
 | `↑` `↓` / `k` `j` | move cursor |
 | `PgUp` `PgDn` / `Ctrl+B` `Ctrl+F` | page up / down |
 | `Home` `End` / `g` `G` | first / last entry |

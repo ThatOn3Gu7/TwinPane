@@ -99,6 +99,11 @@ type Panel struct {
 	spinFor    time.Duration      // how long the current load has been running, as of the last tick
 
 	width, height int
+	// wide is set by the UI while the panel fills the whole screen (focus
+	// mode): the path line becomes a breadcrumb and the listing gets room
+	// for a type column. It never changes the number of chrome rows, so
+	// cursors, scroll offsets and mouse geometry survive the switch.
+	wide bool
 
 	// hist is this panel's own session-local back/forward history (see
 	// history.go); it is never shared with the other panel or persisted.
@@ -795,6 +800,12 @@ func (p *Panel) clamp() {
 }
 
 // SetSize sets the outer dimensions (including border) of the panel.
+// SetWide switches the full-width (focus mode) rendering on or off.
+func (p *Panel) SetWide(on bool) { p.wide = on }
+
+// Wide reports whether the panel is drawn full width (focus mode).
+func (p *Panel) Wide() bool { return p.wide }
+
 func (p *Panel) SetSize(w, h int) {
 	p.width, p.height = w, h
 	p.clamp()

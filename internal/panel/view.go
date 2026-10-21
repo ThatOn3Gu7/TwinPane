@@ -2,6 +2,7 @@ package panel
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -52,18 +53,32 @@ func (p *Panel) layout() layout {
 func (p *Panel) listRows() int { return p.layout().rows }
 
 type columns struct {
-	nameW            int
-	showSize, showTm bool
+	nameW                      int
+	showSize, showTm, showType bool
 }
 
-func makeColumns(innerW int) columns {
+// typeColW is the width of the type column of the full-width (focus mode)
+// layout.
+const typeColW = 4
+
+func makeColumns(innerW int, wide bool) columns {
 	c := columns{showSize: innerW >= 26, showTm: innerW >= 44}
+	if wide {
+		// The extra width goes to the names first: the type column only
+		// appears once there is room for it, and the time column follows.
+		c.showType = innerW >= 44
+		c.showSize = innerW >= 32
+		c.showTm = innerW >= 56
+	}
 	c.nameW = innerW - 2 // leading mark + trailing space
 	if c.showSize {
 		c.nameW -= sizeColW + 1
 	}
 	if c.showTm {
 		c.nameW -= timeColW + 1
+	}
+	if c.showType {
+		c.nameW -= typeColW + 1
 	}
 	if c.nameW < 1 {
 		c.nameW = 1
@@ -77,7 +92,7 @@ func (p *Panel) View(th theme.Theme, active bool) string {
 		return ""
 	}
 	l := p.layout()
-	cols := makeColumns(l.innerW)
+	cols := makeColumns(l.innerW, p.wide)
 	lines := make([]string, 0, l.innerH)
 
 	// Path line
@@ -90,6 +105,18 @@ func (p *Panel) View(th theme.Theme, active bool) string {
 		pathStyle = th.PathActive
 	}
 	switch {
+	case p.wide:
+		// Full width (focus mode): a source badge and a breadcrumb, so the
+		// folder is readable even when it is deep.
+		badge, segs := p.pathBadge(th)
+		bw := lipgloss.Width(badge)
+		if bw+10 > l.innerW {
+			badge, bw = "", 0
+		}
+		w := l.innerW - bw
+		disp := breadcrumb(segs, w-1-ansi.StringWidth(suffix))
+		pathText := " " + fit(disp, w-1-ansi.StringWidth(suffix)) + suffix
+		lines = append(lines, badge+pathStyle.Render(fit(pathText, w)))
 	case p.rem != nil:
 		// On a remote: the remote's name as a badge, then the folder:
 		// "[drive:] /Backups".
@@ -137,6 +164,9 @@ func (p *Panel) View(th theme.Theme, active bool) string {
 		}
 		if cols.showTm {
 			h += " " + fit("Modified", timeColW)
+		}
+		if cols.showType {
+			h += " " + fit("Type", typeColW)
 		}
 		lines = append(lines, th.ColumnHeader.Render(fit(h, l.innerW)))
 	}
@@ -368,6 +398,9 @@ func (p *Panel) rowText(e fsys.Entry, cols columns, innerW int) string {
 			tm = fsys.FormatTime(e.ModTime, p.now())
 		}
 		s += " " + fit(tm, timeColW)
+	}
+	if cols.showType {
+		s += " " + fit(typeLabel(e), typeColW)
 	}
 	return fit(s, innerW)
 }
@@ -611,4 +644,119 @@ func wrap(s string, w int) []string {
 		out = append(out, string(cur))
 	}
 	return out
+}
+
+// ---- full-width (focus mode) path line -------------------------------------
+
+// crumbSep separates the components of the focus-mode path breadcrumb.
+const crumbSep = " › "
+
+// pathBadge returns the source badge and the breadcrumb components of the
+// location the panel shows: "LOCAL" for a local folder, the remote's name
+// for an rclone remote and the archive format inside an archive.
+func (p *Panel) pathBadge(th theme.Theme) (string, []string) {
+	switch {
+	case p.rem != nil:
+		loc := p.Location()
+		name := fsys.SanitizeName(loc.Remote)
+		segs := []string{name + ":"}
+		for _, s := range splitPath(loc.Path) {
+			segs = append(segs, fsys.SanitizeName(s))
+		}
+		return th.CloudBadge.Render(name + ":"), segs
+	case p.arc != nil:
+		segs := []string{fsys.SanitizeName(filepath.Base(p.arc.Path))}
+		for _, s := range splitPath(p.ArchiveInner()) {
+			segs = append(segs, fsys.SanitizeName(s))
+		}
+		return th.ArchiveBadge.Render(p.arc.Format.Name()), segs
+	default:
+		return th.LocalBadge.Render("LOCAL"), pathSegments(p.path)
+	}
+}
+
+// splitPath splits an rclone-style (slash separated) path into components.
+func splitPath(p string) []string {
+	var out []string
+	for _, s := range strings.Split(p, "/") {
+		if s != "" {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
+// pathSegments splits a local path into breadcrumb components. An absolute
+// path starts with its root ("/home" rather than "/", "home"), so the
+// breadcrumb stays short; Windows volumes keep theirs.
+func pathSegments(path string) []string {
+	clean := filepath.Clean(path)
+	vol := filepath.VolumeName(clean)
+	rest := strings.TrimPrefix(clean, vol)
+	var segs []string
+	if strings.HasPrefix(rest, string(filepath.Separator)) {
+		segs = append(segs, vol+string(filepath.Separator))
+		rest = strings.TrimPrefix(rest, string(filepath.Separator))
+	} else if vol != "" {
+		segs = append(segs, vol)
+	}
+	for _, s := range strings.Split(rest, string(filepath.Separator)) {
+		if s != "" && s != "." {
+			segs = append(segs, s)
+		}
+	}
+	if len(segs) == 0 {
+		return []string{clean}
+	}
+	// Join the root with the first component ("/home"), which reads better
+	// than a breadcrumb that starts with a separator of its own.
+	if len(segs) > 1 && (segs[0] == string(filepath.Separator) || segs[0] == vol+string(filepath.Separator)) {
+		segs = append([]string{segs[0] + segs[1]}, segs[2:]...)
+	}
+	return segs
+}
+
+// breadcrumb renders segs as "a › b › c" in at most width cells. Components
+// are dropped from the left, so the folder being shown always stays
+// readable; a "… ›" marks where it was cut.
+func breadcrumb(segs []string, width int) string {
+	if len(segs) == 0 || width <= 0 {
+		return ""
+	}
+	out := segs[len(segs)-1]
+	if ansi.StringWidth(out) > width {
+		return fitLeft(out, width)
+	}
+	for i := len(segs) - 2; i >= 0; i-- {
+		cand := segs[i] + crumbSep + out
+		if ansi.StringWidth(cand) > width {
+			if cut := "…" + crumbSep + out; ansi.StringWidth(cut) <= width {
+				return cut
+			}
+			return out
+		}
+		out = cand
+	}
+	return out
+}
+
+// typeLabel is the short type shown in the full-width listing's Type
+// column: "dir", "link", "up" or the (lower-case) extension, "file" when
+// there is none.
+func typeLabel(e fsys.Entry) string {
+	switch {
+	case e.IsParent:
+		return "up"
+	case e.IsLink && e.IsDir, e.IsLink:
+		return "link"
+	case e.IsDir:
+		return "dir"
+	}
+	if t := fsys.TypeOf(e.Name); t != "" {
+		if len(t) > typeColW {
+			t = t[:typeColW]
+		}
+		return t
+	}
+	return "file"
 }

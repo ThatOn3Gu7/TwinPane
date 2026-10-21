@@ -163,6 +163,15 @@ type App struct {
 
 	// phase 9
 	sourcesSeq int // the Sources picker's latest remote listing
+
+	// phase 11: focus mode (focus.go, focus_dest.go) — one panel at the full
+	// width of the terminal. The two panels themselves keep their state.
+	focus           bool
+	focusPreview    bool         // show the preview/details pane when there is room
+	focusPrevScroll int          // first preview row shown
+	focusPrev       focusPreview // cached preview of the selected entry
+	recents         []destLoc    // recent transfer destinations (this run)
+	destSeq         int          // the destination picker's latest listing
 }
 
 // New creates the application model.
@@ -202,6 +211,7 @@ func New(opts Options) *App {
 		a.launch = func(argv []string) error { return opener.Launch(argv, opener.LaunchWait) }
 	}
 	a.formatLevels = map[compress.ID]int{}
+	a.focusPreview = true
 	a.settingsPath = opts.SettingsPath
 	if opts.SettingsPathError != "" {
 		a.settingsErr = fmt.Errorf("%s", opts.SettingsPathError)
@@ -268,6 +278,12 @@ func (a *App) DialogOpen() bool { return a.dialog != nil }
 
 // Update handles messages.
 func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if focusSequence(msg) && a.focusKeyAllowed() {
+		// Ctrl+Shift+F arrives as an unknown CSI sequence, never as a key
+		// binding, so it cannot collide with Ctrl+F (Page Down) and no
+		// overlay above can trigger it.
+		return a, a.toggleFocus()
+	}
 	m, cmd := a.update(msg)
 	if !a.quitting {
 		a.showNextTaskPrompt()
@@ -281,6 +297,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 	a.syncSelections()
 	a.syncBadges()
+	a.syncMode()
 	return m, a.syncSpinner(cmd)
 }
 
@@ -532,6 +549,8 @@ func (a *App) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 	switch {
+	case msg.Type == keyFocusMode:
+		return a, a.toggleFocus()
 	case k.Tasks.Matches(msg):
 		a.openTasks()
 	case k.Quit.Matches(msg):
@@ -663,6 +682,13 @@ func (a *App) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return a, a.bookmarkHere()
 	case k.Storage.Matches(msg):
 		return a, a.showStorage()
+	case a.focus && msg.String() == "p":
+		// focus mode only: the preview pane (the panels have no p key)
+		return a, a.togglePreview()
+	case a.focus && msg.String() == "ctrl+g":
+		// focus mode only: the panels' Ctrl+G equivalent, a typed
+		// local folder or remote location (see focus.go)
+		return a, a.openGoTo()
 	case k.Cancel.Matches(msg):
 		if p.Loading() && p.CancelLoad() {
 			return a, nil // the cancelled load reports itself
@@ -684,6 +710,13 @@ func (a *App) layout() {
 	ph := a.height - 3 // title, status, footer
 	if ph < 0 {
 		ph = 0
+	}
+	if a.focus {
+		// Only the visible panel is resized: the hidden one keeps the size
+		// it has in two-pane mode, so its cursor and scroll offset are not
+		// clamped and it looks exactly as before when both are shown again.
+		a.panels[a.active].SetSize(a.focusPanelWidth(), ph)
+		return
 	}
 	lw := a.width / 2
 	a.panels[0].SetSize(lw, ph)
@@ -721,6 +754,8 @@ func (a *App) View() string {
 		body = a.folderSizeViewRender(a.height - 3)
 	case a.comparison != nil:
 		body = a.comparisonViewRender(a.height - 3)
+	case a.focus:
+		body = a.focusView(a.height - 3)
 	default:
 		body = lipgloss.JoinHorizontal(lipgloss.Top,
 			a.panels[0].View(a.theme, a.active == 0),
@@ -750,7 +785,11 @@ func (a *App) titleView() string {
 	if a.showHidden {
 		hidden = "hidden: shown"
 	}
-	right := a.theme.TitleText.Render(fmt.Sprintf("%s · active: %s panel ", hidden, side))
+	where := "active: " + side + " panel"
+	if a.focus {
+		where = "focus · " + side + " panel"
+	}
+	right := a.theme.TitleText.Render(fmt.Sprintf("%s · %s ", hidden, where))
 	if lipgloss.Width(badge+a.theme.TitleText.Render(ver))+lipgloss.Width(right) >= a.width {
 		right = a.theme.TitleText.Render(fmt.Sprintf("active: %s ", side))
 	}

@@ -83,8 +83,9 @@ func (a *App) browseHints() []barItem {
 	isBrowsable := ok && !cur.IsDir && !cur.IsParent && a.isBrowsableArchive(cur.Path)
 
 	out := []barItem{item("Tab", "switch", "tab")}
-	// history comes right after Tab: it is contextual, and the end of the bar
-	// is what narrow terminals drop
+	// the mode and history chips come right after Tab: they are contextual,
+	// and the end of the bar is what narrow terminals drop
+	out = append(out, a.focusHints()...)
 	out = append(out, a.navHints(p)...)
 	if isBrowsable && nsel == 0 {
 		out = append(out, item("⏎", "browse archive", "enter"), item("x", "extract", "x"))
@@ -107,7 +108,12 @@ func (a *App) browseHints() []barItem {
 		if len(targets) > 1 {
 			rename = "bulk rename"
 		}
-		out = append(out, item("c", "copy", "c"), item("m", "move", "m"), item("r", rename, "r"), item("d", "delete", "d"))
+		copyDesc, moveDesc := "copy", "move"
+		if a.focus {
+			// one pane: the destination is chosen first (focus_dest.go)
+			copyDesc, moveDesc = "copy to…", "move to…"
+		}
+		out = append(out, item("c", copyDesc, "c"), item("m", moveDesc, "m"), item("r", rename, "r"), item("d", "delete", "d"))
 		files := true
 		for _, e := range targets {
 			if e.IsDir {
@@ -154,7 +160,7 @@ func (a *App) browseHints() []barItem {
 	}
 	// phase 9, again after everything that was there before
 	out = append(out, item("^R", "sources", "ctrl+r"), item("n", "new folder", "n"))
-	return out
+	return append(out, a.focusToggleHint()...)
 }
 
 // remoteHints is the hint bar of a panel showing an rclone remote: only
@@ -164,6 +170,7 @@ func (a *App) remoteHints() []barItem {
 	cur, ok := p.Current()
 	nsel := len(p.Selection())
 	out := []barItem{item("Tab", "switch", "tab"), item("t", "tasks", "t")}
+	out = append(out, a.focusHints()...)
 	out = append(out, a.navHints(p)...)
 	if ok && cur.IsDir && nsel == 0 {
 		out = append(out, item("⏎", "open", "enter"))
@@ -192,7 +199,7 @@ func (a *App) remoteHints() []barItem {
 	}
 	out = append(out, item("h", hidden, "h"), item("s/S", "sort", "s"))
 	out = append(out, item("M", "menu", "M"), item("q", "quit", "q"))
-	return out
+	return append(out, a.focusToggleHint()...)
 }
 
 // archiveHints is the hint bar of a panel browsing a ZIP or TAR archive: only
@@ -202,6 +209,7 @@ func (a *App) archiveHints() []barItem {
 	cur, ok := p.Current()
 	nsel := len(p.Selection())
 	out := []barItem{item("Tab", "switch", "tab"), item("t", "tasks", "t"), item("Esc", "leave archive", "esc")}
+	out = append(out, a.focusHints()...)
 	out = append(out, a.navHints(p)...)
 	if len(p.Targets()) > 0 {
 		out = append(out, item("x", "extract", "x"))
@@ -235,7 +243,7 @@ func (a *App) archiveHints() []barItem {
 		hidden = "hide hidden"
 	}
 	out = append(out, item("h", hidden, "h"), item("s/S", "sort", "s"))
-	return append(out, item("q", "quit", "q"))
+	return append(append(out, item("q", "quit", "q")), a.focusToggleHint()...)
 }
 
 func (a *App) searchHints() []barItem {
@@ -450,6 +458,10 @@ func (a *App) fitSegment(it barItem, w int) string {
 
 // keyFor builds the key message that a clickable hint stands for.
 func keyFor(s string) tea.KeyMsg {
+	if s == "focus" {
+		// the hint chip / menu action of the focus-mode toggle (focus.go)
+		return tea.KeyMsg{Type: keyFocusMode}
+	}
 	special := map[string]tea.KeyType{
 		"esc": tea.KeyEsc, "enter": tea.KeyEnter, "tab": tea.KeyTab, "backspace": tea.KeyBackspace,
 		"ctrl+r": tea.KeyCtrlR, "ctrl+l": tea.KeyCtrlL, "ctrl+a": tea.KeyCtrlA, "f7": tea.KeyF7, "ctrl+t": tea.KeyCtrlT, "f4": tea.KeyF4, "up": tea.KeyUp, "down": tea.KeyDown,

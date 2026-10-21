@@ -60,6 +60,7 @@ func (a *App) helpColumns() [2][]helpSection {
 	if a.folderSize != nil {
 		cols[1] = append(cols[1], helpSection{"Folder-size analysis", folderSizeHelp})
 	}
+	cols[0] = append(cols[0], helpSection{"Focus mode", focusModeHelp})
 	cols[1] = append(cols[1], helpSection{"Search workflow", searchModeHelp})
 	if a.advancedSearch != nil {
 		cols[1] = append(cols[1], helpSection{"Advanced Search", advancedSearchHelp})
@@ -81,6 +82,13 @@ var searchModeHelp = []Binding{
 	{Help: "Ctrl+G in /", Desc: "Advanced Search; query kept"},
 	{Help: "Ctrl+T", Desc: "toggle filename / content"},
 	{Help: "Esc", Desc: "close; preserve both panes"},
+}
+
+var focusModeHelp = []Binding{
+	{Help: "^⇧F", Desc: "focus mode: one panel at full width, with a details pane"},
+	{Help: "p", Desc: "preview pane on / off (wide terminals)"},
+	{Help: "Ctrl+G", Desc: "go to a local folder or a remote location (box:photos)"},
+	{Help: "c / m", Desc: "copy / move: pick the destination (last used folders first)"},
 }
 
 var advancedSearchHelp = []Binding{

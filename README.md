@@ -197,6 +197,12 @@ Not included: configurable keys or themes, and editing archives in place.
   deleted afterwards. It is strictly read-only (edit and Open with are
   refused; copy the file to a local panel to work on it), `Esc` cancels the
   transfer, and provider errors keep rclone's own explanation.
+- **Focus mode** (`Ctrl+Shift+F`) shows one panel at full width with a
+  breadcrumb path line, a `Type` column and a details pane that previews the
+  selected local text file, while the hidden panel keeps its folder, cursor
+  and history untouched. `Tab` switches panels, `p` toggles the pane,
+  `Ctrl+G` goes to a typed local or remote location, and `c` / `m` open a
+  destination chooser (hidden panel first, then the folders used this run).
 - **TAR browsing** lets you inspect TAR and supported compressed-TAR archives
   read-only and selectively extract entries.
 - **Hidden-file visibility** now persists across launches.

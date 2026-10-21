@@ -116,6 +116,14 @@ func (a *App) handleMouse(m tea.MouseMsg) tea.Cmd {
 	case a.comparison != nil:
 		return a.comparisonMouse(ev)
 	}
+	// The focus-mode preview pane scrolls like the viewer does; taps on it
+	// do nothing (it is not a panel). Overlays above already had their turn.
+	if a.focus && a.focusPreviewAt(ev.X, ev.Y) {
+		if ev.IsWheel() {
+			a.scrollFocusPreview(wheelDelta(ev) * wheelStep)
+		}
+		return nil
+	}
 	// A tap on the TwinPane badge (title row) opens the action menu: it
 	// is visible at any width, unlike the "M menu" chip.
 	if ev.Y == 0 && ev.Button == tea.MouseButtonLeft && ev.X < lipgloss.Width(a.theme.TitleBadge.Render("TwinPane")) {
@@ -284,6 +292,13 @@ func (a *App) panelAt(x, y int) (int, int, int, bool) {
 	ph := a.height - 3
 	if y < 1 || y >= 1+ph || x < 0 || x >= a.width {
 		return 0, 0, 0, false
+	}
+	if a.focus {
+		// One panel fills the width; the preview pane is not a panel.
+		if a.focusPreviewAt(x, y) {
+			return 0, 0, 0, false
+		}
+		return a.active, x, y - 1, true
 	}
 	lw := a.width / 2
 	if x < lw {

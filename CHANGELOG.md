@@ -10,6 +10,23 @@ The complete description of every feature is in
 ## [Unreleased]
 
 ### Added
+- **Focus mode.** `Ctrl+Shift+F` (also `M` → **Focus mode** and the `^⇧F`
+  hint chip, and reachable by tapping the TwinPane badge where the terminal
+  cannot report the shortcut) shows one panel at the full width of the
+  terminal. It is a presentation switch: both panels stay loaded, and the
+  hidden one keeps its folder, cursor, scroll position, selection, sort order,
+  source and navigation history — it is never resized, so leaving focus mode
+  restores the exact two-pane view. `Tab` switches which panel is shown. The
+  extra width adds a `Type` column and a breadcrumb title row with a source
+  badge (`LOCAL`, the remote's name or the archive), and on terminals of at
+  least 100×18 a details pane beside the list (38% of the width, at most 64
+  columns, list at least 50) with the entry's metadata and a bounded preview
+  of local text files (64 KiB / 400 lines; binary and oversized files are
+  described instead). `p` toggles the pane, the wheel scrolls it, `Ctrl+G`
+  goes to a typed local folder, `~/path` or remote location, and `c`/`m` open
+  a destination chooser — the hidden panel's folder first, then the folders
+  used earlier in the run — before the ordinary validation, confirmation,
+  conflict handling and background task. `Ctrl+F` still pages down.
 - **Back and forward through each panel's history.** `[` / `]` (also
   `Alt+←` / `Alt+→`) step through the folders a panel has visited during this
   run: local folders, archives (including the folder browsed inside them) and

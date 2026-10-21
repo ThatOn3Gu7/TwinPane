@@ -88,8 +88,13 @@ type opSession struct {
 	plan       ops.DeletePlan
 	// dstPanel is the destination panel of a transfer (the other panel for
 	// panel operations, chosen explicitly when the operation starts outside
-	// the panels, as in Advanced Search where srcPanel is -1).
+	// the panels, as in Advanced Search where srcPanel is -1). It is -1 when
+	// a focus-mode destination is not shown by any panel.
 	dstPanel int
+	// dstChosen records that the destination was chosen explicitly, so an
+	// off-screen destination (dstPanel == -1) is not mistaken for a session
+	// built without one.
+	dstChosen bool
 
 	// fromLabel replaces the "From:" folder in the transfer confirmation when
 	// the operation was not started from the panel's cursor (Advanced Search).
@@ -466,6 +471,9 @@ func (a *App) beginTransfer(kind ops.Kind) tea.Cmd {
 		return a.beginCloudTransfer(kind) // cloud.go
 	}
 	srcIdx := a.active
+	if a.focus {
+		return a.beginFocusTransfer(kind) // focus_dest.go
+	}
 	src, dst := a.panels[srcIdx], a.panels[1-srcIdx]
 	targets := src.Targets()
 	if len(targets) == 0 {
@@ -531,6 +539,9 @@ func (a *App) startTransfer(s *opSession, req ops.Request) tea.Cmd {
 		s.cancel() // end the completed validation context before transferring
 	}
 	ctx, cancel := context.WithCancel(context.Background())
+	// Only a transfer that really starts becomes a destination the focus-mode
+	// picker offers again (the confirmation may still be cancelled).
+	a.noteDest(req.DestDir, "recent")
 	s.cancel, s.title, s.kind, s.to = cancel, req.Kind.Verb(), req.Kind, req.DestDir
 	s.state, s.waitingFor = taskRunning, ""
 	h := a.hooks(ctx, s)
@@ -644,10 +655,12 @@ func (a *App) finishTransfer(s *opSession, res ops.Result) tea.Cmd {
 		}
 	}
 	dstIdx := s.dstPanel
-	if dstIdx < 0 || dstIdx >= len(a.panels) || dstIdx == s.srcPanel {
+	if dstIdx < 0 || dstIdx >= len(a.panels) || (dstIdx == s.srcPanel && !s.dstChosen) {
 		dstIdx = 1 - s.srcPanel // sessions built by hand (tests) before dstPanel existed
 	}
-	cmds = append(cmds, a.refreshPanelAt(dstIdx, s.panelPaths[dstIdx], s.first))
+	if dstIdx >= 0 && dstIdx < len(a.panels) {
+		cmds = append(cmds, a.refreshPanelAt(dstIdx, s.panelPaths[dstIdx], s.first))
+	}
 
 	summary := res.Summary()
 	details := appendTaskDetail(nil, "Stopped", res.Fatal)

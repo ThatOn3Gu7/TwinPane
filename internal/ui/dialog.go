@@ -38,6 +38,10 @@ const (
 	dlgStorage   // storage overview (i)
 	dlgRunWith   // "Run a program…" prompt
 
+	// phase 11 (focus mode)
+	dlgGoTo // Ctrl+G: type a local path or a remote location
+	dlgDest // copy/move destination chooser (focus mode)
+
 	// phase 9
 	dlgSources     // Sources picker (Ctrl+R): local files or an rclone remote
 	dlgMkdir       // new folder name prompt
