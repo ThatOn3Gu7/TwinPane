@@ -258,16 +258,44 @@ Since the search redesign it uses the same frame as the rest of the app:
 
 Long-running file operations run as background tasks, so the panels remain
 usable while work continues. Press `t` to see active progress and the results
-retained during this run. The list shows each task's state, progress, current
-path and result or error.
+retained during this run.
 
-- `↑`/`↓` or `j`/`k` selects a task; `PgUp`/`PgDn` scrolls its details.
+The list is a table: task number, state (`RUNNING`, `WAITING`, `STOPPING`,
+`DONE`, `CANCELED`, `PARTIAL`, `FAILED`), operation, a progress bar with the
+item counts, size and elapsed time. Columns are dropped from the end as the
+terminal narrows, and below about 46 columns each task takes two lines instead.
+The details table under the list describes the selected task: operation, state,
+progress, every source, the target, the current item, the last error and the
+result. Paths are shortened from the left, where the file name is the useful
+part, and every row is cut to the width of the screen, so a phone shows the same
+information as a desktop terminal without wrapping into noise.
+
+- `↑`/`↓` or `j`/`k` selects a task; `PgUp`/`PgDn` (or the wheel over the
+  details) scrolls its details.
+- `⏎` or `w` watches a running task live: one screen with a large progress bar,
+  the counts, the current item and the elapsed time. `Esc` (or `q`) closes it
+  and leaves the task running in the background, `c` cancels it, `t` goes to the
+  task list. A prompt that needs a decision is drawn over this screen.
 - `c` cancels the selected active task. `x` clears finished task history.
 - `t` or `Esc` closes the task view. Quitting is blocked while tasks are
   active; `q` opens the task view, where you can wait or cancel.
 - Operations that need a safety or conflict decision show their prompts one at
   a time. Archive creation keeps its dedicated progress dialog visible through
   completion or failure.
+
+**Background or watch?** A copy, move or delete that is clearly going to take a
+while asks how it should run: *stay and watch* (the default; `Esc` picks it too)
+or *run in background* (`b`). The question appears when the operation estimates
+at least **256 MiB** of files or **500 entries**; a transfer is estimated with a
+bounded walk that stops after 4000 entries, and a delete reuses the counts its
+safety check already made. Anything smaller — the ordinary copy of a file or
+two — starts at once, with no extra dialog, exactly as before.
+
+Sending a task to the background (by answering that question, or by leaving the
+live screen with `Esc`) shows a small notification in the bottom-right corner
+for five seconds: what is running, how far it is, and `t` to see the rest. It
+never takes the keyboard — browsing, typing and dialogs keep working — and any
+key, the timer, or a tap dismisses it. Tapping it opens the task list.
 
 #### Other additions and safety fixes
 

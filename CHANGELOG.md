@@ -28,6 +28,23 @@ The complete description of every feature is in
   location, and `c`/`m` open a destination chooser — the hidden panel's folder
   first, then the folders used earlier in the run — before the ordinary
   validation, confirmation, conflict handling and background task.
+- **Background task experience.** The task screen (`t`) is a table now: state
+  (`RUNNING`, `WAITING`, `STOPPING`, `DONE`, `CANCELED`, `PARTIAL`, `FAILED`) as
+  a glyph plus a word, a progress bar with item counts, size and elapsed time,
+  and a label/value details table for the selected task that wraps long values,
+  shortens paths from the left and scrolls. Columns are dropped from the end on
+  narrow terminals and tasks become two-line rows below about 46 columns, so a
+  phone stays readable. `⏎` or `w` opens a new live progress screen for a
+  running task (large bar, counts, current item, elapsed time); `Esc` leaves it
+  running in the background, `c` cancels, `t` goes to the task list, and prompts
+  are drawn over it. Copy, move and delete operations estimated at 256 MiB or
+  500 entries now ask whether to run in the background or to be watched — the
+  estimate is a bounded walk (`ops.EstimateTransfer`, capped at 4000 entries)
+  and a delete reuses its plan's counts, so small operations keep starting
+  without a prompt. When a task is sent to the background a small notification
+  in the bottom-right corner shows what is running, its progress and `t` to see
+  more; it never takes the keyboard, expires after five seconds, and a tap opens
+  the task list.
 - **Back and forward through each panel's history.** `[` / `]` (also
   `Alt+←` / `Alt+→`) step through the folders a panel has visited during this
   run: local folders, archives (including the folder browsed inside them) and

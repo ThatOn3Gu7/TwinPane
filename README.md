@@ -105,10 +105,15 @@ The [user guide](docs/USER_GUIDE.md) describes every feature in detail.
   editing on filesystems that support it.
 
 **Background tasks**
-- Long-running file operations continue in the background. Press `t` to review
-  active progress and completed results; cancel the selected active task with
-  `c`, or clear finished history with `x`. Active tasks must finish or be
-  cancelled before quitting.
+- Long-running file operations continue in the background. `t` opens a task
+  list with a state column (`RUNNING`, `DONE`, `FAILED`…), a progress bar, size
+  and elapsed time, plus a details table for the selected task. `⏎` or `w`
+  watches a running task on a live progress screen that `Esc` leaves in the
+  background; `c` cancels the selected task and `x` clears finished history.
+  Active tasks must finish or be cancelled before quitting.
+- A copy, move or delete that is clearly large — about 256 MiB or 500 entries —
+  asks whether to run in the background or to be watched. Sending it to the
+  background shows a small, non-blocking notification with its progress.
 
 **Directory comparison**
 - Compare the two local panel folders (`D`), ignoring exact `.git` directories
