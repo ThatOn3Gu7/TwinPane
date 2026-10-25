@@ -43,6 +43,8 @@ func (a *App) hints() (items []barItem, pinned *barItem) {
 		return a.dialogHints(a.dialog), nil
 	case a.tasks.showing:
 		return a.taskFooterHints(), nil
+	case a.live != nil:
+		return a.liveHints(), nil
 	case a.showHelp:
 		return a.helpHints(), nil
 	case a.props != nil:
@@ -62,6 +64,19 @@ func (a *App) hints() (items []barItem, pinned *barItem) {
 	}
 	help := item("?", "help", "?")
 	return a.browseHints(), &help
+}
+
+// liveHints describes the live progress screen: it is a view of one running
+// task, so the chips are about leaving it, not about browsing.
+func (a *App) liveHints() []barItem {
+	s := a.liveTaskSession()
+	out := []barItem{item("↑↓", "scroll", "")}
+	if s != nil && s.active() {
+		out = append(out, item("c", "cancel", "c"), item("Esc", "background", "esc"))
+	} else {
+		out = append(out, item("⏎", "close", "enter"), item("Esc", "close", "esc"))
+	}
+	return append(out, item("t", "tasks", "t"))
 }
 
 // browseHints adapts the normal-mode hints to the active panel: actions

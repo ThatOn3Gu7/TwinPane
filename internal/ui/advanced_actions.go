@@ -287,7 +287,8 @@ func (a *App) advancedTransfer(t advancedTarget, kind ops.Kind) tea.Cmd {
 	targets := []fsys.Entry{t.entry()}
 	go func() {
 		err := ops.Validate(req)
-		s.events <- opTransferValidatedMsg{s.id, req, targets, err}
+		est := ops.EstimateTransfer(req)
+		s.events <- opTransferValidatedMsg{s.id, req, targets, est, err}
 	}()
 	return a.startCmds(s)
 }

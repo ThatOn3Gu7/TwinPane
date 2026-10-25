@@ -112,6 +112,18 @@ func sectionTop(th theme.Theme, title, right string, width int, focused bool) st
 		border.Render("─╮")
 }
 
+// progressBar draws a filled/unfilled bar of width cells. Callers give it a
+// known fraction; unknown progress uses a text label instead.
+func progressBar(th theme.Theme, frac float64, width int) string {
+	if width < 1 {
+		width = 1
+	}
+	filled := int(frac*float64(width) + 0.5)
+	filled = max(0, min(width, filled))
+	return th.ProgressFill.Render(strings.Repeat("█", filled)) +
+		th.ProgressEmpty.Render(strings.Repeat("░", width-filled))
+}
+
 // fitBlock returns exactly height lines of exactly width cells.
 func fitBlock(lines []string, height, width int) []string {
 	if height <= 0 {

@@ -172,7 +172,8 @@ func (a *App) beginTransferTo(kind ops.Kind, srcIdx int, destDir string) tea.Cmd
 	targets = append([]fsys.Entry(nil), targets...)
 	go func() {
 		err := ops.Validate(req)
-		s.events <- opTransferValidatedMsg{s.id, req, targets, err}
+		est := ops.EstimateTransfer(req)
+		s.events <- opTransferValidatedMsg{s.id, req, targets, est, err}
 	}()
 	return a.startCmds(s)
 }

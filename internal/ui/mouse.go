@@ -99,6 +99,8 @@ func (a *App) handleMouse(m tea.MouseMsg) tea.Cmd {
 		return a.dialogMouse(a.dialog, ev)
 	case a.tasks.showing:
 		return a.taskViewMouse(ev)
+	case a.live != nil:
+		return a.liveMouse(ev)
 	case a.showHelp:
 		return a.helpMouse(ev) // help.go: wheel scrolls, a tap closes
 	case a.props != nil:
@@ -115,6 +117,24 @@ func (a *App) handleMouse(m tea.MouseMsg) tea.Cmd {
 		return a.folderSizeMouse(ev)
 	case a.comparison != nil:
 		return a.comparisonMouse(ev)
+	}
+	// The background-task notification: a tap opens the task list, exactly
+	// like the "t" its text mentions. It is only drawn over the panels, so it
+	// can never take a click from a dialog or another overlay.
+	if a.noticeAt(ev.X, ev.Y) {
+		if ev.Action == tea.MouseActionRelease && ev.Button == tea.MouseButtonLeft {
+			// Open the task list on the task the notification described.
+			task := 0
+			if a.notice != nil {
+				task = a.notice.task
+			}
+			a.dismissNotice()
+			a.openTasks()
+			if a.tasks.get(task) != nil {
+				a.tasks.selected = task
+			}
+		}
+		return nil
 	}
 	// The focus-mode preview pane scrolls like the viewer does; taps on it
 	// do nothing (it is not a panel). Overlays above already had their turn.

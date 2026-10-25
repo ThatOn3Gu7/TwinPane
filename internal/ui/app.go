@@ -172,6 +172,13 @@ type App struct {
 	focusPrev       focusPreview // cached preview of the selected entry
 	recents         []destLoc    // recent transfer destinations (this run)
 	destSeq         int          // the destination picker's latest listing
+
+	// phase 11: background task experience (live.go). live follows one task in
+	// the foreground; notice is the non-blocking "it is running in the
+	// background" pop-up.
+	live      *liveTask
+	notice    *notice
+	noticeSeq int
 }
 
 // New creates the application model.
@@ -341,6 +348,12 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return a, nil // Update schedules the next frame if still loading
 
+	case noticeTimeoutMsg:
+		if a.notice != nil && a.notice.seq == msg.seq {
+			a.dismissNotice()
+		}
+		return a, nil
+
 	case compressPulseMsg:
 		if cp := a.compressProgress; cp != nil && cp.id == msg.id && !cp.finished {
 			cp.frame++
@@ -413,6 +426,9 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a, nil
 		}
 		a.lastClick = clickState{} // a key between two taps is no double tap
+		// Continuing to work dismisses the background-task notification: it is
+		// informational, never something to close first.
+		a.dismissNotice()
 		// A text field in a dialog receives the raw message, including
 		// multi-rune input and bracketed paste.
 		if a.dialog != nil && a.dialog.input != nil {
@@ -420,6 +436,9 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if a.dialog == nil && a.tasks.showing {
 			return a, a.taskViewKey(msg)
+		}
+		if a.dialog == nil && a.live != nil && !a.showHelp {
+			return a, a.liveKey(msg)
 		}
 		if a.dialog == nil && a.folderSize != nil && !a.showHelp {
 			return a, a.folderSizeKey(msg)
@@ -746,6 +765,8 @@ func (a *App) View() string {
 		body = a.helpView(a.height - 3)
 	case a.tasks.showing:
 		body = a.taskViewRender(a.height - 3)
+	case a.live != nil:
+		body = a.liveViewRender(a.height - 3)
 	case a.viewer != nil:
 		body = a.viewerRender(a.height - 3)
 	case a.advancedSearch != nil:
@@ -766,6 +787,7 @@ func (a *App) View() string {
 			a.panels[1].View(a.theme, a.active == 1))
 	}
 	screen := strings.Join([]string{a.titleView(), body, a.statusView(), a.footerView()}, "\n")
+	screen = a.withNotice(screen)
 	if a.props != nil && !a.showHelp {
 		screen = overlay(screen, a.renderProps(), a.width, a.height, a.theme.Backdrop)
 	}

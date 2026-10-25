@@ -41,7 +41,11 @@ type opTransferValidatedMsg struct {
 	id      int
 	req     ops.Request
 	targets []fsys.Entry
-	err     error
+	// est is the bounded size guess that decides whether the user is offered
+	// the background / watch-progress choice (see taskmode.go). It is computed
+	// in the same goroutine as validation, so no operation waits for it.
+	est ops.Estimate
+	err error
 }
 
 type opTransferDoneMsg struct {
@@ -75,6 +79,13 @@ type opSession struct {
 	finished         time.Time
 	summary          string
 	details          []string
+
+	// mode is how the operation reports itself while it runs: in the task list
+	// only (the default, used by small operations without any prompt) or on
+	// the live progress screen (chosen for large ones, see taskmode.go).
+	mode opMode
+	// est is the bounded size guess shown by the mode choice.
+	est ops.Estimate
 
 	srcPanel   int
 	panelPaths [2]string // panel locations captured when the task starts
@@ -386,7 +397,8 @@ func (a *App) handleOpMsg(msg tea.Msg) (tea.Cmd, bool) {
 			a.setStatusLevel(summary, lvlErr)
 			return nil, true
 		}
-		a.enqueueTaskPrompt(taskPrompt{taskID: s.id, kind: promptTransferConfirm, transfer: m.req, targets: m.targets})
+		s.est = m.est
+		a.enqueueTaskPrompt(taskPrompt{taskID: s.id, kind: promptTransferConfirm, transfer: m.req, targets: m.targets, est: m.est})
 		return nil, true
 	case opTransferDoneMsg:
 		if s := lookup(m.id); s != nil && s.active() {
@@ -493,7 +505,8 @@ func (a *App) beginTransfer(kind ops.Kind) tea.Cmd {
 	targets = append([]fsys.Entry(nil), targets...)
 	go func() {
 		err := ops.Validate(req)
-		s.events <- opTransferValidatedMsg{s.id, req, targets, err}
+		est := ops.EstimateTransfer(req)
+		s.events <- opTransferValidatedMsg{s.id, req, targets, est, err}
 	}()
 	return a.startCmds(s)
 }
@@ -523,7 +536,7 @@ func (a *App) transferDialog(s *opSession, req ops.Request, targets []fsys.Entry
 		{label: verb + " (Enter)", run: func(a *App) tea.Cmd {
 			a.dialog = nil
 			a.finishTaskPrompt(s, true)
-			return a.startTransfer(s, req)
+			return a.confirmTaskMode(s, s.est, func() tea.Cmd { return a.startTransfer(s, req) })
 		}},
 		{label: "Cancel (Esc)", run: cancelTransfer},
 	}
@@ -549,7 +562,7 @@ func (a *App) startTransfer(s *opSession, req ops.Request) tea.Cmd {
 		res := ops.Run(ctx, req, h)
 		s.events <- opTransferDoneMsg{s.id, res}
 	}()
-	return a.startCmds(s)
+	return a.runStarted(s)
 }
 
 func (a *App) conflictDialog(s *opSession, m opConflictMsg) {
@@ -780,7 +793,7 @@ func (a *App) deleteDialog(s *opSession, plan ops.DeletePlan) {
 	start := func(a *App) tea.Cmd {
 		a.dialog = nil
 		a.finishTaskPrompt(s, true)
-		return a.startDelete(s, plan)
+		return a.confirmTaskMode(s, ops.EstimateDelete(plan), func() tea.Cmd { return a.startDelete(s, plan) })
 	}
 	d.onEsc = cancelDel
 	if typed {
@@ -832,7 +845,7 @@ func (a *App) startDelete(s *opSession, plan ops.DeletePlan) tea.Cmd {
 		res := ops.Delete(ctx, plan, tr, h)
 		s.events <- opDeleteDoneMsg{s.id, res}
 	}()
-	return a.startCmds(s)
+	return a.runStarted(s)
 }
 
 func (a *App) finishDelete(s *opSession, res ops.DeleteResult) tea.Cmd {
