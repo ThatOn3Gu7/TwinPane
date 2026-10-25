@@ -437,7 +437,7 @@ func (a *App) beginMkdir() tea.Cmd {
 			return nil
 		}
 		a.dialog = nil
-		a.setStatusLevel(fmt.Sprintf("Created folder %q", v), lvlOK)
+		a.result(lvlOK, fmt.Sprintf("Created folder %q", v), "in "+fsys.SanitizeName(p.Path()))
 		return tea.Batch(p.RefreshFocus(v), a.panels[1-idx].Refresh())
 	}
 	a.dialog = d
@@ -490,7 +490,8 @@ func (a *App) finishCloudOp(s *opSession, m opCloudDoneMsg) tea.Cmd {
 	}
 	cmd := a.refreshPanelsAt(s.panelPaths[s.srcPanel], m.focus)
 	a.finishTask(s, state, summary, details...)
-	a.setStatusLevel(summary, level)
+	a.taskResult(s, level, summary, detailsBody(details)...)
+	a.setStatus("", false)
 	return cmd
 }
 
@@ -678,19 +679,21 @@ func (a *App) finishCloudDelete(s *opSession, res cloudDeleteResult) tea.Cmd {
 	details := itemErrorDetails(res.errors)
 	details = appendTaskDetail(details, "Stopped", res.fatal)
 	state := taskOutcome(res.canceled, res.fatal, len(res.errors), res.deleted > 0)
+	level := lvlErr
 	switch {
 	case ok:
-		a.setStatusLevel(summary, lvlOK)
+		level = lvlOK
 	case res.canceled && len(res.errors) <= 1 && res.fatal == nil:
 		summary += " — cancelled, the rest was not deleted"
-		a.setStatusLevel(summary, lvlWarn)
+		level = lvlWarn
 	default:
 		summary = fmt.Sprintf("%s, %s", summary, plural(len(res.errors), "error"))
 		if res.canceled {
 			summary += " — cancelled"
 		}
-		a.setStatusLevel(summary, lvlErr)
 	}
+	a.taskResult(s, level, summary, detailsBody(details)...)
+	a.setStatus("", false)
 	a.finishTask(s, state, summary, details...)
 	return cmd
 }

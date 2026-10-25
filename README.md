@@ -115,6 +115,18 @@ The [user guide](docs/USER_GUIDE.md) describes every feature in detail.
   asks whether to run in the background or to be watched. Sending it to the
   background shows a small, non-blocking notification with its progress.
 
+**Notifications**
+- Results of file operations (copy, move, delete, extract, compress, rename,
+  sync), folder-size scans and finishing an edit appear as a small pop-up in
+  the bottom-right corner instead of a line at the bottom: `✓ Copied 61 files,
+  16 folders`, `! Move cancelled — nothing was transferred`, `✕ cannot delete:
+  permission denied`. Each kind has its own colour and icon, a bar at the
+  bottom counts the notification down, and it goes away by itself after a few
+  seconds. `Esc` (on the panel screen) or a tap dismisses it, a tap on a
+  background-task notice opens that task, and normal keys keep working while it
+  is shown. Prompts, refusals, progress and navigation notes stay in the status
+  line, where they belong.
+
 **Directory comparison**
 - Compare the two local panel folders (`D`), ignoring exact `.git` directories
   by default (`g` includes them). `f` hides matching rows; `h` can verify

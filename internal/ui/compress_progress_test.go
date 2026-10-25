@@ -93,7 +93,10 @@ func TestCompressionCleanupFailureIsPersistentAndHonest(t *testing.T) {
 	res := compress.Result{Format: cp.format, Output: out, CleanupErr: errors.New("permission denied")}
 	h.a.finishZip(s, res)
 	v := h.view()
-	if !strings.Contains(v, "created with warnings") || !strings.Contains(v, "Cleanup warning: permission denied") || !strings.Contains(v, "temporary cleanup failed") {
+	// The dialog wraps its text, so the sentence is checked in pieces; the
+	// failure itself must be named.
+	if !strings.Contains(v, "created with warnings") || !strings.Contains(v, "Cleanup warning: permission denied") ||
+		!strings.Contains(v, "temporary cleanup") || !strings.Contains(v, "failed; see the warning below") {
 		t.Fatalf("cleanup failure was not retained:\n%s", v)
 	}
 	if strings.Contains(v, "no temporary output remains") {

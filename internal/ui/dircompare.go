@@ -551,7 +551,8 @@ func (a *App) finishSync(s *opSession, execution dircompare.Execution, plan dirc
 		details = append(details, fmt.Sprintf("Created %d directory(ies)", execution.CreatedDirs))
 	}
 	a.finishTask(s, state, summary, details...)
-	a.setStatusLevel(summary, level)
+	a.taskResult(s, level, summary, detailsBody(details)...)
+	a.setStatus("", false)
 
 	left, right := plan.Roots()
 	var cmds []tea.Cmd

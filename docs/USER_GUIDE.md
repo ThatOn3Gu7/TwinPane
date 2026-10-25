@@ -292,10 +292,48 @@ safety check already made. Anything smaller — the ordinary copy of a file or
 two — starts at once, with no extra dialog, exactly as before.
 
 Sending a task to the background (by answering that question, or by leaving the
-live screen with `Esc`) shows a small notification in the bottom-right corner
-for five seconds: what is running, how far it is, and `t` to see the rest. It
-never takes the keyboard — browsing, typing and dialogs keep working — and any
-key, the timer, or a tap dismisses it. Tapping it opens the task list.
+live screen with `Esc`) shows a small notification in the bottom-right corner:
+what is running, how far it is, and `t` to see the rest. See
+[Notifications](#notifications) below.
+
+#### Notifications
+
+Results of finished work are reported by a small pop-up in the bottom-right
+corner of the panel area rather than by a line at the bottom of the screen:
+
+```
+╭─ ✓ Copied 61 files, 16 folders ────────────╮
+│ → /mnt/backup/photos/2024                  │
+│ ████████████████████████████████████░░░░░░ │
+╰────────────────────────────────────────────╯
+```
+
+- **What becomes a notification:** copy, move and delete results (including
+  background ones), archive extraction and compression, cloud file operations,
+  reviewed directory plans, renames, folder-size scans, and an edit that
+  finished. A long message keeps its first clause as the heading and continues
+  in the box (`✕ Delete incomplete` / `20629 files removed, 2149 errors`), and
+  the task list (`t`) always has the full record.
+- **What stays in the status line:** progress ("Checking copy paths…"),
+  prompts and refusals ("nothing to copy: put the cursor on an item or select
+  items with Space"), navigation notes, mode toggles and selection counts.
+  These describe what to do next rather than what just happened, so they
+  belong next to the panels.
+- **Colours and icons:** `✓` green for success, `!` yellow for warnings and
+  cancellations, `✕` red for failures, `ℹ` blue for information. The border and
+  the heading carry the same colour, so the kind is readable at a glance and
+  still distinguishable without colour through the icon and the bar.
+- **Dismissing:** the bar at the bottom of the box drains from right to left
+  and the notification closes when it runs out (four seconds). `Esc` on the
+  panel screen or a tap anywhere on the box closes it sooner; tapping a
+  notification about a background task opens the task list on that task. While
+  a dialog is open the pop-up is not drawn and its countdown pauses, so a
+  result cannot expire unseen behind a prompt.
+- **No spam:** only one notification is shown at a time, a newer result
+  replaces an older one, and repeating the same result restarts its countdown
+  instead of flashing. On terminals too small for a legible box (under about
+  30 columns or 10 rows) nothing is drawn; the status line and the task list
+  still report the result.
 
 #### Other additions and safety fixes
 

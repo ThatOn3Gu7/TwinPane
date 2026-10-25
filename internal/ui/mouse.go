@@ -123,16 +123,7 @@ func (a *App) handleMouse(m tea.MouseMsg) tea.Cmd {
 	// can never take a click from a dialog or another overlay.
 	if a.noticeAt(ev.X, ev.Y) {
 		if ev.Action == tea.MouseActionRelease && ev.Button == tea.MouseButtonLeft {
-			// Open the task list on the task the notification described.
-			task := 0
-			if a.notice != nil {
-				task = a.notice.task
-			}
-			a.dismissNotice()
-			a.openTasks()
-			if a.tasks.get(task) != nil {
-				a.tasks.selected = task
-			}
+			return a.tapNotice()
 		}
 		return nil
 	}

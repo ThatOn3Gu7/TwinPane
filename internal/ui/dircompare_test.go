@@ -103,8 +103,8 @@ func TestDirectoryPlanStopsIfSourceChangesAfterReview(t *testing.T) {
 	if fileExists(filepath.Join(env.dst, "a.txt")) {
 		t.Fatal("stale source was copied after plan review")
 	}
-	if !strings.Contains(h.status(), "path changed since plan review") {
-		t.Fatalf("status does not report stale plan: %q", h.status())
+	if !strings.Contains(h.reported(), "path changed since plan review") {
+		t.Fatalf("the stale plan is not reported: %q", h.reported())
 	}
 }
 

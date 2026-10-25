@@ -567,8 +567,8 @@ func TestAdvancedActionCopyKeepsTheResultAndThePanels(t *testing.T) {
 		e, ok := other.Current()
 		return other.Path() == otherPath && !other.Loading() && ok && e.Name == "a.txt"
 	})
-	if st := h.status(); !strings.Contains(st, "Copied 1 file") {
-		t.Fatalf("status %q", st)
+	if st := h.reported(); !strings.Contains(st, "Copied 1 file") {
+		t.Fatalf("report %q", st)
 	}
 	// the same result can still be acted on
 	advMenu(t, h)
@@ -646,8 +646,8 @@ func TestAdvancedActionCopyCancelAndFailure(t *testing.T) {
 	if fileExists(filepath.Join(env.dst, "a.txt")) {
 		t.Fatal("the file was copied into a read-only folder")
 	}
-	if st, isErr := h.a.Status(); !isErr || !strings.Contains(st, "error") {
-		t.Fatalf("failure not reported: %q (err=%v)", st, isErr)
+	if st := h.reported(); !strings.Contains(st, "error") || h.reportedLevel() != lvlErr {
+		t.Fatalf("failure not reported: %q (level=%v)", st, h.reportedLevel())
 	}
 	if h.a.advancedSearch == nil || !fileExists(path) {
 		t.Fatal("the failed copy damaged the source or the search")
@@ -682,8 +682,8 @@ func TestAdvancedActionRenameUpdatesTheResult(t *testing.T) {
 	if !fileExists(renamed) || fileExists(path) {
 		t.Fatal("the file was not renamed on disk")
 	}
-	if st := h.status(); !strings.Contains(st, "Renamed") {
-		t.Fatalf("status %q", st)
+	if st := h.reported(); !strings.Contains(st, "Renamed") {
+		t.Fatalf("report %q", st)
 	}
 	if h.a.advancedSearch != v {
 		t.Fatal("renaming closed the search")
@@ -795,8 +795,8 @@ func TestAdvancedActionDeleteUsesTheTrashAndPrunesTheResult(t *testing.T) {
 			t.Fatal("the deleted file is still listed")
 		}
 	}
-	if st := h.status(); !strings.Contains(st, "trash") {
-		t.Fatalf("status %q", st)
+	if st := h.reported(); !strings.Contains(st, "trash") {
+		t.Fatalf("report %q", st)
 	}
 	h.press("esc")
 }

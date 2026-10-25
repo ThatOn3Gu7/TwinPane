@@ -349,8 +349,8 @@ func TestBulkRenameTemplateApply(t *testing.T) {
 			t.Fatalf("%s has %q", f, got)
 		}
 	}
-	if h.status() != "Renamed 3 items" || len(h.a.ActivePanel().Selection()) != 0 {
-		t.Fatalf("status %q", h.status())
+	if !strings.HasPrefix(h.reported(), "Renamed 3 items") || len(h.a.ActivePanel().Selection()) != 0 {
+		t.Fatalf("report %q", h.reported())
 	}
 }
 

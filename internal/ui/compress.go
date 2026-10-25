@@ -338,21 +338,29 @@ func (a *App) finishZip(s *opSession, res compress.Result) tea.Cmd {
 		cleanupErrors = 1
 	}
 	state := taskOutcome(res.Canceled, res.Fatal, len(res.Errors)+cleanupErrors, res.Created() && (res.Files+res.Dirs+res.Links > 0))
+	level := lvlErr
 	switch {
 	case res.OK():
-		a.setStatusLevel(summary, lvlOK)
+		level = lvlOK
 		if src := a.panels[s.srcPanel]; !src.InArchive() && a.sourceSelectionUnchanged(s) {
 			src.ClearSelection()
 		}
 	case res.Canceled:
-		a.setStatusLevel(summary, lvlWarn)
+		level = lvlWarn
 	default:
-		level := lvlErr
 		if res.Created() {
 			level = lvlWarn
 		}
-		a.setStatusLevel(summary, level)
 	}
+	body := []string{}
+	if res.Output != "" {
+		body = append(body, "→ "+fsys.SanitizeName(res.Output))
+	}
+	// Failures are named in the pop-up itself: the first two details say what
+	// went wrong, the task list keeps the rest.
+	body = append(body, detailsBody(details)...)
+	a.taskResult(s, level, summary, body...)
+	a.setStatus("", false)
 	a.finishTask(s, state, summary, details...)
 	return cmd
 }

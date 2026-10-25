@@ -395,7 +395,8 @@ func (a *App) editorDone(m editorDoneMsg) tea.Cmd {
 	case saved == 0 && len(m.before) > 0:
 		a.setStatusLevel("Finished editing "+what+result, lvlInfo)
 	default:
-		a.setStatusLevel("Finished editing "+what+result, lvlOK)
+		a.result(lvlOK, "Finished editing "+fsys.SanitizeName(what)+result)
+		a.setStatus("", false)
 	}
 	// The files may have changed size/time (or been renamed/deleted by the
 	// editor): refresh both panels, keeping cursor and selection. The window

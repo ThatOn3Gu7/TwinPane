@@ -128,14 +128,15 @@ func TestLargeOperationCanBeSentToTheBackground(t *testing.T) {
 			t.Errorf("notification lacks %q:\n%s", want, v)
 		}
 	}
-	// The notification never takes the keyboard: browsing keeps working.
+	// The notification never takes the keyboard: browsing keeps working and
+	// the pop-up stays until its countdown ends.
 	before := h.a.ActivePanel().Cursor()
 	h.press("j", "j")
 	if h.a.ActivePanel().Cursor() == before {
 		t.Errorf("the cursor should still move while the notification is shown:\n%s", h.view())
 	}
-	if h.a.notice != nil {
-		t.Error("a keypress should dismiss the notification")
+	if h.a.notice == nil {
+		t.Error("ordinary keys must not dismiss the notification")
 	}
 }
 
@@ -186,81 +187,11 @@ func TestLargeCopyAsksEndToEnd(t *testing.T) {
 	if len(entries) != largeOpItems+20 {
 		t.Fatalf("copied %d entries, want %d", len(entries), largeOpItems+20)
 	}
-	if st := h.status(); !strings.Contains(st, "Copied") {
-		t.Fatalf("status after the copy = %q", st)
+	if n := h.a.notice; n == nil || !strings.Contains(n.title, "Copied") {
+		t.Fatalf("the finished copy should be reported by a notification: %+v", n)
 	}
-}
-
-// ---- the notification --------------------------------------------------------
-
-func TestNotificationIsSmallAndNonBlocking(t *testing.T) {
-	h, _ := newOpsApp(t, nil, nil)
-	s, _ := h.a.newSession("Copying", 0, []string{"/src/big.iso"})
-	s.state = taskRunning
-	s.prog = ops.Progress{Phase: "copying", DoneItems: 5, TotalItems: 40, DoneBytes: 50 << 20, TotalBytes: 400 << 20}
-	h.a.notifyBackground(s)
-	v := h.view()
-	if !strings.Contains(v, "Copying in the background") {
-		t.Fatalf("no notification:\n%s", v)
-	}
-	if !strings.Contains(v, "12%") || !strings.Contains(v, "t to see progress") {
-		t.Errorf("the notification should show progress and how to see it:\n%s", v)
-	}
-	// Non-blocking: it is not a dialog, it does not own the keyboard and the
-	// panels behind it still respond.
-	if h.a.dialog != nil {
-		t.Fatal("the notification must not be a dialog")
-	}
-	if !h.a.browseVisible() {
-		t.Fatal("the notification must leave the browser on screen")
-	}
-	h.press("tab")
-	if h.a.Active() != 1 {
-		t.Error("Tab should still switch panels while the notification is shown")
-	}
-}
-
-func TestNotificationFitsNarrowTerminals(t *testing.T) {
-	h, _ := newOpsApp(t, nil, nil)
-	s, _ := h.a.newSession("Copying", 0, []string{"/src/big.iso"})
-	s.state = taskRunning
-	for _, size := range []struct{ w, h int }{{30, 10}, {34, 8}, {40, 12}, {60, 20}, {120, 40}} {
-		h.send(tea.WindowSizeMsg{Width: size.w, Height: size.h})
-		h.a.notifyBackground(s)
-		v := ansi.Strip(h.a.View())
-		lines := strings.Split(v, "\n")
-		if len(lines) > size.h {
-			t.Errorf("%dx%d: view has %d lines", size.w, size.h, len(lines))
-		}
-		for i, line := range lines {
-			if w := lipgloss.Width(line); w > size.w {
-				t.Errorf("%dx%d: line %d is %d cells wide: %q", size.w, size.h, i, w, line)
-			}
-		}
-		if size.w >= 30 && size.h >= 10 && !strings.Contains(v, "t ") && !strings.Contains(v, "progress") {
-			t.Errorf("%dx%d: notification lost its hint:\n%s", size.w, size.h, v)
-		}
-	}
-}
-
-func TestNotificationExpiresOnItsTimer(t *testing.T) {
-	h, _ := newOpsApp(t, nil, nil)
-	s, _ := h.a.newSession("Copying", 0, []string{"/src/a"})
-	s.state = taskRunning
-	cmd := h.a.notifyBackground(s)
-	seq := h.a.notice.seq
-	if cmd == nil {
-		t.Fatal("showing a notification should schedule its dismissal")
-	}
-	// A stale timer must not remove a newer notification.
-	h.a.notifyBackground(s)
-	h.send(noticeTimeoutMsg{seq: seq})
-	if h.a.notice == nil {
-		t.Fatal("an old timer removed the current notification")
-	}
-	h.send(noticeTimeoutMsg{seq: h.a.notice.seq})
-	if h.a.notice != nil {
-		t.Fatal("the notification should expire on its own")
+	if st := h.status(); strings.Contains(st, "Copied") {
+		t.Fatalf("results belong in the notification, not the status line: %q", st)
 	}
 }
 
@@ -389,39 +320,5 @@ func TestLiveScreenSurvivesDialogsAndTaskList(t *testing.T) {
 	}
 	if s.state != taskRunning {
 		t.Fatal("switching views must not change the task")
-	}
-}
-
-// ---- mouse and touch ---------------------------------------------------------
-
-func TestTappingTheNotificationOpensTheTaskList(t *testing.T) {
-	h, _ := newOpsApp(t, nil, nil)
-	s, _ := h.a.newSession("Copying", 0, []string{"/src/big.iso"})
-	s.state = taskRunning
-	s.prog = ops.Progress{TotalBytes: 10, DoneBytes: 5}
-	h.a.notifyBackground(s)
-	x, y := -1, -1
-	for yy := 0; yy < h.a.height && x < 0; yy++ {
-		for xx := 0; xx < h.a.width; xx++ {
-			if h.a.noticeAt(xx, yy) {
-				x, y = xx, yy
-				break
-			}
-		}
-	}
-	if x < 0 {
-		t.Fatalf("the notification is not on screen:\n%s", h.view())
-	}
-	h.tap(x, y)
-	if !h.a.tasks.showing || h.a.notice != nil {
-		t.Fatal("tapping the notification should open the task list")
-	}
-}
-
-func TestLiveScreenWheelScrollsTheDetails(t *testing.T) {
-	h, _, _ := liveHarness(t)
-	h.wheel(h.a.width/2, 4, 3)
-	if h.a.live == nil || h.a.live.scroll == 0 {
-		t.Fatalf("the wheel should scroll the live screen (scroll=%d)", h.a.live.scroll)
 	}
 }

@@ -413,17 +413,22 @@ func (a *App) finishExtract(s *opSession, res archive.ExtractResult, parent, par
 		details = append(details, "Canceled; completed entries were kept, the destination folder may have been created, and the remaining entries were not extracted")
 	}
 	state := taskOutcome(res.Canceled, res.Fatal, len(res.Errors), partial)
+	level := lvlErr
 	switch {
 	case res.OK():
-		a.setStatusLevel(summary+" → "+res.Dest, lvlOK)
+		level = lvlOK
 		if a.sourceSelectionUnchanged(s) {
 			a.panels[s.srcPanel].ClearSelection()
 		}
 	case res.Canceled && res.Fatal == nil && len(res.Errors) == 0:
-		a.setStatusLevel(summary, lvlWarn)
-	default:
-		a.setStatusLevel(summary, lvlErr)
+		level = lvlWarn
 	}
+	body := []string{"→ " + fsys.SanitizeName(res.Dest)}
+	if len(res.Errors) > 0 {
+		body = append(body, fmt.Sprintf("%s — details in the task list (t)", plural(len(res.Errors), "entry")+" failed"))
+	}
+	a.taskResult(s, level, summary, body...)
+	a.setStatus("", false)
 	a.finishTask(s, state, summary, details...)
 	return tea.Batch(cmds...)
 }

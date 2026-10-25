@@ -1,0 +1,508 @@
+package ui
+
+import (
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
+
+	"github.com/ThatOn3Gu7/TwinPane/internal/ops"
+)
+
+// noticeText joins what the pop-up currently says (heading and body), which is
+// what a test wants to assert on: the message, wherever it is wrapped.
+func noticeText(h *harness) string {
+	n := h.a.notice
+	if n == nil {
+		return ""
+	}
+	return strings.Join(append([]string{n.title}, n.body...), " | ")
+}
+
+// reported is what the app told the user about the last finished operation:
+// the notification when one is showing, otherwise the status line. File
+// operation results moved from the status line into notifications, so the
+// tests that ask "did the app report this?" use this helper; the dedicated
+// notification tests below check which surface carries what.
+func (h *harness) reported() string {
+	if n := h.a.notice; n != nil {
+		return strings.Join(append(append([]string{n.title}, n.body...), h.status()), " | ")
+	}
+	return h.status()
+}
+
+// reportedLevel is the severity of the last report, in status-line terms.
+func (h *harness) reportedLevel() int {
+	if n := h.a.notice; n != nil {
+		switch n.kind {
+		case noticeOK:
+			return lvlOK
+		case noticeWarn:
+			return lvlWarn
+		case noticeErr:
+			return lvlErr
+		}
+		return lvlInfo
+	}
+	return h.a.statusLevel
+}
+
+// tick advances the notification countdown by one frame.
+func tick(h *harness) {
+	h.send(noticeTickMsg{seq: h.a.notice.seq})
+}
+
+// runTicks advances the countdown until it ends.
+func runTicks(h *harness) {
+	h.t.Helper()
+	for i := 0; i < 200 && h.a.notice != nil; i++ {
+		tick(h)
+	}
+}
+
+// ---- kinds and styling --------------------------------------------------------
+
+func TestNoticeKindsHaveIconsAndColours(t *testing.T) {
+	h, _ := newOpsApp(t, nil, nil)
+	th := h.a.theme
+	cases := []struct {
+		lvl  int
+		icon string
+		want lipgloss.Style
+	}{
+		{lvlOK, "✓", th.NoticeOK},
+		{lvlWarn, "!", th.NoticeWarn},
+		{lvlErr, "✕", th.NoticeErr},
+		{lvlInfo, "ℹ", th.NoticeInfo},
+	}
+	for _, tc := range cases {
+		h.a.notice = nil
+		h.a.result(tc.lvl, "message of "+tc.icon)
+		if h.a.notice == nil {
+			t.Fatalf("%q: no notification", tc.icon)
+		}
+		if k := resultKind(tc.lvl); noticeIcon(k) != tc.icon {
+			t.Errorf("level %d uses icon %q, want %q", tc.lvl, noticeIcon(k), tc.icon)
+		}
+		if got := noticeStyle(th, resultKind(tc.lvl)); got.GetForeground() != tc.want.GetForeground() {
+			t.Errorf("level %d: style foreground = %v, want %v", tc.lvl, got.GetForeground(), tc.want.GetForeground())
+		}
+		// The icon and the message are both drawn, on the border and inside.
+		var lines []string
+		x, y, w, _, ok := h.a.noticeRect()
+		_ = y
+		if !ok {
+			t.Fatalf("%q: no room for the notification", tc.icon)
+		}
+		lines = h.a.noticeBox(w)
+		joined := ansi.Strip(strings.Join(lines, "\n"))
+		if !strings.Contains(joined, tc.icon) || !strings.Contains(joined, "message of") {
+			t.Errorf("level %d: notification lacks its icon or text:\n%s", tc.lvl, joined)
+		}
+		if !strings.Contains(joined, "╭") || !strings.Contains(joined, "╰") {
+			t.Errorf("level %d: notification is not bordered:\n%s", tc.lvl, joined)
+		}
+		_ = x
+	}
+}
+
+// ---- results become notifications ----------------------------------------------
+
+func TestCopyResultIsANotification(t *testing.T) {
+	h, env := newOpsApp(t, nil, nil)
+	h.focus("a.txt")
+	h.press("space", "space", "c")
+	h.waitDialog(dlgConfirm)
+	h.press("enter")
+	h.idle()
+	if got := h.a.notice; got == nil || !strings.Contains(got.title, "Copied") {
+		t.Fatalf("notification = %+v", got)
+	}
+	if k := h.a.notice.kind; k != noticeOK {
+		t.Errorf("kind = %v, want success", k)
+	}
+	if txt := noticeText(h); !strings.Contains(txt, env.dst) {
+		t.Errorf("the notification should say where the files went: %q", txt)
+	}
+	v := h.view()
+	if !strings.Contains(v, "✓ Copied") {
+		t.Fatalf("the pop-up is not on screen:\n%s", v)
+	}
+	if st := h.status(); strings.Contains(st, "Copied") {
+		t.Errorf("the result should not also fill the status line: %q", st)
+	}
+}
+
+func TestDeleteResultIsANotification(t *testing.T) {
+	h, env := newOpsApp(t, nil, nil)
+	h.focus("a.txt")
+	h.press("d")
+	h.waitDialog(dlgDelete)
+	h.press("y")
+	h.idle()
+	if got := h.a.notice; got == nil || !strings.Contains(got.title, "Moved 1 item to the trash") {
+		t.Fatalf("notification = %+v (status %q)", got, h.status())
+	}
+	if h.a.notice.kind != noticeOK {
+		t.Errorf("kind = %v, want success", h.a.notice.kind)
+	}
+	if !fileExists(filepath.Join(env.trash, "files", "a.txt")) {
+		t.Fatal("the delete did not happen")
+	}
+}
+
+func TestFailedResultIsAnErrorNotification(t *testing.T) {
+	h, env := newOpsApp(t, nil, nil)
+	locked := filepath.Join(env.src, "b.txt")
+	os.Chmod(locked, 0)
+	defer os.Chmod(locked, 0o644)
+	h.focus("a.txt")
+	h.press("space", "space", "c")
+	h.waitDialog(dlgConfirm)
+	h.press("enter")
+	h.idle()
+	n := h.a.notice
+	if n == nil || !strings.Contains(n.title, "Copied 1 file, 1 error") {
+		t.Fatalf("notification = %+v", n)
+	}
+	if n.kind != noticeErr {
+		t.Errorf("kind = %v, want error", n.kind)
+	}
+	if txt := noticeText(h); !strings.Contains(txt, "task list") {
+		t.Errorf("a partial result should point at the task list: %q", txt)
+	}
+}
+
+func TestStatusLineKeepsProgressAndGuidance(t *testing.T) {
+	h, _ := newOpsApp(t, nil, nil)
+	// A refusal is guidance for the next key, not a result: status line.
+	h.focus("..")
+	h.a.ActivePanel().ClearSelection()
+	h.press("c")
+	if h.a.notice != nil {
+		t.Fatalf("a refusal must not become a notification: %q", noticeText(h))
+	}
+	if st := h.status(); st == "" {
+		t.Fatal("a refusal belongs in the status line")
+	}
+	// So does a mode toggle.
+	h.press("h")
+	if h.a.notice != nil {
+		t.Errorf("a mode toggle must not become a notification: %q", noticeText(h))
+	}
+	if !strings.Contains(strings.ToLower(h.status()), "hidden") {
+		t.Errorf("status = %q", h.status())
+	}
+}
+
+// ---- countdown -----------------------------------------------------------------
+
+func TestNoticeCountdownDrainsFromTheRight(t *testing.T) {
+	h, _ := newOpsApp(t, nil, nil)
+	h.a.result(lvlOK, "Copied 61 files, 16 folders")
+	box := h.a.noticeBox(min(noticeMaxWidth, h.a.width-4))
+	if len(box) < 2 {
+		t.Fatalf("notification = %v", box)
+	}
+	bar := ansi.Strip(box[len(box)-2])
+	if !strings.Contains(bar, "█") || strings.Contains(bar, "░") {
+		t.Fatalf("a fresh notification should have a full bar: %q", bar)
+	}
+	// Advance half the life: the bar shrinks from the right, so the filled
+	// part stays anchored on the left and the gap grows on the right.
+	for i := 0; i < 25; i++ { // half of noticeLife / noticeTick
+		tick(h)
+	}
+	half := ansi.Strip(h.a.noticeBox(min(noticeMaxWidth, h.a.width-4))[len(box)-2])
+	firstFilled := func(s string) int { return strings.Index(s, "█") }
+	lastFilled := func(s string) int { return strings.LastIndex(s, "█") }
+	if firstFilled(half) != firstFilled(bar) {
+		t.Errorf("the bar should drain from the right: %q → %q", bar, half)
+	}
+	if lastFilled(half) >= lastFilled(bar) {
+		t.Errorf("the bar did not shrink: %q → %q", bar, half)
+	}
+	if !strings.Contains(half, "░") {
+		t.Errorf("the drained part should be drawn as an empty track: %q", half)
+	}
+	// It runs out exactly when the notification goes away.
+	runTicks(h)
+	if h.a.notice != nil {
+		t.Fatalf("the notification should expire after %s", noticeLife)
+	}
+}
+
+func TestNoticeCountdownIsDrivenByUpdate(t *testing.T) {
+	h, _ := newOpsApp(t, nil, nil)
+	h.a.result(lvlOK, "Copied 1 file")
+	if h.a.notice == nil {
+		t.Fatal("no notification")
+	}
+	// Update schedules the next frame and stops when nothing is visible.
+	_, cmd := h.a.Update(noticeTickMsg{seq: h.a.notice.seq})
+	if cmd == nil && h.a.notice != nil {
+		t.Fatal("Update should schedule the next countdown frame")
+	}
+	runTicks(h)
+	if cmd := h.a.syncNotice(nil); cmd != nil {
+		t.Error("an expired notification must not keep a timer alive")
+	}
+}
+
+func TestNoticeCountdownPausesBehindDialogs(t *testing.T) {
+	h, _ := newOpsApp(t, nil, nil)
+	h.a.result(lvlOK, "Copied 61 files, 16 folders")
+	left := h.a.notice.left
+	h.a.dialog = &dialog{kind: dlgConfirm, title: "Something to decide"}
+	// While a dialog owns the screen the pop-up is not drawn and its time
+	// does not run out: a result must not expire unseen.
+	if _, _, _, _, ok := h.a.noticeRect(); ok {
+		t.Fatal("the notification must not be drawn over a dialog")
+	}
+	for i := 0; i < 60; i++ {
+		tick(h)
+	}
+	if h.a.notice == nil || h.a.notice.left != left {
+		t.Fatalf("the countdown ran behind a dialog: %+v", h.a.notice)
+	}
+	if cmd := h.a.syncNotice(nil); cmd != nil {
+		t.Error("no countdown frames while a dialog is open")
+	}
+	// Closing the dialog brings it back with the rest of its time.
+	h.a.dialog = nil
+	if !strings.Contains(h.view(), "Copied 61 files") {
+		t.Fatalf("the notification should reappear after the dialog:\n%s", h.view())
+	}
+}
+
+// ---- dismissing ------------------------------------------------------------------
+
+func TestEscDismissesTheNotification(t *testing.T) {
+	h, _ := newOpsApp(t, nil, nil)
+	h.a.result(lvlOK, "Copied 1 file")
+	h.press("esc")
+	if h.a.notice != nil {
+		t.Fatalf("Esc should dismiss the notification:\n%s", h.view())
+	}
+	// The Esc is consumed by the pop-up, so it cannot also cancel something.
+	h.press("esc")
+	if h.a.notice != nil || h.a.dialog != nil {
+		t.Fatal("a second Esc should be harmless")
+	}
+}
+
+func TestEscKeepsItsMeaningElsewhere(t *testing.T) {
+	h, _ := newOpsApp(t, nil, nil)
+	// In the task list Esc closes the list; the pop-up waits for its time.
+	s, _ := h.a.newSession("Copying", 0, []string{"/src/a"})
+	s.state = taskRunning
+	h.a.openTasks()
+	h.a.result(lvlOK, "Copied 1 file") // a pop-up over the list
+	h.press("esc")
+	if h.a.tasks.showing {
+		t.Fatal("Esc should still close the task list")
+	}
+	if h.a.notice == nil {
+		t.Error("Esc in the task list must not dismiss the notification")
+	}
+}
+
+func TestTappingTheNotificationDismissesOrOpensTheTask(t *testing.T) {
+	h, _ := newOpsApp(t, nil, nil)
+	h.a.result(lvlOK, "Copied 1 file")
+	x, y, _, _, ok := h.a.noticeRect()
+	if !ok {
+		t.Fatalf("no notification rect:\n%s", h.view())
+	}
+	h.tap(x+1, y+1)
+	if h.a.notice != nil {
+		t.Fatal("a tap should dismiss the notification")
+	}
+	if h.a.tasks.showing {
+		t.Fatal("a result without a task must not open the task list")
+	}
+
+	// A background-task notification opens the list on that task instead.
+	s1, _ := h.a.newSession("Copying", 0, []string{"/src/a"})
+	s1.state = taskRunning
+	s2, _ := h.a.newSession("Moving", 0, []string{"/src/b"})
+	s2.state = taskRunning
+	h.a.notifyBackground(s1)
+	x, y, _, _, _ = h.a.noticeRect()
+	h.tap(x+1, y+1)
+	if !h.a.tasks.showing || h.a.tasks.selected != s1.id {
+		t.Fatalf("tapping the task notification should open the list on task %d (showing=%v selected=%d)",
+			s1.id, h.a.tasks.showing, h.a.tasks.selected)
+	}
+	if h.a.notice != nil {
+		t.Error("the notification should be gone after the tap")
+	}
+}
+
+// ---- spam control ----------------------------------------------------------------
+
+func TestRepeatedResultsDoNotStackUp(t *testing.T) {
+	h, _ := newOpsApp(t, nil, nil)
+	h.a.result(lvlOK, "Copied 1 file")
+	first := h.a.notice
+	for i := 0; i < 5; i++ {
+		for j := 0; j < 10; j++ {
+			tick(h)
+		}
+		h.a.result(lvlOK, "Copied 1 file")
+	}
+	if h.a.notice != first {
+		t.Fatal("the same result must restart the countdown, not replace the pop-up")
+	}
+	if h.a.notice.left != noticeLife {
+		t.Errorf("countdown = %v, want a restart to %v", h.a.notice.left, noticeLife)
+	}
+	// There is only ever one pop-up: a newer result replaces the older one.
+	h.a.result(lvlWarn, "Move cancelled — nothing was transferred")
+	if h.a.notice == first || !strings.Contains(h.a.notice.title, "Move cancelled") {
+		t.Fatalf("a new result should replace the old pop-up: %+v", h.a.notice)
+	}
+	if strings.Count(ansi.Strip(h.view()), "╭─") < 1 {
+		t.Fatal("the pop-up is not drawn")
+	}
+}
+
+func TestNoNotificationWhileQuitting(t *testing.T) {
+	h, _ := newOpsApp(t, nil, nil)
+	h.a.quitting = true
+	h.a.result(lvlOK, "Copied 1 file")
+	if h.a.notice != nil {
+		t.Fatal("nothing should be announced while quitting")
+	}
+}
+
+// ---- long messages and the heading ------------------------------------------------
+
+func TestSplitNoticeTitleKeepsTheHeadingMeaningful(t *testing.T) {
+	cases := []struct {
+		title      string
+		room       int
+		head, rest string
+	}{
+		{"Copied 61 files, 16 folders", 40, "Copied 61 files, 16 folders", ""},
+		{"Delete incomplete: 20629 files removed, 2149 errors", 24, "Delete incomplete", "20629 files removed, 2149 errors"},
+		{"Move cancelled — nothing was transferred", 15, "Move cancelled", "— nothing was transferred"},
+		{"Deleted 1 item (20629 files, 2149 folders)", 15, "Deleted 1 item", "(20629 files, 2149 folders)"},
+		{"somethingwithnospacesatallthatcannotbesplit", 10, "something…", ""},
+	}
+	for _, tc := range cases {
+		head, rest := splitNoticeTitle(tc.title, tc.room)
+		if head != tc.head || rest != tc.rest {
+			t.Errorf("splitNoticeTitle(%q, %d) = %q, %q; want %q, %q", tc.title, tc.room, head, rest, tc.head, tc.rest)
+		}
+	}
+}
+
+func TestLongMessageKeepsItsReasonOnScreen(t *testing.T) {
+	h, _ := newOpsApp(t, nil, nil)
+	h.send(tea.WindowSizeMsg{Width: 46, Height: 16})
+	h.a.result(lvlErr, "Delete incomplete: 20629 files removed, 2149 errors")
+	v := ansi.Strip(h.view())
+	for _, want := range []string{"Delete incomplete", "20629 files removed", "2149 errors"} {
+		if !strings.Contains(v, want) {
+			t.Errorf("the pop-up lost %q:\n%s", want, v)
+		}
+	}
+}
+
+// ---- rendering on small terminals --------------------------------------------------
+
+func TestNotificationFitsEverySize(t *testing.T) {
+	h, _ := newOpsApp(t, nil, nil)
+	long := "Deleted 1 item (20629 files, 2149 folders)"
+	for _, size := range []struct{ w, h int }{
+		{30, 7}, {30, 9}, {34, 8}, {40, 12}, {46, 14}, {60, 20}, {100, 30}, {160, 50},
+	} {
+		h.send(tea.WindowSizeMsg{Width: size.w, Height: size.h})
+		h.a.result(lvlErr, long, "some/really/long/path/that/does/not/fit/anywhere/at/all.txt", "second line")
+		v := ansi.Strip(h.a.View())
+		lines := strings.Split(v, "\n")
+		if len(lines) > size.h {
+			t.Errorf("%dx%d: view has %d lines:\n%s", size.w, size.h, len(lines), v)
+		}
+		for i, line := range lines {
+			if w := lipgloss.Width(line); w > size.w {
+				t.Errorf("%dx%d: line %d is %d cells wide: %q", size.w, size.h, i, w, line)
+			}
+		}
+		// Where there is room, the text is there in some form.
+		if size.w >= 30 && size.h >= 10 && !strings.Contains(v, "Deleted") && !strings.Contains(v, "Error") {
+			t.Errorf("%dx%d: the notification lost its message:\n%s", size.w, size.h, v)
+		}
+	}
+}
+
+func TestNotificationIsSkippedWhenThereIsNoRoom(t *testing.T) {
+	h, _ := newOpsApp(t, nil, nil)
+	for _, size := range []struct{ w, h int }{{30, 7}, {40, 9}, {24, 12}} {
+		h.send(tea.WindowSizeMsg{Width: size.w, Height: size.h})
+		h.a.result(lvlOK, "Copied 61 files, 16 folders")
+		if _, _, _, _, ok := h.a.noticeRect(); ok && (size.h < 10 || size.w < 26) {
+			t.Errorf("%dx%d: a pop-up would cover the whole screen", size.w, size.h)
+		}
+		if h.a.notice == nil {
+			t.Errorf("%dx%d: the result should still be pending", size.w, size.h)
+		}
+		// Growing the terminal brings it back, countdown intact.
+		h.send(tea.WindowSizeMsg{Width: 100, Height: 30})
+		if !strings.Contains(ansi.Strip(h.view()), "Copied 61 files") {
+			t.Errorf("%dx%d: the pending result did not appear after growing", size.w, size.h)
+		}
+		h.a.notice = nil
+	}
+}
+
+func TestNotificationDoesNotCoverTheChrome(t *testing.T) {
+	h, _ := newOpsApp(t, nil, nil)
+	h.a.result(lvlOK, "Copied 61 files, 16 folders")
+	_, y, _, height, ok := h.a.noticeRect()
+	if !ok {
+		t.Fatal("no notification")
+	}
+	// Title row is 0, the hint bar is the last row and the status line the
+	// one above it: the pop-up stays inside the content area.
+	if y < 1 || y+height > h.a.height-2 {
+		t.Fatalf("the notification covers the chrome: y=%d h=%d height=%d", y, height, h.a.height)
+	}
+}
+
+// ---- background tasks stay connected ------------------------------------------------
+
+func TestBackgroundTaskNotificationShowsProgress(t *testing.T) {
+	h, _ := newOpsApp(t, nil, nil)
+	s, _ := h.a.newSession("Copying", 0, []string{"/src/big.iso"})
+	s.state = taskRunning
+	s.prog = ops.Progress{Phase: "copying", DoneItems: 5, TotalItems: 40, DoneBytes: 50 << 20, TotalBytes: 400 << 20}
+	h.a.notifyBackground(s)
+	txt := noticeText(h)
+	for _, want := range []string{"in the background", "13%", "t opens the task list"} {
+		if !strings.Contains(txt, want) {
+			t.Errorf("notification %q lacks %q", txt, want)
+		}
+	}
+	if h.a.notice.task != s.id {
+		t.Errorf("task = %d, want %d", h.a.notice.task, s.id)
+	}
+	if h.a.notice.kind != noticeInfo {
+		t.Errorf("kind = %v, want info", h.a.notice.kind)
+	}
+}
+
+func TestWatchedTaskResultDoesNotRepeatItself(t *testing.T) {
+	h, s, _ := liveHarness(t)
+	a := h.a
+	a.finishTask(s, taskCompleted, "Copied 1 file")
+	a.taskResult(s, lvlOK, s.summary)
+	if a.notice != nil {
+		t.Fatal("the live screen already shows the result; no pop-up on top of it")
+	}
+}

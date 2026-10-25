@@ -884,8 +884,8 @@ func TestEditorTipCard(t *testing.T) {
 	env.editFn = func(args []string) { os.WriteFile(args[len(args)-1], []byte("changed!"), 0o644) }
 	h.press("enter")
 	h.settle()
-	if len(env.execs) != 2 || !strings.HasSuffix(h.status(), "— saved") {
-		t.Fatalf("execs %d status %q", len(env.execs), h.status())
+	if len(env.execs) != 2 || !strings.Contains(h.reported(), "— saved") {
+		t.Fatalf("execs %d report %q", len(env.execs), h.reported())
 	}
 	// saved once: later launches go straight to the editor
 	h.press("e")
@@ -932,15 +932,15 @@ func TestSavedDetection(t *testing.T) {
 	env.editFn = func(args []string) { os.WriteFile(filepath.Join(env.src, "a.txt"), []byte("other content"), 0o644) }
 	h.press("e")
 	h.settle()
-	if st := h.status(); !strings.Contains(st, "Finished editing 2 files — 1 of 2 saved") {
-		t.Fatalf("status %q", st)
+	if st := h.reported(); !strings.Contains(st, "Finished editing 2 files — 1 of 2 saved") {
+		t.Fatalf("report %q", st)
 	}
 	h.press("u")
 	h.focus("b.txt")
 	env.editFn = func(args []string) { os.WriteFile(filepath.Join(env.src, "b.txt"), []byte("other content"), 0o644) }
 	h.press("e")
 	h.settle()
-	if st := h.status(); st != "Finished editing b.txt — saved" {
-		t.Fatalf("status %q", st)
+	if st := h.reported(); !strings.HasPrefix(st, "Finished editing b.txt — saved") {
+		t.Fatalf("report %q", st)
 	}
 }

@@ -435,7 +435,8 @@ func (a *App) bulkDone(m bulkDoneMsg) tea.Cmd {
 		return cmds
 	}
 	if m.res.Failed() == 0 {
-		a.setStatusLevel(fmt.Sprintf("Renamed %s", plural(m.res.Renamed, "item")), lvlOK)
+		a.result(lvlOK, fmt.Sprintf("Renamed %s", plural(m.res.Renamed, "item")))
+		a.setStatus("", false)
 		return cmds
 	}
 	body := []dline{text(fmt.Sprintf("Renamed %d of %d items in:", m.res.Renamed, len(m.res.Items))), path(b.dir), blank()}

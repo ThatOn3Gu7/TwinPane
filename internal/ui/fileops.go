@@ -394,7 +394,7 @@ func (a *App) handleOpMsg(msg tea.Msg) (tea.Cmd, bool) {
 		if m.err != nil {
 			summary := fmt.Sprintf("cannot %s: %s", s.kind, errText(m.err))
 			a.finishTask(s, taskFailed, summary, summary)
-			a.setStatusLevel(summary, lvlErr)
+			a.taskResult(s, lvlErr, summary, "nothing was transferred")
 			return nil, true
 		}
 		s.est = m.est
@@ -449,7 +449,7 @@ func (a *App) handleOpMsg(msg tea.Msg) (tea.Cmd, bool) {
 			state := taskOutcome(false, m.err, 0, false)
 			summary := "cannot delete: " + errText(m.err)
 			a.finishTask(s, state, summary, summary)
-			a.setStatusLevel(summary, lvlErr)
+			a.taskResult(s, lvlErr, summary, "nothing was deleted")
 			return nil, true
 		}
 		s.plan = m.plan
@@ -697,17 +697,36 @@ func (a *App) finishTransfer(s *opSession, res ops.Result) tea.Cmd {
 	if s.after != nil {
 		s.after(a)
 	}
+	// The outcome is a notification, not a line at the bottom of the screen:
+	// the destination is the context that does not fit in its heading.
+	level := lvlErr
 	switch {
 	case s.lowSpaceDeclined:
-		a.setStatusLevel(summary, lvlWarn)
+		level = lvlWarn
 	case res.OK():
-		a.setStatusLevel(summary, lvlOK)
+		level = lvlOK
 	case res.Fatal == nil && len(res.Errors) == 0 && len(res.Leftovers) == 0:
-		a.setStatusLevel(summary, lvlWarn)
-	default:
-		a.setStatusLevel(summary, lvlErr)
+		level = lvlWarn
 	}
+	body := []string{}
+	if res.OK() || partial {
+		body = append(body, transferWhere(s))
+	}
+	if n := len(res.Errors) + len(res.Leftovers); n > 0 {
+		body = append(body, fmt.Sprintf("%s — details in the task list (t)", plural(n, "item")+" failed"))
+	}
+	a.taskResult(s, level, summary, body...)
+	a.setStatus("", false)
 	return tea.Batch(cmds...)
+}
+
+// transferWhere describes the destination of a finished transfer for the
+// notification body (the heading carries the counts).
+func transferWhere(s *opSession) string {
+	if s.to == "" {
+		return ""
+	}
+	return "→ " + fsys.SanitizeName(s.to)
 }
 
 // ---- delete ------------------------------------------------------------------
@@ -881,24 +900,29 @@ func (a *App) finishDelete(s *opSession, res ops.DeleteResult) tea.Cmd {
 		details = append(details, "Folders that still contain undeletable items were kept")
 	}
 	state := taskOutcome(res.Canceled, nil, len(res.Failed), partial)
+	level := lvlErr
+	body := []string{}
 	switch {
 	case res.OK():
-		a.setStatusLevel(summary, lvlOK)
+		level = lvlOK
 	case res.Canceled && len(res.Failed) == 0:
 		msg := "Delete cancelled: " + removed + " removed; remaining items untouched"
 		if !res.UseTrash && res.Files+res.Dirs > 0 {
 			msg += fmt.Sprintf(" (%s, %s deleted — a folder in progress may be partly emptied)", plural(res.Files, "file"), plural(res.Dirs, "folder"))
 		}
-		summary = msg
-		a.setStatusLevel(msg, lvlWarn)
+		summary, level = msg, lvlWarn
 	default:
 		msg := fmt.Sprintf("Delete incomplete: %s removed, %s", removed, plural(len(res.Failed), "error"))
 		if res.Canceled {
 			msg += ", cancelled"
 		}
 		summary = msg
-		a.setStatusLevel(msg, lvlErr)
 	}
+	if len(res.Failed) > 0 {
+		body = append(body, fmt.Sprintf("%s — details in the task list (t)", plural(len(res.Failed), "error")))
+	}
+	a.taskResult(s, level, summary, body...)
+	a.setStatus("", false)
 	a.finishTask(s, state, summary, details...)
 	if s.after != nil {
 		s.after(a)
@@ -933,7 +957,7 @@ func (a *App) renameOne(e fsys.Entry) tea.Cmd {
 			return nil
 		}
 		a.dialog = nil
-		a.setStatusLevel(fmt.Sprintf("Renamed %q to %q", old, v), lvlOK)
+		a.result(lvlOK, fmt.Sprintf("Renamed %q to %q", old, v), "in "+fsys.SanitizeName(dir))
 		focus := v
 		if cur, ok := p.Current(); ok && cur.Name != old {
 			focus = cur.Name // a selected item elsewhere was renamed: keep the cursor

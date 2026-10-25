@@ -60,8 +60,8 @@ func TestExtractTarGzFromUI(t *testing.T) {
 	if b, _ := os.ReadFile(filepath.Join(env.src, "release", "pkg", "readme.txt")); string(b) != "hello" {
 		t.Fatalf("extracted: %q (status %q)", b, h.status())
 	}
-	if !strings.Contains(h.status(), "Extracted 2 files") {
-		t.Fatalf("status: %q", h.status())
+	if !strings.Contains(h.reported(), "Extracted 2 files") {
+		t.Fatalf("report: %q", h.reported())
 	}
 	// again: the existing files are asked about
 	h.focus("release.tar.gz")
@@ -71,8 +71,8 @@ func TestExtractTarGzFromUI(t *testing.T) {
 	h.waitDialog(dlgConflict)
 	h.press("esc")
 	h.idle()
-	if !strings.Contains(strings.ToLower(h.status()), "cancel") {
-		t.Fatalf("status: %q", h.status())
+	if !strings.Contains(strings.ToLower(h.reported()), "cancel") {
+		t.Fatalf("report: %q", h.reported())
 	}
 	// the menu offers it too
 	h.focus("release.tar.gz")
@@ -132,7 +132,7 @@ func TestExtractNeeds7zipAndCorrupt(t *testing.T) {
 	h.focus("cut.tar.gz")
 	h.press("x", "enter")
 	h.idle()
-	if !h.a.statusErr || !strings.Contains(h.status(), "damaged") {
-		t.Fatalf("damaged: %q", h.status())
+	if !strings.Contains(h.reported(), "damaged") || h.reportedLevel() != lvlErr {
+		t.Fatalf("damaged: %q (level %v)", h.reported(), h.reportedLevel())
 	}
 }

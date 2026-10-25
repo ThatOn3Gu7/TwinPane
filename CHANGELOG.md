@@ -10,6 +10,23 @@ The complete description of every feature is in
 ## [Unreleased]
 
 ### Added
+- **Notifications.** Results are now reported by a small, self-erasing pop-up in
+  the bottom-right corner instead of a single line at the bottom of the screen:
+  copy, move and delete results (including background tasks), archive
+  extraction and compression, cloud file operations, reviewed directory plans,
+  renames, folder-size scans and finished edits. Each kind has its own colour
+  and icon (`✓` success, `!` warning, `✕` error, `ℹ` information) that the
+  border and heading share, a countdown bar at the bottom that drains from
+  right to left, and it disappears after four seconds. `Esc` on the panel
+  screen or a tap dismisses it, a tap on a background-task notice opens that
+  task, and the pop-up never takes the keyboard: panels, dialogs, the task list
+  and the live progress screen keep working while it is shown. Long messages
+  keep their first clause as the heading and continue inside the box. Prompts,
+  refusals, progress, navigation notes and mode toggles stay in the status
+  line, where they describe what to do next. Only one notification is shown at
+  a time (a newer result replaces the older one, a repeated one restarts its
+  countdown), and its countdown pauses while a dialog covers it.
+
 - **Focus mode.** `Ctrl+O` (also `M` → **Focus mode** and the `^O` hint
   chip, and reachable by tapping the TwinPane badge) shows one panel at the
   full width of the terminal. `Ctrl+O` is a plain Ctrl-only key event, so it

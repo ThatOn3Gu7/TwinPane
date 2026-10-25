@@ -144,8 +144,8 @@ func TestCompressDialogFormatAndLevel(t *testing.T) {
 	if !strings.Contains(h.view(), "Final archive size") || !strings.Contains(h.view(), "Elapsed:") || !strings.Contains(h.view(), "mine.tar.gz") {
 		t.Fatalf("completion summary lacks metadata:\n%s", h.view())
 	}
-	if !strings.Contains(h.status(), "mine.tar.gz") {
-		t.Fatalf("status %q", h.status())
+	if !strings.Contains(h.reported(), "mine.tar.gz") {
+		t.Fatalf("report %q", h.reported())
 	}
 	got := tarGzNames(t, filepath.Join(env.dst, "mine.tar.gz"))
 	want := []string{"sub/", "sub/deep/", "sub/deep/c.txt"}
@@ -334,8 +334,8 @@ func TestCompressAwkwardNames(t *testing.T) {
 	out := filepath.Join(env.src, "odd-archive.tar.gz")
 	h.press("enter")
 	h.waitCompressionDone()
-	if !strings.Contains(h.status(), "Created") {
-		t.Fatalf("status %q", h.status())
+	if !strings.Contains(h.reported(), "Created") {
+		t.Fatalf("report %q", h.reported())
 	}
 	if !fileExists(out) {
 		t.Fatalf("default source folder does not contain %q", out)
@@ -929,8 +929,8 @@ func TestCompressCancelLeavesNothing(t *testing.T) {
 		h.dismissCompression()
 		t.Skip("compression finished before the cancel took effect")
 	}
-	if !strings.Contains(strings.ToLower(h.status()), "cancel") || h.a.statusLevel != lvlWarn {
-		t.Fatalf("status %q level %d", h.status(), h.a.statusLevel)
+	if !strings.Contains(strings.ToLower(h.reported()), "cancel") || h.reportedLevel() != lvlWarn {
+		t.Fatalf("report %q level %d", h.reported(), h.reportedLevel())
 	}
 	if !strings.Contains(h.view(), "No temporary output remains") {
 		t.Fatalf("cancel summary does not report cleanup:\n%s", h.view())

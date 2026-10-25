@@ -132,7 +132,8 @@ func (a *App) modeChoiceDialog(s *opSession, est ops.Estimate, start func() tea.
 		a.dialog = nil
 		s.mode = modeBackground
 		cmd := start()
-		return tea.Batch(cmd, a.notifyBackground(s))
+		a.notifyBackground(s)
+		return cmd
 	}
 	d.buttons = []button{
 		{label: "Stay and watch (Enter)", run: watch},

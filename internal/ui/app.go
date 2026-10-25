@@ -174,11 +174,13 @@ type App struct {
 	destSeq         int          // the destination picker's latest listing
 
 	// phase 11: background task experience (live.go). live follows one task in
-	// the foreground; notice is the non-blocking "it is running in the
-	// background" pop-up.
-	live      *liveTask
-	notice    *notice
-	noticeSeq int
+	// the foreground.
+	live *liveTask
+	// phase 12: notifications (notice.go). notice is the pop-up reporting the
+	// newest result; noticeSeq identifies its countdown.
+	notice        *notice
+	noticeSeq     int
+	noticeTicking bool
 }
 
 // New creates the application model.
@@ -299,7 +301,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	a.syncSelections()
 	a.syncBadges()
 	a.syncMode()
-	return m, a.syncSpinner(cmd)
+	return m, a.syncNotice(a.syncSpinner(cmd))
 }
 
 // spinInterval is the frame time of the loading spinner.
@@ -348,10 +350,8 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return a, nil // Update schedules the next frame if still loading
 
-	case noticeTimeoutMsg:
-		if a.notice != nil && a.notice.seq == msg.seq {
-			a.dismissNotice()
-		}
+	case noticeTickMsg:
+		a.noticeAdvance(msg)
 		return a, nil
 
 	case compressPulseMsg:
@@ -426,9 +426,6 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a, nil
 		}
 		a.lastClick = clickState{} // a key between two taps is no double tap
-		// Continuing to work dismisses the background-task notification: it is
-		// informational, never something to close first.
-		a.dismissNotice()
 		// A text field in a dialog receives the raw message, including
 		// multi-rune input and bracketed paste.
 		if a.dialog != nil && a.dialog.input != nil {
@@ -436,6 +433,13 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if a.dialog == nil && a.tasks.showing {
 			return a, a.taskViewKey(msg)
+		}
+		// A notification is dismissed with Esc where Esc means nothing else.
+		// Everywhere else Esc keeps its own meaning (closing the task list, a
+		// dialog, leaving the live screen), so no shortcut is taken away.
+		if a.notice != nil && msg.String() == "esc" && a.noticeEscDismisses() {
+			a.dismissNotice()
+			return a, nil
 		}
 		if a.dialog == nil && a.live != nil && !a.showHelp {
 			return a, a.liveKey(msg)

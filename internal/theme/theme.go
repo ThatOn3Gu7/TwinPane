@@ -65,6 +65,14 @@ type Theme struct {
 	ProgressFill      lipgloss.Style
 	ProgressEmpty     lipgloss.Style
 
+	// Notifications (phase 12): the border and heading of the small pop-up that
+	// reports a result. One style per kind, so success, warnings, errors and
+	// plain information are distinguishable by colour and by their icon.
+	NoticeOK   lipgloss.Style
+	NoticeWarn lipgloss.Style
+	NoticeErr  lipgloss.Style
+	NoticeInfo lipgloss.Style
+
 	// Scroll indicators (phase 4): the thumb drawn on a panel's right border
 	// or in the right padding column of the search / bulk-rename lists.
 	ScrollThumb    lipgloss.Style // active panel, search, bulk list
@@ -147,6 +155,10 @@ func Default() Theme {
 		InputCursor:       lipgloss.NewStyle().Foreground(lipgloss.Color("16")).Background(lipgloss.Color("252")),
 		ProgressFill:      lipgloss.NewStyle().Foreground(accent),
 		ProgressEmpty:     lipgloss.NewStyle().Foreground(lipgloss.Color("238")),
+		NoticeOK:          lipgloss.NewStyle().Foreground(lipgloss.Color("114")),
+		NoticeWarn:        lipgloss.NewStyle().Foreground(lipgloss.Color("221")),
+		NoticeErr:         lipgloss.NewStyle().Foreground(lipgloss.Color("203")),
+		NoticeInfo:        lipgloss.NewStyle().Foreground(accent),
 		ScrollThumb:       lipgloss.NewStyle().Foreground(lipgloss.Color("153")).Bold(true),
 		ScrollThumbOff:    lipgloss.NewStyle().Foreground(lipgloss.Color("247")),
 
