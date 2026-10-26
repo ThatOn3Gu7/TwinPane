@@ -204,30 +204,39 @@ func TestStatusLineKeepsProgressAndGuidance(t *testing.T) {
 func TestNoticeCountdownDrainsFromTheRight(t *testing.T) {
 	h, _ := newOpsApp(t, nil, nil)
 	h.a.result(lvlOK, "Copied 61 files, 16 folders")
-	box := h.a.noticeBox(min(noticeMaxWidth, h.a.width-4))
+	w := min(noticeMaxWidth, h.a.width-4)
+	box := h.a.noticeBox(w)
 	if len(box) < 2 {
 		t.Fatalf("notification = %v", box)
 	}
-	bar := ansi.Strip(box[len(box)-2])
-	if !strings.Contains(bar, "█") || strings.Contains(bar, "░") {
-		t.Fatalf("a fresh notification should have a full bar: %q", bar)
+	// The countdown lives in the bottom border, not on a row of its own.
+	bottom := func() string { b := h.a.noticeBox(w); return ansi.Strip(b[len(b)-1]) }
+	fresh := bottom()
+	if !strings.HasPrefix(fresh, "╰") || !strings.HasSuffix(fresh, "╯") {
+		t.Fatalf("the bottom row is not the border: %q", fresh)
 	}
-	// Advance half the life: the bar shrinks from the right, so the filled
-	// part stays anchored on the left and the gap grows on the right.
+	if !strings.Contains(fresh, "━") || strings.Contains(fresh, "─") {
+		t.Fatalf("a fresh notification should have a full heavy border: %q", fresh)
+	}
+	if strings.Contains(ansi.Strip(strings.Join(box, "\n")), "█") {
+		t.Fatalf("the old blocky bar is still drawn inside the box:\n%s", ansi.Strip(strings.Join(box, "\n")))
+	}
+	// Advance half the life: the heavy part shrinks from the right, so it stays
+	// anchored on the left and the thin gap grows on the right.
 	for i := 0; i < 25; i++ { // half of noticeLife / noticeTick
 		tick(h)
 	}
-	half := ansi.Strip(h.a.noticeBox(min(noticeMaxWidth, h.a.width-4))[len(box)-2])
-	firstFilled := func(s string) int { return strings.Index(s, "█") }
-	lastFilled := func(s string) int { return strings.LastIndex(s, "█") }
-	if firstFilled(half) != firstFilled(bar) {
-		t.Errorf("the bar should drain from the right: %q → %q", bar, half)
+	half := bottom()
+	firstFilled := func(s string) int { return strings.Index(s, "━") }
+	lastFilled := func(s string) int { return strings.LastIndex(s, "━") }
+	if firstFilled(half) != firstFilled(fresh) {
+		t.Errorf("the border should drain from the right: %q → %q", fresh, half)
 	}
-	if lastFilled(half) >= lastFilled(bar) {
-		t.Errorf("the bar did not shrink: %q → %q", bar, half)
+	if lastFilled(half) >= lastFilled(fresh) {
+		t.Errorf("the countdown did not shrink: %q → %q", fresh, half)
 	}
-	if !strings.Contains(half, "░") {
-		t.Errorf("the drained part should be drawn as an empty track: %q", half)
+	if !strings.Contains(half, "─") {
+		t.Errorf("the drained part should be drawn as a thin border: %q", half)
 	}
 	// It runs out exactly when the notification goes away.
 	runTicks(h)
@@ -302,6 +311,11 @@ func TestEscKeepsItsMeaningElsewhere(t *testing.T) {
 	s.state = taskRunning
 	h.a.openTasks()
 	h.a.result(lvlOK, "Copied 1 file") // a pop-up over the list
+	// A pinned pop-up mentions Esc only where Esc actually closes it.
+	h.a.notice.pinned = true
+	if v := ansi.Strip(h.view()); strings.Contains(v, "Esc closes") {
+		t.Errorf("the focus hint promises Esc where it would close the task list:\n%s", v)
+	}
 	h.press("esc")
 	if h.a.tasks.showing {
 		t.Fatal("Esc should still close the task list")
@@ -309,9 +323,13 @@ func TestEscKeepsItsMeaningElsewhere(t *testing.T) {
 	if h.a.notice == nil {
 		t.Error("Esc in the task list must not dismiss the notification")
 	}
+	// Back on the panels Esc does close it, and the hint says so.
+	if v := ansi.Strip(h.view()); !strings.Contains(v, "Esc closes") {
+		t.Errorf("the focus hint should name Esc on the panel screen:\n%s", v)
+	}
 }
 
-func TestTappingTheNotificationDismissesOrOpensTheTask(t *testing.T) {
+func TestTappingTheNotificationPinsIt(t *testing.T) {
 	h, _ := newOpsApp(t, nil, nil)
 	h.a.result(lvlOK, "Copied 1 file")
 	x, y, _, _, ok := h.a.noticeRect()
@@ -319,27 +337,99 @@ func TestTappingTheNotificationDismissesOrOpensTheTask(t *testing.T) {
 		t.Fatalf("no notification rect:\n%s", h.view())
 	}
 	h.tap(x+1, y+1)
-	if h.a.notice != nil {
-		t.Fatal("a tap should dismiss the notification")
+	n := h.a.notice
+	if n == nil || !n.pinned {
+		t.Fatalf("a tap should focus the notification, not dismiss it: %+v", n)
 	}
 	if h.a.tasks.showing {
-		t.Fatal("a result without a task must not open the task list")
+		t.Fatal("focusing a result must not open the task list")
 	}
+	// A focused notification is explicit about it and no longer runs on its
+	// own: it survives any number of countdown frames.
+	if !strings.Contains(ansi.Strip(h.view()), "pinned") {
+		t.Fatalf("a focused notification should say so:\n%s", ansi.Strip(h.view()))
+	}
+	left := n.left
+	for i := 0; i < 200; i++ {
+		tick(h)
+	}
+	if h.a.notice != n || n.left != left {
+		t.Fatalf("the countdown kept running while focused: %+v", h.a.notice)
+	}
+	if cmd := h.a.syncNotice(nil); cmd != nil {
+		t.Error("a focused notification must not keep a timer alive")
+	}
+	// Binding does not take the keyboard: browsing keeps working.
+	before := h.a.ActivePanel().Cursor()
+	h.press("j")
+	if h.a.ActivePanel().Cursor() == before {
+		t.Error("ordinary keys must keep working while a notification is focused")
+	}
+	// Esc closes it.
+	h.press("esc")
+	if h.a.notice != nil {
+		t.Fatal("Esc should close a focused notification")
+	}
+}
 
-	// A background-task notification opens the list on that task instead.
+func TestTappingOutsideReleasesTheNotification(t *testing.T) {
+	h, _ := newOpsApp(t, nil, nil)
+	h.a.result(lvlOK, "Copied 1 file")
+	for i := 0; i < 25; i++ {
+		tick(h)
+	}
+	x, y, w, _, _ := h.a.noticeRect()
+	h.tap(x+1, y+1)
+	if !h.a.notice.pinned {
+		t.Fatal("a tap should focus the notification")
+	}
+	left := h.a.notice.left
+	// A tap outside releases it: the countdown continues where it stopped, it
+	// does not start over, and the tap does its normal job.
+	h.tap(x-2, y)
+	if h.a.notice == nil || h.a.notice.pinned {
+		t.Fatalf("a tap outside should release the notification: %+v", h.a.notice)
+	}
+	if h.a.notice.left != left {
+		t.Errorf("countdown = %v, want the paused value %v", h.a.notice.left, left)
+	}
+	if strings.Contains(ansi.Strip(h.view()), "pinned") {
+		t.Error("a released notification should drop the focus hint")
+	}
+	if h.a.noticeAt(x-2, y) {
+		t.Error("the tap outside should not have landed on the pop-up")
+	}
+	_ = w
+	h.press("j") // still alive after the tap and a normal key
+	if h.a.notice == nil {
+		t.Fatal("releasing must not dismiss the notification")
+	}
+	runTicks(h)
+	if h.a.notice != nil {
+		t.Fatal("a released notification should expire as usual")
+	}
+}
+
+func TestFocusedTaskNotificationOpensTheTask(t *testing.T) {
+	h, _ := newOpsApp(t, nil, nil)
 	s1, _ := h.a.newSession("Copying", 0, []string{"/src/a"})
 	s1.state = taskRunning
 	s2, _ := h.a.newSession("Moving", 0, []string{"/src/b"})
 	s2.state = taskRunning
 	h.a.notifyBackground(s1)
-	x, y, _, _, _ = h.a.noticeRect()
+	x, y, _, _, _ := h.a.noticeRect()
+	// First tap focuses, the second opens the list on that task.
+	h.tap(x+1, y+1)
+	if h.a.tasks.showing || h.a.notice == nil || !h.a.notice.pinned {
+		t.Fatalf("first tap: showing=%v notice=%+v", h.a.tasks.showing, h.a.notice)
+	}
 	h.tap(x+1, y+1)
 	if !h.a.tasks.showing || h.a.tasks.selected != s1.id {
-		t.Fatalf("tapping the task notification should open the list on task %d (showing=%v selected=%d)",
+		t.Fatalf("tapping the focused task notification should open the list on task %d (showing=%v selected=%d)",
 			s1.id, h.a.tasks.showing, h.a.tasks.selected)
 	}
 	if h.a.notice != nil {
-		t.Error("the notification should be gone after the tap")
+		t.Error("the notification should be gone after opening its task")
 	}
 }
 

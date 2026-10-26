@@ -16,11 +16,15 @@ The complete description of every feature is in
   extraction and compression, cloud file operations, reviewed directory plans,
   renames, folder-size scans and finished edits. Each kind has its own colour
   and icon (`✓` success, `!` warning, `✕` error, `ℹ` information) that the
-  border and heading share, a countdown bar at the bottom that drains from
-  right to left, and it disappears after four seconds. `Esc` on the panel
-  screen or a tap dismisses it, a tap on a background-task notice opens that
-  task, and the pop-up never takes the keyboard: panels, dialogs, the task list
-  and the live progress screen keep working while it is shown. Long messages
+  border and heading share, and it disappears after four seconds. The
+  countdown is drawn into the bottom border itself — a heavy line that drains
+  from right to left — so the pop-up needs no separate progress row and stays
+  small. A tap pins the notification: the countdown stops and it stays until
+  `Esc` closes it or a tap elsewhere releases it, so a long message can be read
+  at leisure; the countdown then carries on from where it stopped. A second tap
+  on a pinned notification about a background task opens that task, and the
+  pop-up never takes the keyboard: panels, dialogs, the task list and the live
+  progress screen keep working while it is shown. Long messages
   keep their first clause as the heading and continue inside the box. Prompts,
   refusals, progress, navigation notes and mode toggles stay in the status
   line, where they describe what to do next. Only one notification is shown at

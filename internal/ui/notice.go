@@ -37,6 +37,10 @@ import (
 // restarts its countdown instead of flickering. The countdown pauses while a
 // modal dialog is open (the pop-up is not drawn there either), so a result
 // cannot expire unseen behind a prompt.
+//
+// A tap brings the pop-up into focus: it stops counting down and stays until
+// Esc or a tap elsewhere, so a long message can be read at leisure. A tap
+// elsewhere releases it and the countdown carries on from where it stopped.
 
 const (
 	// noticeLife is how long a notification stays before it fades out.
@@ -65,9 +69,14 @@ type notice struct {
 	kind  noticeKind
 	title string   // what happened
 	body  []string // optional context (destination, reason, hint)
-	task  int      // task a tap opens (0 = a tap only dismisses)
+	task  int      // task a focused tap opens (0 = the pop-up only reports)
 
-	total time.Duration // countdown length, for the drain bar
+	// pinned is set once the user taps the pop-up: the countdown stops and the
+	// notification stays until Esc or a tap outside, so a result can be read
+	// without racing the timer.
+	pinned bool
+
+	total time.Duration // countdown length, for the drain line in the border
 	left  time.Duration
 }
 
@@ -270,9 +279,13 @@ func (a *App) syncNotice(cmd tea.Cmd) tea.Cmd {
 
 // noticePaused reports whether the countdown has to wait. The pop-up is not
 // drawn over a modal dialog or while the editor owns the terminal, so its time
-// must not run out there either.
+// must not run out there either; a focused notification waits for the user to
+// release it.
 func (a *App) noticePaused() bool {
-	return a.dialog != nil || a.editing
+	if a.dialog != nil || a.editing {
+		return true
+	}
+	return a.notice != nil && a.notice.pinned
 }
 
 // noticeAdvance applies one countdown frame and reports whether the notice is
@@ -297,9 +310,10 @@ func (a *App) noticeAdvance(msg noticeTickMsg) bool {
 // ---- rendering ------------------------------------------------------------------
 
 // noticeBox builds the pop-up: a heading with the kind's icon and colour, the
-// message (or the wrapped message when it does not fit the heading), the
-// optional context lines and a countdown bar that drains from right to left.
-// Width is the box width including its border.
+// message (or the wrapped message when it does not fit the heading) and the
+// optional context lines. The countdown is drawn into the bottom border, as a
+// heavy line that drains towards the left, so the pop-up needs no extra row for
+// it and stays small. Width is the box width including its border.
 func (a *App) noticeBox(width int) []string {
 	return a.noticeBoxWithin(width, 0)
 }
@@ -342,30 +356,53 @@ func (a *App) noticeBoxWithin(width, maxLines int) []string {
 		body = body[:limit]
 		body[limit-1] = th.DialogHint.Render("…")
 	}
+	// A focused pop-up says so, and says how to get rid of it: it no longer
+	// runs on its own, so the timer alone will not take it away.
+	var hint []string
+	if n.pinned {
+		// Esc only closes the pop-up where it means nothing else; elsewhere the
+		// hint just names the gesture that always works.
+		text := noticePinnedHint
+		if !a.noticeEscDismisses() {
+			text = noticePinnedHintNoEsc
+		}
+		for _, part := range wrapText(text, inner-2) {
+			hint = append(hint, th.DialogHint.Render(part))
+		}
+	}
 	if maxLines > 0 {
-		// heading + countdown + border rows take three lines
-		if room := maxLines - 3; room < len(body) {
-			if room < 0 {
-				room = 0
-			}
+		// The heading and the bottom border are fixed rows; body lines give way
+		// to the focus hint, which explains why the pop-up is not going away.
+		room := maxLines - 2 - len(hint)
+		if room < 0 {
+			room = 0
+		}
+		if room < len(body) {
 			body = body[:room]
 		}
 	}
 
-	lines := make([]string, 0, len(body)+3)
+	lines := make([]string, 0, len(body)+len(hint)+2)
 	lines = append(lines, noticeTop(st, headText, width))
 	for _, line := range body {
+		lines = append(lines, st.Render("│")+" "+fitWidth(line, inner-2)+" "+st.Render("│"))
+	}
+	for _, line := range hint {
 		lines = append(lines, st.Render("│")+" "+fitWidth(line, inner-2)+" "+st.Render("│"))
 	}
 	frac := 0.0
 	if n.total > 0 {
 		frac = float64(n.left) / float64(n.total)
 	}
-	bar := noticeCountdown(st, frac, max(1, inner-2))
-	lines = append(lines, st.Render("│")+" "+bar+" "+st.Render("│"))
-	lines = append(lines, st.Render("╰"+strings.Repeat("─", inner)+"╯"))
+	lines = append(lines, noticeBottom(st, frac, width))
 	return lines
 }
+
+// noticePinnedHint is the footer of a focused notification.
+const (
+	noticePinnedHint      = "pinned — Esc closes, tap outside resumes"
+	noticePinnedHintNoEsc = "pinned — tap outside resumes"
+)
 
 // splitNoticeTitle splits a long message at its first clause boundary so the
 // heading keeps its meaning instead of degrading to a bare "Error". It returns
@@ -413,13 +450,16 @@ func noticeTop(st lipgloss.Style, head string, width int) string {
 	return st.Render("╭─") + st.Bold(true).Render(text) + st.Render(strings.Repeat("─", fill)+"╮")
 }
 
-// noticeCountdown draws the drain bar. The filled part starts full and shrinks
-// from the right, so the bar visibly runs out just before the pop-up closes.
-func noticeCountdown(st lipgloss.Style, frac float64, width int) string {
-	filled := int(frac*float64(width) + 0.5)
-	filled = max(0, min(width, filled))
-	return st.Render(strings.Repeat("█", filled)) +
-		lipgloss.NewStyle().Foreground(lipgloss.Color("238")).Render(strings.Repeat("░", width-filled))
+// noticeBottom draws the closing border with the countdown inside it: the time
+// left is a heavy line that shrinks towards the left, so the pop-up visibly
+// runs out just before it closes without spending a row of its own on a bar.
+func noticeBottom(st lipgloss.Style, frac float64, width int) string {
+	inner := width - 2
+	filled := int(frac*float64(inner) + 0.5)
+	filled = max(0, min(inner, filled))
+	return st.Render("╰") + st.Render(strings.Repeat("━", filled)) +
+		lipgloss.NewStyle().Foreground(lipgloss.Color("238")).Render(strings.Repeat("─", inner-filled)) +
+		st.Render("╯")
 }
 
 // noticeRect is where the pop-up is drawn: the bottom-right corner of the
@@ -497,17 +537,34 @@ func (a *App) noticeEscDismisses() bool {
 		a.bulk == nil && a.folderSize == nil && a.comparison == nil && a.props == nil
 }
 
-// tapNotice handles a tap on the notification: it opens the task list when the
-// pop-up describes a task, and otherwise just dismisses it.
+// tapNotice handles a tap on the notification. The first tap brings it into
+// focus: the countdown stops, so it stays long enough to be read, and only Esc
+// or a tap outside takes it away. A tap on a focused notification that
+// describes a task opens that task, which is what a single tap used to do.
 func (a *App) tapNotice() tea.Cmd {
 	n := a.notice
-	a.dismissNotice()
-	if n == nil || n.task == 0 {
+	if n == nil {
 		return nil
 	}
+	if !n.pinned {
+		n.pinned = true
+		return nil
+	}
+	if n.task == 0 {
+		return nil // already focused; Esc or a tap outside closes it
+	}
+	a.dismissNotice()
 	a.openTasks()
 	if a.tasks.get(n.task) != nil {
 		a.tasks.selected = n.task
 	}
 	return nil
+}
+
+// unpinNotice releases a focused notification: its countdown carries on from
+// where it stopped rather than starting over.
+func (a *App) unpinNotice() {
+	if n := a.notice; n != nil {
+		n.pinned = false
+	}
 }

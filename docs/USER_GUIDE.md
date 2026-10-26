@@ -304,9 +304,11 @@ corner of the panel area rather than by a line at the bottom of the screen:
 ```
 ╭─ ✓ Copied 61 files, 16 folders ────────────╮
 │ → /mnt/backup/photos/2024                  │
-│ ████████████████████████████████████░░░░░░ │
-╰────────────────────────────────────────────╯
+╰━━━━━━━━━━━━━━━━━━━━━───────────────────────╯
 ```
+
+The countdown has no row of its own: the bottom border is drawn as a heavy line
+that shrinks towards the left as the time runs out.
 
 - **What becomes a notification:** copy, move and delete results (including
   background ones), archive extraction and compression, cloud file operations,
@@ -322,13 +324,20 @@ corner of the panel area rather than by a line at the bottom of the screen:
 - **Colours and icons:** `✓` green for success, `!` yellow for warnings and
   cancellations, `✕` red for failures, `ℹ` blue for information. The border and
   the heading carry the same colour, so the kind is readable at a glance and
-  still distinguishable without colour through the icon and the bar.
-- **Dismissing:** the bar at the bottom of the box drains from right to left
-  and the notification closes when it runs out (four seconds). `Esc` on the
-  panel screen or a tap anywhere on the box closes it sooner; tapping a
-  notification about a background task opens the task list on that task. While
-  a dialog is open the pop-up is not drawn and its countdown pauses, so a
-  result cannot expire unseen behind a prompt.
+  still distinguishable without colour through the icon and the heavy countdown
+  line.
+- **Reading it at your own pace:** a tap on the pop-up *pins* it. The heavy
+  line in the bottom border stops draining, the box says so (`pinned — Esc
+  closes, tap outside resumes`), and it stays until you dismiss it, however
+  long you need. `Esc` on the panel screen closes a pinned notification; a tap
+  anywhere else releases it, and the countdown carries on from where it
+  stopped rather than starting over. A second tap on a pinned notification
+  about a background task opens the task list on that task, which is what a
+  single tap used to do.
+- **Going away by itself:** an unpinned notification drains its border from
+  right to left and closes when it runs out (four seconds). While a dialog is
+  open the pop-up is not drawn and its countdown pauses, so a result cannot
+  expire unseen behind a prompt.
 - **No spam:** only one notification is shown at a time, a newer result
   replaces an older one, and repeating the same result restarts its countdown
   instead of flashing. On terminals too small for a legible box (under about

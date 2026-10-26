@@ -118,14 +118,19 @@ func (a *App) handleMouse(m tea.MouseMsg) tea.Cmd {
 	case a.comparison != nil:
 		return a.comparisonMouse(ev)
 	}
-	// The background-task notification: a tap opens the task list, exactly
-	// like the "t" its text mentions. It is only drawn over the panels, so it
-	// can never take a click from a dialog or another overlay.
+	// The notification: a tap brings it into focus, so it stops counting down
+	// and stays until Esc or a tap outside. It is only drawn over the panels,
+	// so it can never take a click from a dialog or another overlay.
 	if a.noticeAt(ev.X, ev.Y) {
 		if ev.Action == tea.MouseActionRelease && ev.Button == tea.MouseButtonLeft {
 			return a.tapNotice()
 		}
 		return nil
+	}
+	// A tap anywhere else releases a focused notification: its countdown picks
+	// up where it stopped, and the tap still does its normal job below.
+	if ev.Action == tea.MouseActionRelease && ev.Button == tea.MouseButtonLeft {
+		a.unpinNotice()
 	}
 	// The focus-mode preview pane scrolls like the viewer does; taps on it
 	// do nothing (it is not a panel). Overlays above already had their turn.
