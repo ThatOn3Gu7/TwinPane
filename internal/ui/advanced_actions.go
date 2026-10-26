@@ -322,7 +322,7 @@ func (a *App) renameAdvancedResult(t advancedTarget) tea.Cmd {
 		newPath := filepath.Join(dir, v)
 		a.advancedResultRenamed(t.path, newPath)
 		a.refreshAdvancedPreview() // the new name may change the syntax highlighting
-		a.result(lvlOK, fmt.Sprintf("Renamed %q to %q", old, v), "in "+fsys.SanitizeName(t.parent()))
+		a.result(lvlOK, "Rename completed", fmt.Sprintf("Renamed %q to %q", old, v), "in "+fsys.SanitizeName(t.parent()))
 		return tea.Batch(a.refreshPanelsAt(dir, v), a.otherPanelRefresh())
 	}
 	a.dialog = d

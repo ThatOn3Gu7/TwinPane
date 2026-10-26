@@ -302,20 +302,27 @@ Results of finished work are reported by a small pop-up in the bottom-right
 corner of the panel area rather than by a line at the bottom of the screen:
 
 ```
-╭─ ✓ Copied 61 files, 16 folders ────────────╮
+╭─ ✓ Copy completed ─────────────────────────╮
+│ Copied 61 files, 16 folders                │
 │ → /mnt/backup/photos/2024                  │
-╰━━━━━━━━━━━━━━━━━━━━━───────────────────────╯
+╰━━━━━━━━━━━━━━━━━━━━━━──────────────────────╯
 ```
 
-The countdown has no row of its own: the bottom border is drawn as a heavy line
-that shrinks towards the left as the time runs out.
-
+- **The heading** names the operation and its outcome, not the numbers:
+  `✓ Copy completed`, `! Move cancelled`, `✕ Delete partially completed`,
+  `✕ Extract failed`, `ℹ Copying in the background`. The border and the heading
+  carry the kind's colour, so the outcome is readable at a glance.
+- **The box** carries the result message and, under it, the context that helps
+  act on it — the destination of a transfer, the extracted folder, what went
+  wrong, or how to see the rest. A long message wraps over as many lines as it
+  needs (the task list, `t`, always has the full record), and on a narrow
+  terminal both the heading and the message are truncated or wrapped to fit.
+- **The countdown** has no row of its own: the bottom border is drawn as a
+  heavy line that shrinks towards the left as the time runs out.
 - **What becomes a notification:** copy, move and delete results (including
   background ones), archive extraction and compression, cloud file operations,
   reviewed directory plans, renames, folder-size scans, and an edit that
-  finished. A long message keeps its first clause as the heading and continues
-  in the box (`✕ Delete incomplete` / `20629 files removed, 2149 errors`), and
-  the task list (`t`) always has the full record.
+  finished.
 - **What stays in the status line:** progress ("Checking copy paths…"),
   prompts and refusals ("nothing to copy: put the cursor on an item or select
   items with Space"), navigation notes, mode toggles and selection counts.

@@ -280,16 +280,16 @@ func (a *App) folderSizeEvent(msg folderSizeEventMsg) tea.Cmd {
 	a.keepFolderSizeCursorVisible()
 	switch result.Status {
 	case foldersize.StatusComplete:
-		a.result(lvlOK, "Folder-size scan complete")
+		a.result(lvlOK, "Scan completed", "Folder-size scan complete")
 		a.setStatus("", false)
 	case foldersize.StatusPartial:
-		a.result(lvlWarn, "Folder-size scan is partial", "totals are lower bounds")
+		a.result(lvlWarn, "Scan partially completed", "Folder-size scan is partial", "totals are lower bounds")
 		a.setStatus("", false)
 	case foldersize.StatusCancelled:
-		a.result(lvlWarn, "Folder-size scan cancelled", "accumulated totals are incomplete")
+		a.result(lvlWarn, "Scan cancelled", "Folder-size scan cancelled", "accumulated totals are incomplete")
 		a.setStatus("", false)
 	case foldersize.StatusFailed:
-		a.result(lvlErr, "Folder-size scan failed", result.Error)
+		a.result(lvlErr, "Scan failed", "Folder-size scan failed", result.Error)
 		a.setStatus("", false)
 	}
 	return nil

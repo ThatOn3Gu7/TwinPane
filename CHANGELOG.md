@@ -24,12 +24,15 @@ The complete description of every feature is in
   at leisure; the countdown then carries on from where it stopped. A second tap
   on a pinned notification about a background task opens that task, and the
   pop-up never takes the keyboard: panels, dialogs, the task list and the live
-  progress screen keep working while it is shown. Long messages
-  keep their first clause as the heading and continue inside the box. Prompts,
-  refusals, progress, navigation notes and mode toggles stay in the status
-  line, where they describe what to do next. Only one notification is shown at
-  a time (a newer result replaces the older one, a repeated one restarts its
-  countdown), and its countdown pauses while a dialog covers it.
+  progress screen keep working while it is shown. The heading is a short name
+  for the operation and its outcome — `Copy completed`, `Delete partially
+  completed`, `Extract cancelled`, `Scan failed`, `Copying in the background` —
+  and the result message, followed by its details, sits inside the box, where
+  it wraps over as many lines as it needs. Prompts, refusals, progress,
+  navigation notes and mode toggles stay in the status line, where they
+  describe what to do next. Only one notification is shown at a time (a newer
+  result replaces the older one, a repeated one restarts its countdown), and
+  its countdown pauses while a dialog covers it.
 
 - **Focus mode.** `Ctrl+O` (also `M` → **Focus mode** and the `^O` hint
   chip, and reachable by tapping the TwinPane badge) shows one panel at the

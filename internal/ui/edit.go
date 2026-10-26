@@ -395,7 +395,7 @@ func (a *App) editorDone(m editorDoneMsg) tea.Cmd {
 	case saved == 0 && len(m.before) > 0:
 		a.setStatusLevel("Finished editing "+what+result, lvlInfo)
 	default:
-		a.result(lvlOK, "Finished editing "+fsys.SanitizeName(what)+result)
+		a.result(lvlOK, "Edit completed", "Finished editing "+fsys.SanitizeName(what)+result)
 		a.setStatus("", false)
 	}
 	// The files may have changed size/time (or been renamed/deleted by the

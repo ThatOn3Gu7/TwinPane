@@ -427,7 +427,7 @@ func (a *App) finishExtract(s *opSession, res archive.ExtractResult, parent, par
 	if len(res.Errors) > 0 {
 		body = append(body, fmt.Sprintf("%s — details in the task list (t)", plural(len(res.Errors), "entry")+" failed"))
 	}
-	a.taskResult(s, level, summary, body...)
+	a.taskResult(s, level, operationHeading("Extract", res.Fatal != nil || len(res.Errors) > 0, res.Canceled, partial), summary, body...)
 	a.setStatus("", false)
 	a.finishTask(s, state, summary, details...)
 	return tea.Batch(cmds...)

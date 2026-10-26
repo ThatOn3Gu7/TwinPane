@@ -13,24 +13,27 @@ import (
 	"github.com/ThatOn3Gu7/TwinPane/internal/ops"
 )
 
-// noticeText joins what the pop-up currently says (heading and body), which is
-// what a test wants to assert on: the message, wherever it is wrapped.
+// noticeText joins what the pop-up currently says (heading, message and body),
+// which is what a test wants to assert on: the message, wherever it is wrapped.
 func noticeText(h *harness) string {
 	n := h.a.notice
 	if n == nil {
 		return ""
 	}
-	return strings.Join(append([]string{n.title}, n.body...), " | ")
+	all := append([]string{n.head, n.msg}, n.body...)
+	return strings.Join(all, " | ")
 }
 
 // reported is what the app told the user about the last finished operation:
 // the notification when one is showing, otherwise the status line. File
 // operation results moved from the status line into notifications, so the
 // tests that ask "did the app report this?" use this helper; the dedicated
-// notification tests below check which surface carries what.
+// notification tests below check which surface carries what. The heading is
+// left out: it names the operation, while these assertions are about the
+// result message.
 func (h *harness) reported() string {
 	if n := h.a.notice; n != nil {
-		return strings.Join(append(append([]string{n.title}, n.body...), h.status()), " | ")
+		return strings.Join(append(append([]string{n.msg}, n.body...), h.status()), " | ")
 	}
 	return h.status()
 }
@@ -81,7 +84,7 @@ func TestNoticeKindsHaveIconsAndColours(t *testing.T) {
 	}
 	for _, tc := range cases {
 		h.a.notice = nil
-		h.a.result(tc.lvl, "message of "+tc.icon)
+		h.a.result(tc.lvl, "Note", "message of "+tc.icon)
 		if h.a.notice == nil {
 			t.Fatalf("%q: no notification", tc.icon)
 		}
@@ -119,7 +122,8 @@ func TestCopyResultIsANotification(t *testing.T) {
 	h.waitDialog(dlgConfirm)
 	h.press("enter")
 	h.idle()
-	if got := h.a.notice; got == nil || !strings.Contains(got.title, "Copied") {
+	got := h.a.notice
+	if got == nil || got.head != "Copy completed" || !strings.Contains(got.msg, "Copied") {
 		t.Fatalf("notification = %+v", got)
 	}
 	if k := h.a.notice.kind; k != noticeOK {
@@ -129,7 +133,7 @@ func TestCopyResultIsANotification(t *testing.T) {
 		t.Errorf("the notification should say where the files went: %q", txt)
 	}
 	v := h.view()
-	if !strings.Contains(v, "✓ Copied") {
+	if !strings.Contains(v, "✓ Copy completed") || !strings.Contains(v, "Copied 2 files") {
 		t.Fatalf("the pop-up is not on screen:\n%s", v)
 	}
 	if st := h.status(); strings.Contains(st, "Copied") {
@@ -144,7 +148,7 @@ func TestDeleteResultIsANotification(t *testing.T) {
 	h.waitDialog(dlgDelete)
 	h.press("y")
 	h.idle()
-	if got := h.a.notice; got == nil || !strings.Contains(got.title, "Moved 1 item to the trash") {
+	if got := h.a.notice; got == nil || !strings.Contains(got.msg, "Moved 1 item to the trash") {
 		t.Fatalf("notification = %+v (status %q)", got, h.status())
 	}
 	if h.a.notice.kind != noticeOK {
@@ -166,8 +170,11 @@ func TestFailedResultIsAnErrorNotification(t *testing.T) {
 	h.press("enter")
 	h.idle()
 	n := h.a.notice
-	if n == nil || !strings.Contains(n.title, "Copied 1 file, 1 error") {
+	if n == nil || !strings.Contains(n.msg, "Copied 1 file, 1 error") {
 		t.Fatalf("notification = %+v", n)
+	}
+	if n.head != "Copy partially completed" {
+		t.Errorf("heading = %q, want a partial copy", n.head)
 	}
 	if n.kind != noticeErr {
 		t.Errorf("kind = %v, want error", n.kind)
@@ -203,7 +210,7 @@ func TestStatusLineKeepsProgressAndGuidance(t *testing.T) {
 
 func TestNoticeCountdownDrainsFromTheRight(t *testing.T) {
 	h, _ := newOpsApp(t, nil, nil)
-	h.a.result(lvlOK, "Copied 61 files, 16 folders")
+	h.a.result(lvlOK, "Copy completed", "Copied 61 files, 16 folders")
 	w := min(noticeMaxWidth, h.a.width-4)
 	box := h.a.noticeBox(w)
 	if len(box) < 2 {
@@ -247,7 +254,7 @@ func TestNoticeCountdownDrainsFromTheRight(t *testing.T) {
 
 func TestNoticeCountdownIsDrivenByUpdate(t *testing.T) {
 	h, _ := newOpsApp(t, nil, nil)
-	h.a.result(lvlOK, "Copied 1 file")
+	h.a.result(lvlOK, "Copy completed", "Copied 1 file")
 	if h.a.notice == nil {
 		t.Fatal("no notification")
 	}
@@ -264,7 +271,7 @@ func TestNoticeCountdownIsDrivenByUpdate(t *testing.T) {
 
 func TestNoticeCountdownPausesBehindDialogs(t *testing.T) {
 	h, _ := newOpsApp(t, nil, nil)
-	h.a.result(lvlOK, "Copied 61 files, 16 folders")
+	h.a.result(lvlOK, "Copy completed", "Copied 61 files, 16 folders")
 	left := h.a.notice.left
 	h.a.dialog = &dialog{kind: dlgConfirm, title: "Something to decide"}
 	// While a dialog owns the screen the pop-up is not drawn and its time
@@ -292,7 +299,7 @@ func TestNoticeCountdownPausesBehindDialogs(t *testing.T) {
 
 func TestEscDismissesTheNotification(t *testing.T) {
 	h, _ := newOpsApp(t, nil, nil)
-	h.a.result(lvlOK, "Copied 1 file")
+	h.a.result(lvlOK, "Copy completed", "Copied 1 file")
 	h.press("esc")
 	if h.a.notice != nil {
 		t.Fatalf("Esc should dismiss the notification:\n%s", h.view())
@@ -310,7 +317,7 @@ func TestEscKeepsItsMeaningElsewhere(t *testing.T) {
 	s, _ := h.a.newSession("Copying", 0, []string{"/src/a"})
 	s.state = taskRunning
 	h.a.openTasks()
-	h.a.result(lvlOK, "Copied 1 file") // a pop-up over the list
+	h.a.result(lvlOK, "Copy completed", "Copied 1 file") // a pop-up over the list
 	// A pinned pop-up mentions Esc only where Esc actually closes it.
 	h.a.notice.pinned = true
 	if v := ansi.Strip(h.view()); strings.Contains(v, "Esc closes") {
@@ -331,7 +338,7 @@ func TestEscKeepsItsMeaningElsewhere(t *testing.T) {
 
 func TestTappingTheNotificationPinsIt(t *testing.T) {
 	h, _ := newOpsApp(t, nil, nil)
-	h.a.result(lvlOK, "Copied 1 file")
+	h.a.result(lvlOK, "Copy completed", "Copied 1 file")
 	x, y, _, _, ok := h.a.noticeRect()
 	if !ok {
 		t.Fatalf("no notification rect:\n%s", h.view())
@@ -374,7 +381,7 @@ func TestTappingTheNotificationPinsIt(t *testing.T) {
 
 func TestTappingOutsideReleasesTheNotification(t *testing.T) {
 	h, _ := newOpsApp(t, nil, nil)
-	h.a.result(lvlOK, "Copied 1 file")
+	h.a.result(lvlOK, "Copy completed", "Copied 1 file")
 	for i := 0; i < 25; i++ {
 		tick(h)
 	}
@@ -437,13 +444,13 @@ func TestFocusedTaskNotificationOpensTheTask(t *testing.T) {
 
 func TestRepeatedResultsDoNotStackUp(t *testing.T) {
 	h, _ := newOpsApp(t, nil, nil)
-	h.a.result(lvlOK, "Copied 1 file")
+	h.a.result(lvlOK, "Copy completed", "Copied 1 file")
 	first := h.a.notice
 	for i := 0; i < 5; i++ {
 		for j := 0; j < 10; j++ {
 			tick(h)
 		}
-		h.a.result(lvlOK, "Copied 1 file")
+		h.a.result(lvlOK, "Copy completed", "Copied 1 file")
 	}
 	if h.a.notice != first {
 		t.Fatal("the same result must restart the countdown, not replace the pop-up")
@@ -452,8 +459,8 @@ func TestRepeatedResultsDoNotStackUp(t *testing.T) {
 		t.Errorf("countdown = %v, want a restart to %v", h.a.notice.left, noticeLife)
 	}
 	// There is only ever one pop-up: a newer result replaces the older one.
-	h.a.result(lvlWarn, "Move cancelled — nothing was transferred")
-	if h.a.notice == first || !strings.Contains(h.a.notice.title, "Move cancelled") {
+	h.a.result(lvlWarn, "Move cancelled", "Move cancelled — nothing was transferred")
+	if h.a.notice == first || !strings.Contains(h.a.notice.msg, "Move cancelled") {
 		t.Fatalf("a new result should replace the old pop-up: %+v", h.a.notice)
 	}
 	if strings.Count(ansi.Strip(h.view()), "╭─") < 1 {
@@ -464,7 +471,7 @@ func TestRepeatedResultsDoNotStackUp(t *testing.T) {
 func TestNoNotificationWhileQuitting(t *testing.T) {
 	h, _ := newOpsApp(t, nil, nil)
 	h.a.quitting = true
-	h.a.result(lvlOK, "Copied 1 file")
+	h.a.result(lvlOK, "Copy completed", "Copied 1 file")
 	if h.a.notice != nil {
 		t.Fatal("nothing should be announced while quitting")
 	}
@@ -472,32 +479,53 @@ func TestNoNotificationWhileQuitting(t *testing.T) {
 
 // ---- long messages and the heading ------------------------------------------------
 
-func TestSplitNoticeTitleKeepsTheHeadingMeaningful(t *testing.T) {
+func TestHeadingNamesTheOperationAndOutcome(t *testing.T) {
 	cases := []struct {
-		title      string
-		room       int
-		head, rest string
+		op                        string
+		failed, canceled, partial bool
+		want                      string
 	}{
-		{"Copied 61 files, 16 folders", 40, "Copied 61 files, 16 folders", ""},
-		{"Delete incomplete: 20629 files removed, 2149 errors", 24, "Delete incomplete", "20629 files removed, 2149 errors"},
-		{"Move cancelled — nothing was transferred", 15, "Move cancelled", "— nothing was transferred"},
-		{"Deleted 1 item (20629 files, 2149 folders)", 15, "Deleted 1 item", "(20629 files, 2149 folders)"},
-		{"somethingwithnospacesatallthatcannotbesplit", 10, "something…", ""},
+		{"Copy", false, false, false, "Copy completed"},
+		{"Copy", false, false, true, "Copy partially completed"},
+		{"Copy", true, false, true, "Copy partially completed"},
+		{"Copy", true, false, false, "Copy failed"},
+		{"Delete", false, true, false, "Delete cancelled"},
+		{"Extract", false, true, true, "Extract cancelled"},
 	}
 	for _, tc := range cases {
-		head, rest := splitNoticeTitle(tc.title, tc.room)
-		if head != tc.head || rest != tc.rest {
-			t.Errorf("splitNoticeTitle(%q, %d) = %q, %q; want %q, %q", tc.title, tc.room, head, rest, tc.head, tc.rest)
+		if got := operationHeading(tc.op, tc.failed, tc.canceled, tc.partial); got != tc.want {
+			t.Errorf("operationHeading(%q, %v, %v, %v) = %q, want %q", tc.op, tc.failed, tc.canceled, tc.partial, got, tc.want)
 		}
+	}
+}
+
+func TestTheResultMessageSitsInsideTheBox(t *testing.T) {
+	h, _ := newOpsApp(t, nil, nil)
+	h.send(tea.WindowSizeMsg{Width: 46, Height: 16})
+	h.a.result(lvlOK, "Copy completed", "Copied 61 files, 16 folders", "→ /mnt/backup/photos")
+	box := ansi.Strip(strings.Join(h.a.noticeBox(min(noticeMaxWidth, h.a.width-4)), "\n"))
+	lines := strings.Split(box, "\n")
+	// The heading names the operation; the message is the first line inside.
+	if !strings.Contains(lines[0], "Copy completed") {
+		t.Errorf("the heading is not in the border: %q", lines[0])
+	}
+	if strings.Contains(lines[0], "Copied 61 files") {
+		t.Errorf("the result message should not be in the heading: %q", lines[0])
+	}
+	if !strings.Contains(lines[1], "Copied 61 files, 16 folders") {
+		t.Errorf("the message should be the first body line: %q", lines[1])
+	}
+	if !strings.Contains(lines[2], "/mnt/backup/photos") {
+		t.Errorf("the detail should follow the message: %q", lines[2])
 	}
 }
 
 func TestLongMessageKeepsItsReasonOnScreen(t *testing.T) {
 	h, _ := newOpsApp(t, nil, nil)
 	h.send(tea.WindowSizeMsg{Width: 46, Height: 16})
-	h.a.result(lvlErr, "Delete incomplete: 20629 files removed, 2149 errors")
+	h.a.result(lvlErr, "Delete partially completed", "Delete incomplete: 20629 files removed, 2149 errors")
 	v := ansi.Strip(h.view())
-	for _, want := range []string{"Delete incomplete", "20629 files removed", "2149 errors"} {
+	for _, want := range []string{"Delete partially completed", "Delete incomplete", "20629 files", "2149 errors"} {
 		if !strings.Contains(v, want) {
 			t.Errorf("the pop-up lost %q:\n%s", want, v)
 		}
@@ -513,7 +541,7 @@ func TestNotificationFitsEverySize(t *testing.T) {
 		{30, 7}, {30, 9}, {34, 8}, {40, 12}, {46, 14}, {60, 20}, {100, 30}, {160, 50},
 	} {
 		h.send(tea.WindowSizeMsg{Width: size.w, Height: size.h})
-		h.a.result(lvlErr, long, "some/really/long/path/that/does/not/fit/anywhere/at/all.txt", "second line")
+		h.a.result(lvlErr, "Delete partially completed", long, "some/really/long/path/that/does/not/fit/anywhere/at/all.txt", "second line")
 		v := ansi.Strip(h.a.View())
 		lines := strings.Split(v, "\n")
 		if len(lines) > size.h {
@@ -535,7 +563,7 @@ func TestNotificationIsSkippedWhenThereIsNoRoom(t *testing.T) {
 	h, _ := newOpsApp(t, nil, nil)
 	for _, size := range []struct{ w, h int }{{30, 7}, {40, 9}, {24, 12}} {
 		h.send(tea.WindowSizeMsg{Width: size.w, Height: size.h})
-		h.a.result(lvlOK, "Copied 61 files, 16 folders")
+		h.a.result(lvlOK, "Copy completed", "Copied 61 files, 16 folders")
 		if _, _, _, _, ok := h.a.noticeRect(); ok && (size.h < 10 || size.w < 26) {
 			t.Errorf("%dx%d: a pop-up would cover the whole screen", size.w, size.h)
 		}
@@ -553,7 +581,7 @@ func TestNotificationIsSkippedWhenThereIsNoRoom(t *testing.T) {
 
 func TestNotificationDoesNotCoverTheChrome(t *testing.T) {
 	h, _ := newOpsApp(t, nil, nil)
-	h.a.result(lvlOK, "Copied 61 files, 16 folders")
+	h.a.result(lvlOK, "Copy completed", "Copied 61 files, 16 folders")
 	_, y, _, height, ok := h.a.noticeRect()
 	if !ok {
 		t.Fatal("no notification")
@@ -591,7 +619,7 @@ func TestWatchedTaskResultDoesNotRepeatItself(t *testing.T) {
 	h, s, _ := liveHarness(t)
 	a := h.a
 	a.finishTask(s, taskCompleted, "Copied 1 file")
-	a.taskResult(s, lvlOK, s.summary)
+	a.taskResult(s, lvlOK, "Copy completed", s.summary)
 	if a.notice != nil {
 		t.Fatal("the live screen already shows the result; no pop-up on top of it")
 	}

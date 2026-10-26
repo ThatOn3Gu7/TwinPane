@@ -435,7 +435,7 @@ func (a *App) bulkDone(m bulkDoneMsg) tea.Cmd {
 		return cmds
 	}
 	if m.res.Failed() == 0 {
-		a.result(lvlOK, fmt.Sprintf("Renamed %s", plural(m.res.Renamed, "item")))
+		a.result(lvlOK, "Rename completed", fmt.Sprintf("Renamed %s", plural(m.res.Renamed, "item")))
 		a.setStatus("", false)
 		return cmds
 	}

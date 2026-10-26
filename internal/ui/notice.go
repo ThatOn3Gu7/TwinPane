@@ -17,9 +17,17 @@ import (
 //
 // A notification is a small, self-erasing pop-up in the bottom-right corner of
 // the content area that reports the outcome of something the user asked for:
-// "✓ Copied 61 files, 16 folders", "! Move cancelled — nothing was transferred",
-// "✕ cannot delete: permission denied". It is deliberately not a dialog: it
-// takes no keys, it never blocks the panels, and it goes away by itself.
+//
+//	╭─ ✓ Copy completed ─────────────────────────╮
+//	│ Copied 61 files, 16 folders                │
+//	│ → /mnt/backup/photos                       │
+//	╰━━━━━━━━━━━━━━━━━━━━━━━━────────────────────╯
+//
+// The heading is a short name for the operation and its outcome ("Copy
+// completed", "Delete partially completed", "Extract cancelled") and the box
+// underneath carries the result message and its details. It is deliberately not
+// a dialog: it takes no keys, it never blocks the panels, and it goes away by
+// itself.
 //
 // Which messages become notifications, and which stay in the status line:
 //
@@ -65,11 +73,12 @@ const (
 
 // notice is one pop-up.
 type notice struct {
-	seq   int // identifies the countdown that belongs to this notice
-	kind  noticeKind
-	title string   // what happened
-	body  []string // optional context (destination, reason, hint)
-	task  int      // task a focused tap opens (0 = the pop-up only reports)
+	seq  int // identifies the countdown that belongs to this notice
+	kind noticeKind
+	head string   // short heading: operation and outcome ("Copy completed")
+	msg  string   // what happened ("Copied 61 files, 16 folders")
+	body []string // optional context (destination, details, hint)
+	task int      // task a focused tap opens (0 = the pop-up only reports)
 
 	// pinned is set once the user taps the pop-up: the countdown stops and the
 	// notification stays until Esc or a tap outside, so a result can be read
@@ -123,13 +132,30 @@ func noticeStyle(th theme.Theme, k noticeKind) lipgloss.Style {
 	return th.NoticeInfo
 }
 
-// notify shows a notification. body holds optional extra lines; they are
-// wrapped and capped by the renderer.
-func (a *App) notify(kind noticeKind, title string, body ...string) {
-	if a.quitting || title == "" {
+// operationHeading names a finished operation after its outcome, so the
+// heading stays short while the message inside the box carries the numbers:
+// "Copy completed", "Delete partially completed", "Extract cancelled". A
+// failure that still did some work reads as partial, not as a flat failure.
+func operationHeading(op string, failed, canceled, partial bool) string {
+	switch {
+	case canceled:
+		return op + " cancelled"
+	case failed && !partial:
+		return op + " failed"
+	case failed || partial:
+		return op + " partially completed"
+	}
+	return op + " completed"
+}
+
+// notify shows a notification: head is the short heading, msg the result
+// message, and body holds optional extra lines. The renderer wraps and caps
+// them.
+func (a *App) notify(kind noticeKind, head, msg string, body ...string) {
+	if a.quitting || (head == "" && msg == "") {
 		return
 	}
-	if n := a.notice; n != nil && n.kind == kind && n.title == title &&
+	if n := a.notice; n != nil && n.kind == kind && n.head == head && n.msg == msg &&
 		strings.Join(n.body, "\n") == strings.Join(body, "\n") {
 		// The same result again (a repeated action): keep the pop-up where it
 		// is and restart its countdown instead of flickering.
@@ -144,7 +170,7 @@ func (a *App) notify(kind noticeKind, title string, body ...string) {
 	}
 	a.noticeSeq++
 	a.notice = &notice{
-		seq: a.noticeSeq, kind: kind, title: title,
+		seq: a.noticeSeq, kind: kind, head: head, msg: msg,
 		body:  lines,
 		total: noticeLife, left: noticeLife,
 	}
@@ -153,20 +179,21 @@ func (a *App) notify(kind noticeKind, title string, body ...string) {
 // result reports the outcome of a finished action with a status level. It is
 // the notification counterpart of setStatusLevel: call it where the message
 // describes what happened, and leave setStatusLevel for progress, prompts and
-// guidance.
-func (a *App) result(lvl int, msg string, body ...string) {
-	a.notify(resultKind(lvl), msg, body...)
+// guidance. head names the operation and its outcome ("Copy completed"); msg is
+// the result itself, which the box shows in full.
+func (a *App) result(lvl int, head, msg string, body ...string) {
+	a.notify(resultKind(lvl), head, msg, body...)
 }
 
 // taskResult reports the outcome of a finished background task. Tapping the
 // notification opens the task list, where the full details are kept.
-func (a *App) taskResult(s *opSession, lvl int, msg string, body ...string) {
+func (a *App) taskResult(s *opSession, lvl int, head, msg string, body ...string) {
 	if s != nil && a.live != nil && a.live.id == s.id {
 		// The live progress screen is already showing this result; a pop-up on
 		// top of it would only repeat what the user is reading.
 		return
 	}
-	a.result(lvl, msg, body...)
+	a.result(lvl, head, msg, body...)
 	if s != nil && a.notice != nil {
 		a.notice.task = s.id
 	}
@@ -309,11 +336,11 @@ func (a *App) noticeAdvance(msg noticeTickMsg) bool {
 
 // ---- rendering ------------------------------------------------------------------
 
-// noticeBox builds the pop-up: a heading with the kind's icon and colour, the
-// message (or the wrapped message when it does not fit the heading) and the
-// optional context lines. The countdown is drawn into the bottom border, as a
-// heavy line that drains towards the left, so the pop-up needs no extra row for
-// it and stays small. Width is the box width including its border.
+// noticeBox builds the pop-up: a short heading with the kind's icon and colour
+// in the top border, then the result message and its details inside the box.
+// The countdown is drawn into the bottom border, as a heavy line that drains
+// towards the left, so the pop-up needs no extra row for it and stays small.
+// Width is the box width including its border.
 func (a *App) noticeBox(width int) []string {
 	return a.noticeBoxWithin(width, 0)
 }
@@ -331,21 +358,19 @@ func (a *App) noticeBoxWithin(width, maxLines int) []string {
 	inner := width - 2
 	icon := noticeIcon(n.kind)
 
-	// The heading carries the whole message when it fits in the border. A long
-	// message (an error reason usually) keeps its first clause there and moves
-	// the rest into the body, so nothing important is cut off and the heading
-	// stays meaningful instead of degrading to a bare "Error".
-	headText := icon + " " + n.title
-	var carried []string
-	if ansi.StringWidth(headText) > inner-4 {
-		// "╭─" + " icon heading " + at least one dash + "╮"
-		head, rest := splitNoticeTitle(n.title, inner-7)
-		headText = icon + " " + head
-		if rest != "" {
-			carried = append(carried, rest)
-		}
+	// The heading names the operation, not the result: it stays short enough
+	// for the border at any width, and noticeTop truncates it with an ellipsis
+	// when even that does not fit.
+	head := n.head
+	if head == "" {
+		head = noticeWord(n.kind)
 	}
-	body := carried
+	// The message is the content of the box, so it wraps over as many lines as
+	// it needs; the details below it are dimmed context.
+	var body []string
+	for _, part := range wrapText(n.msg, inner-2) {
+		body = append(body, th.DialogText.Render(part))
+	}
 	for _, line := range n.body {
 		for _, part := range wrapText(line, inner-2) {
 			body = append(body, th.DialogHint.Render(part))
@@ -383,7 +408,7 @@ func (a *App) noticeBoxWithin(width, maxLines int) []string {
 	}
 
 	lines := make([]string, 0, len(body)+len(hint)+2)
-	lines = append(lines, noticeTop(st, headText, width))
+	lines = append(lines, noticeTop(st, icon+" "+head, width))
 	for _, line := range body {
 		lines = append(lines, st.Render("│")+" "+fitWidth(line, inner-2)+" "+st.Render("│"))
 	}
@@ -404,42 +429,11 @@ const (
 	noticePinnedHintNoEsc = "pinned — tap outside resumes"
 )
 
-// splitNoticeTitle splits a long message at its first clause boundary so the
-// heading keeps its meaning instead of degrading to a bare "Error". It returns
-// the heading and the remainder, which becomes the first body line.
-func splitNoticeTitle(title string, room int) (string, string) {
-	if ansi.StringWidth(title) <= room {
-		return title, ""
-	}
-	// The longest prefix that still fits wins; the separator decides whether
-	// the remainder keeps its bracket or reads as a continuation.
-	seps := []struct{ sep, keep string }{
-		{": ", ""},
-		{" — ", "— "},
-		{" (", "("},
-	}
-	head, rest := "", ""
-	for _, s := range seps {
-		i := strings.Index(title, s.sep)
-		if i <= 0 || ansi.StringWidth(title[:i]) > room {
-			continue
-		}
-		if i > len(head) {
-			head = title[:i]
-			rest = s.keep + strings.TrimSpace(title[i+len(s.sep):])
-		}
-	}
-	if head != "" {
-		return head, rest
-	}
-	return ansi.Truncate(title, max(4, room), "…"), ""
-}
-
-// noticeTop draws the heading row "╭─ ✓ Copied 61 files ───╮".
+// noticeTop draws the heading row "╭─ ✓ Copy completed ───╮".
 func noticeTop(st lipgloss.Style, head string, width int) string {
 	inner := width - 2
 	text := " " + head + " "
-	maxW := inner - 3
+	maxW := inner - 2 // leave a dash on both sides of the heading
 	if ansi.StringWidth(text) > maxW {
 		text = ansi.Truncate(text, max(0, maxW), "…")
 	}

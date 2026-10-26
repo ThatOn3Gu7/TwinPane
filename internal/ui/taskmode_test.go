@@ -176,8 +176,10 @@ func TestLargeCopyAsksEndToEnd(t *testing.T) {
 		t.Fatal("the copy must not start before the question is answered")
 	}
 	h.press("b")
-	if h.a.notice == nil {
-		t.Fatal("answering background should show the notification")
+	// The notification is either the "running in the background" one or, when
+	// the task has already finished, its result: both name the copy.
+	if n := h.a.notice; n == nil || !strings.Contains(n.head, "Copy") {
+		t.Fatalf("answering background should show a notification: %+v", n)
 	}
 	h.idle()
 	entries, err := os.ReadDir(filepath.Join(env.dst, "many"))
@@ -187,7 +189,7 @@ func TestLargeCopyAsksEndToEnd(t *testing.T) {
 	if len(entries) != largeOpItems+20 {
 		t.Fatalf("copied %d entries, want %d", len(entries), largeOpItems+20)
 	}
-	if n := h.a.notice; n == nil || !strings.Contains(n.title, "Copied") {
+	if n := h.a.notice; n == nil || !strings.Contains(n.msg, "Copied") {
 		t.Fatalf("the finished copy should be reported by a notification: %+v", n)
 	}
 	if st := h.status(); strings.Contains(st, "Copied") {

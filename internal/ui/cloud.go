@@ -437,7 +437,7 @@ func (a *App) beginMkdir() tea.Cmd {
 			return nil
 		}
 		a.dialog = nil
-		a.result(lvlOK, fmt.Sprintf("Created folder %q", v), "in "+fsys.SanitizeName(p.Path()))
+		a.result(lvlOK, "Folder created", fmt.Sprintf("Created folder %q", v), "in "+fsys.SanitizeName(p.Path()))
 		return tea.Batch(p.RefreshFocus(v), a.panels[1-idx].Refresh())
 	}
 	a.dialog = d
@@ -465,22 +465,42 @@ func (a *App) finishCloudOp(s *opSession, m opCloudDoneMsg) tea.Cmd {
 	var level int
 	var state taskState
 	var details []string
+	// The heading names the operation; m.what is its past-tense description.
+	noun := "Cloud operation"
+	switch m.what {
+	case "Created folder":
+		noun = "Folder creation"
+	case "Renamed to":
+		noun = "Rename"
+	}
+	var heading string
 	switch {
 	case errors.Is(m.err, cloud.ErrNoEmptyFolders):
 		summary, level = fmt.Sprintf("%q: %v", m.focus, m.err), lvlWarn
 		state = taskOutcome(false, m.err, 1, false)
 		details = append(details, summary)
+		heading = noun + " refused"
 	case cloud.KindOf(m.err) == cloud.KindCanceled:
 		summary, level = "cancelled — rclone was stopped", lvlWarn
 		state = taskOutcome(true, m.err, 0, true)
 		details = append(details, "The remote may have completed the action before cancellation was acknowledged")
+		heading = noun + " cancelled"
 	case m.err != nil:
 		summary, level = "failed: "+errText(m.err), lvlErr
 		state = taskOutcome(false, m.err, 1, false)
 		details = append(details, errText(m.err))
+		heading = noun + " failed"
 	default:
 		summary, level = fmt.Sprintf("%s %q", m.what, m.focus), lvlOK
 		state = taskCompleted
+		switch m.what {
+		case "Created folder":
+			heading = "Folder created"
+		case "Renamed to":
+			heading = "Rename completed"
+		default:
+			heading = capitalize(m.what) + " completed"
+		}
 	}
 	if state == taskCompleted && m.what == "Renamed to" {
 		p := a.panels[s.srcPanel]
@@ -490,7 +510,7 @@ func (a *App) finishCloudOp(s *opSession, m opCloudDoneMsg) tea.Cmd {
 	}
 	cmd := a.refreshPanelsAt(s.panelPaths[s.srcPanel], m.focus)
 	a.finishTask(s, state, summary, details...)
-	a.taskResult(s, level, summary, detailsBody(details)...)
+	a.taskResult(s, level, heading, summary, detailsBody(details)...)
 	a.setStatus("", false)
 	return cmd
 }
@@ -680,6 +700,8 @@ func (a *App) finishCloudDelete(s *opSession, res cloudDeleteResult) tea.Cmd {
 	details = appendTaskDetail(details, "Stopped", res.fatal)
 	state := taskOutcome(res.canceled, res.fatal, len(res.errors), res.deleted > 0)
 	level := lvlErr
+	deleteFailed := res.fatal != nil || len(res.errors) > 0
+	heading := operationHeading("Delete", deleteFailed, res.canceled, res.deleted > 0 && (deleteFailed || res.canceled))
 	switch {
 	case ok:
 		level = lvlOK
@@ -692,7 +714,7 @@ func (a *App) finishCloudDelete(s *opSession, res cloudDeleteResult) tea.Cmd {
 			summary += " — cancelled"
 		}
 	}
-	a.taskResult(s, level, summary, detailsBody(details)...)
+	a.taskResult(s, level, heading, summary, detailsBody(details)...)
 	a.setStatus("", false)
 	a.finishTask(s, state, summary, details...)
 	return cmd

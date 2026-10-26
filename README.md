@@ -118,14 +118,16 @@ The [user guide](docs/USER_GUIDE.md) describes every feature in detail.
 **Notifications**
 - Results of file operations (copy, move, delete, extract, compress, rename,
   sync), folder-size scans and finishing an edit appear as a small pop-up in
-  the bottom-right corner instead of a line at the bottom: `✓ Copied 61 files,
-  16 folders`, `! Move cancelled — nothing was transferred`, `✕ cannot delete:
-  permission denied`. Each kind has its own colour and icon, the bottom border
-  itself drains as the time left runs out, and the pop-up goes away by itself
-  after a few seconds. Tap it to keep it on screen long enough to read (`Esc`
-  closes it, a tap elsewhere lets it carry on); normal keys keep working while
-  it is shown. Prompts, refusals, progress and navigation notes stay in the
-  status line, where they belong.
+  the bottom-right corner instead of a line at the bottom. Its heading names
+  what was done and how it went — `✓ Copy completed`, `✕ Delete partially
+  completed`, `! Move cancelled` — and the result itself, with any details,
+  sits inside the box (`Copied 61 files, 16 folders`, then the destination).
+  Each kind has its own colour and icon, the bottom border itself drains as the
+  time left runs out, and the pop-up goes away by itself after a few seconds.
+  Tap it to keep it on screen long enough to read (`Esc` closes it, a tap
+  elsewhere lets it carry on); normal keys keep working while it is shown.
+  Prompts, refusals, progress and navigation notes stay in the status line,
+  where they belong.
 
 **Directory comparison**
 - Compare the two local panel folders (`D`), ignoring exact `.git` directories

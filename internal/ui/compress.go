@@ -359,7 +359,8 @@ func (a *App) finishZip(s *opSession, res compress.Result) tea.Cmd {
 	// Failures are named in the pop-up itself: the first two details say what
 	// went wrong, the task list keeps the rest.
 	body = append(body, detailsBody(details)...)
-	a.taskResult(s, level, summary, body...)
+	failed := res.Fatal != nil || len(res.Errors)+cleanupErrors > 0
+	a.taskResult(s, level, operationHeading("Compress", failed, res.Canceled, res.Created() && (failed || res.Canceled)), summary, body...)
 	a.setStatus("", false)
 	a.finishTask(s, state, summary, details...)
 	return cmd
