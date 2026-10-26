@@ -11,15 +11,18 @@ The complete description of every feature is in
 
 ### Added
 - **Settings screen.** `F9`, `Ctrl+S` and **Settings…** in the TwinPane
-  action menu (`M`, or a tap on the badge) open one screen with every
-  durable preference: startup folders and which panel starts focused,
+  action menu (`M`, or a tap on the badge) open one floating window over
+  the panes — the directory behind stays visible, dimmed by the backdrop,
+  exactly like the dialogs — with a blank line between its sections and
+  every durable preference: startup folders and which panel starts focused,
   focus-mode preview, hidden files, the default sort key/direction/
   directories-first, the notification corner and duration (2–10 s), the
   theme presets (`default`, `green`, `amber`), the preferred editor and
   editor tips, mouse input, the viewer's line wrapping and line numbers,
-  and the compression default format and level. The screen follows the
-  help/tasks layout (keyboard and mouse, its own hint bar, it shrinks with
-  the terminal). Changes apply live wherever they can — sort, hidden files,
+  and the compression default format and level. It keeps the help-style
+  interaction (keyboard and mouse, its own hint bar, scroll when the
+  window is smaller than the list, `?` help over it) and shrinks with the
+  terminal. Changes apply live wherever they can — sort, hidden files,
   theme, viewer defaults for the next file, notification settings for the
   next pop-up — and are written atomically to `settings.json` in the
   configuration directory on every change, extending the existing

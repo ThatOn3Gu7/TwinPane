@@ -1431,9 +1431,12 @@ v0.3.1; the matching rules below still apply)
 ## Settings screen
 
 `F9`, `Ctrl+S` and **Settings…** in the action menu (`M`, or a tap on the
-TwinPane badge) all open the same screen. `Ctrl+S` was free — copy is
-`Ctrl+C` and move is `Ctrl+M` — so no existing control moved. The screen is
-a single list with section titles:
+TwinPane badge) all open the same window. `Ctrl+S` was free — copy is
+`Ctrl+C` and move is `Ctrl+M` — so no existing control moved. The window
+floats above the panes like a dialog: the directory behind stays visible,
+dimmed by the backdrop, and the title, status and hint rows keep working
+around it. It is a single list with a blank line between the sections so
+they have room to breathe:
 
 - **Panels** — startup folder for the left and the right panel (empty means
   home; `~` and `~/path` expand at start), which panel is focused at
@@ -1460,15 +1463,16 @@ a single list with section titles:
 **Keys on the screen:** `↑`/`↓` (or `k`/`j`) move, `←`/`→` (or `h`/`l`,
 `Space`, `Enter`) change a value — the text rows open a one-line input —
 `r` resets everything to the defaults behind a `y` confirmation, `?` opens
-the help, and `Esc` / `F9` / `Ctrl+S` close the screen. The mouse works
-too: a tap selects a row, a second tap on the selected row changes it, the
-wheel moves through the list, and the screen shrinks with the terminal.
+the help (over the window), and `Esc` / `F9` / `Ctrl+S` close it. The
+mouse works too: a tap selects a row, a second tap on the selected row
+changes it, the wheel moves through the list, and the window shrinks with
+the terminal.
 
 **Storage:** preferences live in `settings.json` next to `bookmarks.json`
 (`$TWINPANE_CONFIG_DIR`, default `~/.config/twinpane`) and are written
 atomically on every change. The file is versioned: unknown fields from
 older or newer files are ignored where possible, an unreadable or
-newer-version file is never overwritten by ordinary saves, and the screen
+newer-version file is never overwritten by ordinary saves, and the window
 shows what happened as a banner with the recovery hint — `r` then `y`
 is the deliberate repair that writes fresh defaults. Startup folders, the
 starting panel and the mouse preference apply at the next start;

@@ -481,8 +481,9 @@ including those of the viewer, dialogs, search and bulk rename.
 absolute path for the bookmarks and settings files; default
 `~/.config/twinpane`, on macOS `~/Library/Application Support/twinpane`).
 
-**Settings:** `F9`, `Ctrl+S` or `M` → **Settings…** open the preferences
-screen (startup folders and starting panel, hidden files, default sort,
+**Settings:** `F9`, `Ctrl+S` or `M` → **Settings…** open a floating
+preferences window over the panes — the directory behind stays visible —
+(startup folders and starting panel, hidden files, default sort,
 notification corner/duration, theme presets, preferred editor and tips,
 mouse, viewer wrap/line numbers, compression defaults). Preferences are
 stored atomically in `settings.json` in the configuration directory; the

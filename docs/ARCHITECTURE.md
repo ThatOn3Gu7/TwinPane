@@ -641,7 +641,12 @@ Four new packages with no UI dependency. The TUI code lives in four
   program option is fixed at startup) and tips are `flag && preference`.
   The Settings screen (`internal/ui/settings.go`, `F9`/`Ctrl+S`/menu) edits
   all of it live where possible and renders the corruption banner plus the
-  `r` reset confirmation. The command passes the path through
+  `r` reset confirmation. It is not a full-screen view: `View` composites
+  the window with the same `overlay()` used for dialogs, so it floats,
+  centred and backdrop-dimmed, over the panes behind; taps map through the
+  box rectangle that `settingsView` records each frame (like
+  `renderDialog`), and `settingsBody(inner)` lays rows out at the window's
+  inner width with a blank line between sections. The command passes the path through
   `Options.SettingsPath` so tests can use an isolated file.
 
 ### Open / Open with (`internal/opener`, `ui/open.go`)

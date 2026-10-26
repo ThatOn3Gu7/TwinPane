@@ -16,23 +16,31 @@ import (
 )
 
 // The Settings screen: F9, Ctrl+S and the "Settings…" entry of the TwinPane
-// badge menu all open this one screen. It follows the help/tasks pattern —
-// a full-height section box between the title and status rows, its own hint
-// bar, ↑/↓ to move, ←/→ (or h/l, Space, Enter) to change a value, Esc to
-// close — and every change is applied live where a live apply is possible
-// and saved to settings.json immediately.
+// badge menu all open the same window. Unlike help/tasks it is not a
+// full-screen view: it floats above the panes like a dialog — the
+// directory behind stays visible, dimmed by the backdrop — with a blank
+// line between its sections so they breathe. ↑/↓ to move, ←/→ (or h/l,
+// Space, Enter) to change a value, Esc to close; every change is applied
+// live where a live apply is possible and saved to settings.json
+// immediately.
 //
 // Rows that cannot take effect until a restart or the next start (mouse,
 // startup folders, starting panel) say so in a muted note. A damaged or
 // newer-version settings file is announced at the top of the list; "r" is
 // the intentional recovery path that overwrites it with the defaults.
 
-// settingsScreen is the Settings screen's navigation state.
+// settingsScreen is the Settings screen's navigation state. The box
+// rectangle is the screen placement of the last drawn window (filled by
+// settingsView, same as renderDialog does for dialogs) for tap mapping.
 type settingsScreen struct {
 	sel      int
 	scroll   int
 	viewport int
 	lineRow  []int // content line → row index, for tap hit-testing
+	boxX     int
+	boxY     int
+	boxW     int
+	boxH     int
 }
 
 // settingsRowID identifies a row for key and tap dispatch; rows are stable,
@@ -214,7 +222,7 @@ func (a *App) closeSettings() tea.Cmd {
 // handlers know the current viewport (the help screen does the same).
 func (a *App) syncSettingsLayout() {
 	if a.width >= minWidth && a.height >= minHeight {
-		a.settingsView(a.height - 3)
+		a.settingsView()
 	}
 }
 
@@ -470,12 +478,15 @@ func (a *App) settingsResetApply() tea.Cmd {
 
 // ---- rendering ---------------------------------------------------------------
 
-// settingsView renders the screen: the Settings box with the corruption
-// banner (when any), group titles and the preference rows, scrolled so the
-// selected row stays visible.
-func (a *App) settingsView(height int) string {
-	rows := a.settingsRows()
+// settingsBody renders the corruption banner (when any), the group titles
+// and the preference rows — with one blank line between groups so the
+// sections have room to breathe — and returns the content-line → row
+// mapping for taps (-1: banner, header or spacer). inner is the usable
+// width of the window (box width minus its borders), so values right-align
+// to the window instead of the screen.
+func (a *App) settingsBody(inner int) ([]string, []int) {
 	scr := &a.settingsScr
+	rows := a.settingsRows()
 	if scr.sel >= len(rows) {
 		scr.sel = max(0, len(rows)-1)
 	}
@@ -493,14 +504,39 @@ func (a *App) settingsView(height int) string {
 	}
 	for i, r := range rows {
 		if r.group != "" {
+			if len(body) > 0 {
+				// a blank line separates the sections; the very first
+				// group starts at the top of the window
+				body = append(body, "")
+				lineRow = append(lineRow, -1)
+			}
 			body = append(body, a.theme.HelpTitle.Render(r.group))
 			lineRow = append(lineRow, -1)
 		}
-		body = append(body, a.settingsRowLine(r, i == scr.sel))
+		body = append(body, a.settingsRowLine(r, inner, i == scr.sel))
 		lineRow = append(lineRow, i)
 	}
+	return body, lineRow
+}
 
-	viewport := height - 2
+// settingsView renders the floating Settings window: a dialog-style box,
+// centred over the dimmed panes (View composites it with overlay()), with
+// the banner, the spaced-out groups and the rows, scrolled so the selected
+// row stays visible. The screen rectangle of the box is recorded for tap
+// hit-testing.
+func (a *App) settingsView() string {
+	scr := &a.settingsScr
+
+	// Floating size: leave a margin of background on every side so the
+	// directory behind the window stays visible.
+	winW := min(a.width-6, 78)
+	if winW < 16 {
+		winW = max(4, a.width-2)
+	}
+	body, lineRow := a.settingsBody(winW - 2)
+	winH := min(len(body)+2, max(3, a.height-4))
+
+	viewport := winH - 2
 	if viewport < 1 {
 		viewport = 1
 	}
@@ -537,14 +573,25 @@ func (a *App) settingsView(height int) string {
 	} else {
 		right = "not persisted"
 	}
-	lines := sectionBox(a.theme, "Settings", right, visible, a.width, height, true, thumb)
-	return strings.Join(lines, "\n")
+	lines := sectionBox(a.theme, "Settings", right, visible, winW, winH, true, thumb)
+	box := strings.Join(lines, "\n")
+
+	// Where overlay() will place this box on the screen (same maths as
+	// renderDialog uses for dialogs).
+	scr.boxX, scr.boxY = overlayOrigin(box, a.width, a.height)
+	scr.boxW, scr.boxH = 0, 0
+	for _, l := range lines {
+		scr.boxW = max(scr.boxW, ansi.StringWidth(l))
+	}
+	scr.boxW = min(scr.boxW, a.width)
+	scr.boxH = min(len(lines), a.height)
+	return box
 }
 
 // settingsRowLine lays one preference out as label left, value right, with
-// the selected row in the cursor style.
-func (a *App) settingsRowLine(r settingsRow, selected bool) string {
-	avail := max(4, a.width-2)
+// the selected row in the cursor style. avail is the window's inner width.
+func (a *App) settingsRowLine(r settingsRow, avail int, selected bool) string {
+	avail = max(4, avail)
 	note := ""
 	if r.after != "" {
 		note = "  " + r.after
@@ -590,10 +637,15 @@ func (a *App) settingsMouse(ev tea.MouseEvent) tea.Cmd {
 	}
 	a.syncSettingsLayout()
 	scr := &a.settingsScr
-	// The box starts at the first body row of the screen (screen row 1);
-	// its top border is line 0 of the box.
-	boxLine := ev.Y - 1
-	content := boxLine - 1
+	if scr.boxW <= 0 || scr.boxH <= 0 {
+		return nil // nothing drawn yet
+	}
+	// Map through the recorded rectangle: content line i of the box sits
+	// at screen row boxY+1+i (one row for the top border).
+	if ev.X < scr.boxX || ev.X >= scr.boxX+scr.boxW {
+		return nil
+	}
+	content := ev.Y - scr.boxY - 1
 	if content < 0 || content >= len(scr.lineRow) {
 		return nil
 	}

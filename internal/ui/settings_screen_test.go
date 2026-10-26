@@ -9,6 +9,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/ThatOn3Gu7/TwinPane/internal/compress"
 	"github.com/ThatOn3Gu7/TwinPane/internal/fsys"
@@ -332,43 +333,94 @@ func TestSettingsEditorCommandRow(t *testing.T) {
 }
 
 // TestSettingsMouseTaps: a tap selects a row, the second tap on the selected
-// row changes it, taps on group titles do nothing.
+// row changes it, taps on group titles do nothing. The window floats: taps
+// are mapped through the recorded box rectangle, not screen corners.
 func TestSettingsMouseTaps(t *testing.T) {
 	h := newSettingsApp(t, "")
 	h.send(tea.WindowSizeMsg{Width: 80, Height: 24})
 	h.press("f9")
+	h.view() // render once so the window records its screen rectangle
+	scr := h.a.settingsScr
+	if scr.boxW <= 0 || scr.boxH <= 0 {
+		t.Fatal("window rectangle not recorded")
+	}
+	if scr.boxY < 1 {
+		t.Fatalf("window must float below the title row, boxY=%d", scr.boxY)
+	}
+	// Content line i of the box sits at screen row boxY+1+i (top border).
+	tapLine := func(content int) { h.tap(scr.boxX+4, scr.boxY+1+content) }
 
-	// Content line i sits at screen y = i+2 (title row, box border).
 	// Group title (content 0) is not selectable.
-	h.tap(5, 2)
+	tapLine(0)
 	if h.a.settingsScr.sel != 0 {
 		t.Fatalf("title tap moved selection to %d", h.a.settingsScr.sel)
 	}
-	// Focus-preview row: content 4 → y=6.
-	h.tap(5, 6)
+	// Focus-preview row: content 4 inside the first group.
+	tapLine(4)
 	if h.a.settingsScr.sel != int(rowFocusPreview) {
 		t.Fatalf("first tap must select, sel=%d", h.a.settingsScr.sel)
 	}
 	focus := h.a.focusPreview
-	h.tap(5, 6)
+	tapLine(4)
 	if h.a.focusPreview == focus {
 		t.Fatal("second tap on the selected row must change it")
 	}
-	// Startup-left row (content 1 → y=3): first tap selects, second opens.
-	h.tap(5, 3)
+	// Startup-left row (content 1): first tap selects, second opens.
+	tapLine(1)
 	if h.a.settingsScr.sel != int(rowStartLeft) {
 		t.Fatalf("tap must select startup-left, sel=%d", h.a.settingsScr.sel)
 	}
-	h.tap(5, 3)
+	tapLine(1)
 	if !h.dialogKind(dlgSettings) {
 		t.Fatal("tap-tap on a text row opens its field")
 	}
 	h.press("esc")
 	// Wheel moves the selection.
 	sel := h.a.settingsScr.sel
-	h.wheel(5, 6, 1)
+	h.wheel(scr.boxX+4, scr.boxY+2, 1)
 	if h.a.settingsScr.sel == sel {
 		t.Fatal("wheel must move the selection")
+	}
+}
+
+// TestSettingsSectionsHaveBreathingRoom: a blank line separates every pair
+// of groups (the first group starts at the top of the window), and spacers
+// are never selectable.
+func TestSettingsSectionsHaveBreathingRoom(t *testing.T) {
+	h := newSettingsApp(t, "")
+	body, lineRow := h.a.settingsBody(60)
+	if len(body) != len(lineRow) {
+		t.Fatalf("body/mapping length %d vs %d", len(body), len(lineRow))
+	}
+	groups := []string{"Panels", "Sorting", "Notifications", "Appearance",
+		"Editor & viewer", "Compression"}
+	plain := make([]string, len(body))
+	for i, l := range body {
+		plain[i] = ansi.Strip(l)
+		if plain[i] == "" && lineRow[i] != -1 {
+			t.Fatalf("spacer at line %d maps to row %d", i, lineRow[i])
+		}
+	}
+	for _, g := range groups {
+		idx := -1
+		for i, l := range plain {
+			if l == g {
+				idx = i
+				break
+			}
+		}
+		if idx < 0 {
+			t.Fatalf("group %q missing", g)
+		}
+		if idx == 0 {
+			if g != "Panels" {
+				t.Fatalf("first line is %q, want Panels", g)
+			}
+			continue
+		}
+		if plain[idx-1] != "" {
+			t.Fatalf("no blank line before %q (previous line %q)", g, plain[idx-1])
+		}
 	}
 }
 
@@ -503,6 +555,12 @@ func TestSettingsHintsAndHelp(t *testing.T) {
 	}
 	h.send(tea.WindowSizeMsg{Width: 130, Height: 30})
 	h.press("f9")
+	v := h.view()
+	// The panes stay visible behind the floating window: the directory
+	// (status line / panel list) must survive the backdrop.
+	if !strings.Contains(v, "sub") || !strings.Contains(v, "hidden:") {
+		t.Fatalf("background not visible behind the settings window:\n%s", v)
+	}
 	f := h.footer()
 	for _, want := range []string{"move", "change", "close"} {
 		if !strings.Contains(f, want) {

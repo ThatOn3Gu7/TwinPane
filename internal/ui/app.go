@@ -906,8 +906,6 @@ func (a *App) View() string {
 	switch {
 	case a.showHelp:
 		body = a.helpView(a.height - 3)
-	case a.showSettings:
-		body = a.settingsView(a.height - 3)
 	case a.tasks.showing:
 		body = a.taskViewRender(a.height - 3)
 	case a.live != nil:
@@ -933,6 +931,13 @@ func (a *App) View() string {
 	}
 	screen := strings.Join([]string{a.titleView(), body, a.statusView(), a.footerView()}, "\n")
 	screen = a.withNotice(screen)
+	if a.showSettings && !a.showHelp {
+		// The settings window floats above the panes (and anything else
+		// behind): the directory stays visible, dimmed by the backdrop,
+		// exactly like the dialogs. A dialog opened from the screen is
+		// composited on top below.
+		screen = overlay(screen, a.settingsView(), a.width, a.height, a.theme.Backdrop)
+	}
 	if a.props != nil && !a.showHelp {
 		screen = overlay(screen, a.renderProps(), a.width, a.height, a.theme.Backdrop)
 	}
