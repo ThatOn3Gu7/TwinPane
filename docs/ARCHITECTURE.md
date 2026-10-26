@@ -996,6 +996,14 @@ UI side (`internal/ui/newfile.go`):
   filtered), a custom `Use .xyz` row when the filter normalises to an
   extension that is not a preset, then every matching category with its
   extensions. `pickExt` maps a row to the extension it selects.
+- `renderDialog` scrolls the body in one place for every dialog: the viewport
+  is `avail` rows (`avail-1` plus a `↑↓ scroll` row for text bodies), pick
+  lists follow their `listCursor` so the next row appears when the highlight
+  reaches an edge (`d.scroll` is derived, then clamped), and `scrollbar.Cells`
+  drives an indicator drawn *over* the right border (`overlayScrollThumb`), so
+  the dialog keeps its exact width and text wrapping. Hit regions use the same
+  `view`/`d.scroll` window, so tapping a scrolled row picks the row under the
+  pointer. Wheel events on a filtered list go through `filterKey`.
 - `createNewFile` composes the name with `fileext.FinalName`, validates it
   with `ops.ValidateName` plus a base-name check, then uses `os.OpenFile`
   with `O_CREATE|O_EXCL` (never replaces anything). Errors are phrased by
@@ -1009,7 +1017,10 @@ find/search/rank, name composition, custom-extension validation),
 `internal/ui/newfile_test.go` (menu, folder flow, plain/preset/custom
 creation, no stacked extensions, conflicts, invalid names, empty name,
 missing folder, permission error, pastes, mouse, archive refusal, action
-menu, narrow terminal).
+menu, narrow terminal) and `internal/ui/dialog_scroll_test.go` (cursor
+follows the view in the chooser, wrap-around at both ends, wheel scrolling,
+indicator position and presence, tapping a scrolled row, text dialogs with
+their scroll row, short dialogs without an indicator, long bookmark lists).
 
 ## Extension points for later phases
 - **Archive browsing:** ZIP and TAR-family archives use the virtual read-only

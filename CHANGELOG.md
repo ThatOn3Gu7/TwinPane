@@ -26,6 +26,13 @@ New file creation, and one key for both new files and new folders.
   Success refreshes the panel, focuses the new file and reports it in the
   status line.
 
+### Fixed
+- Long dialog lists (the format chooser, bookmarks, the editor chooser) now
+  scroll with their highlight: the next row appears instead of the highlight
+  moving out of the visible box, and the wheel scrolls them too. A slim scroll
+  indicator on the dialog's right border shows the position and moves with the
+  view; short dialogs draw none. Text dialogs keep their `↑↓ scroll` row.
+
 ### Changed
 - `n` opens a small New file / New folder menu instead of jumping into the
   folder prompt. `F7` still opens the new-folder prompt directly, and the

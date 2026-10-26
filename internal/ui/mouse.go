@@ -207,6 +207,11 @@ func (a *App) dialogMouse(d *dialog, ev tea.MouseEvent) tea.Cmd {
 			if delta < 0 {
 				key = "up"
 			}
+			// A filtered list (the format chooser) moves like its arrow
+			// keys; the view follows the cursor in both cases.
+			if d.filter != nil {
+				return a.filterKey(d, keyFor(key))
+			}
 			return a.listKey(d, keyFor(key))
 		}
 		d.scroll += delta * wheelStep

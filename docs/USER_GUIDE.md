@@ -59,6 +59,13 @@ with or without an extension.
   `Home`/`End` move; `Enter` chooses; `Esc` goes back to the file dialog
   without changing the format. A filter that matches nothing explains the
   allowed extension characters instead of showing an empty list.
+- **Scrolling:** the list is longer than any screen. Swipes/wheel and the arrow
+  keys move the highlight, and the view follows it: the list starts scrolling
+  when the highlight reaches the last visible row, and the row that comes next
+  appears with it. A slim scroll indicator on the right border of the dialog
+  shows where you are in the list; it moves with the view and stays visible
+  from the first row to the last. `↑` at the first row wraps to the last one
+  (and back), which is drawn too.
 - **Custom extensions:** type an extension the catalogue does not list (for
   example `xyz`, `tar.zst2` or `c++`). It appears at the top as
   `Use .xyz`; `Enter` applies it. Extensions use letters, digits and

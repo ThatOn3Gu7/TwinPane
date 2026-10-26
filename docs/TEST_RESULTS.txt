@@ -10,6 +10,16 @@ first. Everything below ran in this sandbox (Linux x86_64, Debian 13).
 - `go vet ./...`: ok.
 - `go test ./...`: ok, all packages (21 with tests, 2 without).
 - `go test -race -count=1 ./internal/fileext/ ./internal/ui/`: ok (1.0 s / 82 s).
+- Dialog scrolling fix (same change): `internal/ui/dialog_scroll_test.go`
+  (8 tests) covers the chooser following its highlight, wrap-around at both
+  ends, wheel scrolling, the indicator's presence/position/appearance at the
+  top, in the middle and at the end, tapping a scrolled row, text dialogs
+  keeping the `↑↓ scroll` row, short dialogs drawing no indicator, and long
+  bookmark lists. Re-run after the fix: gofmt clean, `go vet` ok,
+  `go test -count=1 ./internal/ui/ ./internal/fileext/` ok (106 s / 0.002 s).
+  Real binary on a raw pty at 96x24: the chooser scrolls with the arrow keys
+  and with injected wheel events, the indicator moves and never disappears,
+  and the next row appears when the highlight reaches the bottom.
 - New tests: `internal/fileext/fileext_test.go` (catalogue shape, uniqueness,
   find/search/rank, name composition, custom-extension validation) and
   `internal/ui/newfile_test.go` (20 tests: menu, folder flow through the menu,

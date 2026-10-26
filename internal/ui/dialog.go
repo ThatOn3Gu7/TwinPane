@@ -7,6 +7,10 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/mattn/go-runewidth"
+
+	"github.com/ThatOn3Gu7/TwinPane/internal/panel"
+	"github.com/ThatOn3Gu7/TwinPane/internal/scrollbar"
+	"github.com/ThatOn3Gu7/TwinPane/internal/theme"
 )
 
 // dialogKind identifies a dialog (used by tests and for behaviour tweaks).
@@ -654,25 +658,46 @@ func (a *App) renderDialog(d *dialog) string {
 		tail = append(tail, th.DialogHint.Render(truncRight(d.footer, w)))
 	}
 
-	// Scroll the body if everything doesn't fit the screen.
+	// Scroll the body if everything doesn't fit the screen. A pick list
+	// follows its cursor (↑↓ move the selection, so the view has to follow
+	// it), any other body scrolls with the arrow keys. Either way the
+	// position is shown by the scroll indicator on the right border and,
+	// for plain text, a "↑↓ scroll" row at the bottom.
 	avail := a.height - 4 - 2 - len(tail) // borders, title + gap
 	if avail < 1 {
 		avail = 1
 	}
-	if len(body) > avail {
-		maxScroll := len(body) - avail
-		if d.scroll > maxScroll {
-			d.scroll = maxScroll
+	d.scrollable = len(body) > avail
+	view := avail
+	moreRow := false
+	if d.scrollable && d.list == nil {
+		view = avail - 1
+		if view < 1 {
+			view = 1
+		} else {
+			moreRow = true
 		}
-		if d.scroll < 0 {
-			d.scroll = 0
+	}
+	// Keep the highlighted row in view: scrolling only starts once the
+	// cursor reaches an edge, exactly like the panels.
+	if d.list != nil && d.listCursor >= 0 && d.listCursor < len(bodyHits) {
+		cur := bodyHits[d.listCursor].line
+		if cur < d.scroll {
+			d.scroll = cur
 		}
-		more := th.DialogHint.Render("  ↑↓ scroll")
-		body = append(body[d.scroll:d.scroll+avail-1], more)
-		d.scrollable = true
-	} else {
-		d.scroll = 0
-		d.scrollable = false
+		if cur >= d.scroll+view {
+			d.scroll = cur - view + 1
+		}
+	}
+	maxScroll := max(0, len(body)-view)
+	d.scroll = min(max(d.scroll, 0), maxScroll)
+	var thumb []bool
+	if d.scrollable {
+		thumb = scrollbar.Cells(len(body), view, d.scroll, view) // body cells
+		body = body[d.scroll : d.scroll+view]
+		if moreRow {
+			body = append(body, th.DialogHint.Render("  ↑↓ scroll"))
+		}
 	}
 	shown := len(body)
 
@@ -684,6 +709,9 @@ func (a *App) renderDialog(d *dialog) string {
 	lines := append([]string{titleSt.Render(truncRight(sanitize(d.title), w)), ""}, body...)
 	lines = append(lines, tail...)
 	box := boxSt.Width(w + 4).Render(strings.Join(lines, "\n"))
+	if thumb != nil {
+		box = overlayScrollThumb(box, th, thumb, 3) // body starts under title + gap
+	}
 
 	// Record clickable regions in screen coordinates, using the same
 	// placement as overlay(): content line L of the box is at screen row
@@ -701,7 +729,7 @@ func (a *App) renderDialog(d *dialog) string {
 	for _, pd := range bodyHits {
 		bi := pd.line
 		if d.scrollable {
-			if bi < d.scroll || bi >= d.scroll+shown-1 {
+			if bi < d.scroll || bi >= d.scroll+view {
 				continue // scrolled out of view
 			}
 			bi -= d.scroll
@@ -712,6 +740,30 @@ func (a *App) renderDialog(d *dialog) string {
 		add(pd, 2+shown+pd.line)
 	}
 	return box
+}
+
+// overlayScrollThumb draws a vertical scroll indicator over the right border
+// of a rendered dialog box: one cell per visible body row, a "┃" where the
+// thumb is (see scrollbar.Cells). Overlaying the border keeps the dialog
+// exactly as wide as before, so text wrapping does not change when a list
+// starts to scroll.
+func overlayScrollThumb(box string, th theme.Theme, cells []bool, first int) string {
+	if len(cells) == 0 {
+		return box
+	}
+	lines := strings.Split(box, "\n")
+	for i, on := range cells {
+		li := first + i
+		if !on || li >= len(lines) {
+			continue
+		}
+		w := ansi.StringWidth(lines[li])
+		if w < 2 {
+			continue
+		}
+		lines[li] = ansi.Truncate(lines[li], w-1, "") + th.ScrollThumb.Render(panel.ScrollThumbChar)
+	}
+	return strings.Join(lines, "\n")
 }
 
 // overlayOrigin returns where overlay() places box on a w×h screen.
