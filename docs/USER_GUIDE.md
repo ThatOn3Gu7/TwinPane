@@ -30,6 +30,78 @@ behaviour are noted where they apply and summarised under
 
 ## Features
 
+### New in v0.10.0 (unreleased: New file, New menu)
+
+**`n` now opens a small menu** with *New file…* (`f`) and *New folder…*
+(`d`); Menu → *New file…* / *New folder…* do the same. New folder is the
+folder flow from v0.8.0 (`F7` still opens it directly), and folder creation
+itself did not change — local folders and cloud remotes work as before. New
+file is new and local-only.
+
+#### New file (`n` → *New file…*)
+
+Creates an **empty** file in the active panel's local folder. Inside a
+read-only archive or on a cloud remote the menu disables New file and says
+why; copy the item to a local panel first.
+
+The dialog has a **File name** field and a **Format** row. The Format row is
+optional: **left at *(none)*, the typed name is used exactly as written**,
+with or without an extension.
+
+- **Formats:** `Ctrl+F` (or tapping the ◂ ▸ arrows, or the `Ctrl+F` hint in the
+  hint bar) opens the format chooser with 238 predefined extensions in 15
+  categories: text & notes, documents, code, web, data & config, databases &
+  datasets, images, audio, video, subtitles, archives & disk images, scripts,
+  fonts, certificates & keys, other.
+- **Search:** start typing to filter. The search matches extensions (`.md`,
+  `md`), format names (`markdown`), descriptions (`spreadsheet`) and category
+  names (`images`). `↑`/`↓` (or `Ctrl+P`/`Ctrl+N`), `PgUp`/`PgDn`,
+  `Home`/`End` move; `Enter` chooses; `Esc` goes back to the file dialog
+  without changing the format. A filter that matches nothing explains the
+  allowed extension characters instead of showing an empty list.
+- **Custom extensions:** type an extension the catalogue does not list (for
+  example `xyz`, `tar.zst2` or `c++`). It appears at the top as
+  `Use .xyz`; `Enter` applies it. Extensions use letters, digits and
+  `. + - _`, up to 32 characters; spaces, `/`, `\` and other punctuation are
+  refused. Choosing *(none)* clears the format again.
+
+**How the name and the format combine.** The dialog shows the result live as
+`Creates: …` under the field, so the name is never a surprise:
+
+| Typed name | Format | File created |
+|---|---|---|
+| `notes` | *(none)* | `notes` |
+| `notes.md` | *(none)* | `notes.md` |
+| `notes` | Markdown `.md` | `notes.md` |
+| `notes.md` | Markdown `.md` | `notes.md` |
+| `notes.txt` | Markdown `.md` | `notes.md` |
+| `.bashrc` | *(none)* | `.bashrc` |
+| `.bashrc` | Markdown `.md` | `.bashrc.md` |
+
+An extension you type is **replaced** by the chosen format, never stacked:
+`notes.md` with `.md` stays `notes.md` and never becomes `notes.md.md`. When a
+different extension is replaced, the line shows both, for example
+`Creates: notes.md (empty file) (typed notes.txt)`. The note about the typed
+name only appears when a format actually replaced an extension; appending a
+missing extension (or using *(none)*) does not repeat the name.
+
+**Safety:**
+
+- The file is always created empty; no template or content is generated.
+- An existing file or folder is never replaced. The dialog reports
+  `"notes.md" already exists — nothing was changed` and keeps your input.
+- Names are validated like rename: empty names, `.`, `..`, `/` or `\`,
+  control characters and names over 255 bytes are refused before anything is
+  touched. The name cannot reach outside the panel's folder.
+- Read-only folders (`permission denied`), a folder that disappeared, and
+  other filesystem errors stay in the dialog with a plain explanation, so
+  nothing has to be retyped. `Esc` cancels and creates nothing.
+
+On success the panel is refreshed, the cursor moves to the new file, and the
+status line reports `Created file "notes.md"`. The dialog works with the
+keyboard and the mouse (tapping the menu rows, the ◂ ▸ arrows and hint items)
+and wraps its text on narrow terminals.
+
 ### New in v0.9.0 (search, operations, analysis, archives)
 
 TwinPane 0.9.0 adds native search, reviewable directory comparison,
@@ -152,7 +224,7 @@ passwords or tokens.
   gets the usual Skip / Overwrite (files) or Skip / Merge (folders) dialog,
   with "apply to all"; nothing is overwritten without asking. A move removes
   each source only after rclone transferred it.
-- **New folder** (`n`/`F7`), **rename** (`r`, one item at a time; bulk
+- **New folder** (`F7`, or `n` → *New folder…*), **rename** (`r`, one item at a time; bulk
   rename is for local folders) and **delete** (`d`) work on remotes. Rename
   never replaces another item: a name already used in the folder is
   refused, and so is a name that differs from an existing one only in
@@ -216,13 +288,15 @@ never waits for a password). A file in no supported format, or a 7Z/RAR
 without 7-Zip, is refused with the list of formats or the package to
 install.
 
-#### New folder (`n` / `F7`)
+#### New folder (`F7`, or `n` → *New folder…*)
 
 Creates a folder in the active panel (local or remote); the cursor moves to
 it. Empty names, `.`, `..` and names containing `/` are refused in the
 dialog, and so is a name that already exists (nothing existing is ever
 touched). Remotes without real folders (such as S3 buckets) cannot keep an
-empty folder; TwinPane then says so instead of reporting success.
+empty folder; TwinPane then says so instead of reporting success. Since
+v0.10.0 `n` opens the New menu and `F7` keeps going straight to this prompt;
+the creation flow itself is unchanged.
 
 ### v0.7.0 (phase 7: help screen, editor confirmation)
 
@@ -1189,9 +1263,13 @@ v0.3.1; the matching rules below still apply)
 | `S` | reverse the sort order (↑/↓) |
 | `Ctrl+L` | refresh both panels (`Ctrl+R` in v0.7.0) |
 | `Ctrl+R` | **sources**: local files or an rclone remote for the active panel (new in v0.8.0) |
-| `n` / `F7` | **new folder** (new in v0.8.0) |
+| `n` | **new file / new folder** menu (new in v0.10.0) |
+| `F7` | **new folder** directly (new in v0.8.0) |
 | `?` / `F1` | help (scroll with `↑`/`↓` `PgUp`/`PgDn` `g`/`G`; any other key closes it) |
 | `q` / `F10` / `Ctrl+C` | quit when idle; with active tasks, `q`/`F10` opens tasks and `Ctrl+C` cancels the latest |
+
+**Changed in v0.10.0:** `n` opens the New file / New folder menu (it created
+a folder directly in v0.8.0–v0.9.0); `F7` still creates a folder directly.
 
 **Changed in v0.8.0:** refresh is `Ctrl+L` (was `Ctrl+R`);
 `Ctrl+R` opens Sources (cloud remotes); `n`/`F7` (new folder) are new. These

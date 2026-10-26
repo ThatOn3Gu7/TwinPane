@@ -55,6 +55,8 @@ func (h *harness) press(keys ...string) {
 			m = tea.KeyMsg{Type: tea.KeyCtrlK}
 		case "ctrl+r":
 			m = tea.KeyMsg{Type: tea.KeyCtrlR}
+		case "ctrl+f":
+			m = tea.KeyMsg{Type: tea.KeyCtrlF}
 		case "ctrl+l":
 			m = tea.KeyMsg{Type: tea.KeyCtrlL}
 		case "f7":

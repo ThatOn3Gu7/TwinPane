@@ -80,7 +80,7 @@ func (a *App) menuEntries() (title string, entries []menuEntry) {
 				add(menuEntry{label: "Rename", key: "r", send: "r"})
 			}
 		}
-		add(menuEntry{label: "New folder", key: "n", send: "n"})
+		add(menuEntry{label: "New folder…", run: func() tea.Cmd { return a.beginMkdir() }})
 		add(menuEntry{label: "Sources…", detail: "local / cloud", key: "^R", send: "ctrl+r"})
 		add(menuEntry{label: "Refresh", key: "^L", send: "ctrl+l"})
 		add(menuEntry{label: "Back to local files", detail: shortPath(a.localDirFor(a.active)), key: "l",
@@ -140,7 +140,8 @@ func (a *App) menuEntries() (title string, entries []menuEntry) {
 			add(menuEntry{label: "Share…", detail: "Android share sheet", key: "s", run: a.shareFile})
 		}
 	}
-	add(menuEntry{label: "New folder", key: "n", send: "n"})
+	add(menuEntry{label: "New file…", run: func() tea.Cmd { return a.beginNewFile() }})
+	add(menuEntry{label: "New folder…", run: func() tea.Cmd { return a.beginMkdir() }})
 	if a.canComparePanels() {
 		add(menuEntry{label: "Compare directories", key: "D", send: "D"})
 	}

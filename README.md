@@ -173,6 +173,20 @@ The [user guide](docs/USER_GUIDE.md) describes every feature in detail.
 
 Not included: configurable keys or themes, and editing archives in place.
 
+### New in v0.10.0 (unreleased)
+
+- **New file** (`n` → *New file…*, or Menu → *New file…*): creates an empty
+  file in the active local folder. Type the name with or without an extension
+  and, optionally, pick a format: 238 predefined extensions in 15 categories,
+  searchable by extension, name, description or category, plus any custom
+  extension you type. `notes.md` with Markdown stays `notes.md` (no
+  `notes.md.txt`); a different extension is replaced and the dialog shows the
+  exact name while you type. An existing file or folder is never replaced, and
+  invalid names or filesystem errors stay in the dialog with an explanation.
+- **`n` now opens a small New file / New folder menu.** New folder is the
+  existing folder flow, and `F7` still opens it directly. Folder creation
+  itself is unchanged, including on cloud remotes; New file is local-only.
+
 ### New in v0.9.0
 
 - **Advanced Search** (`Ctrl+G` from `/`) adds recursive fuzzy filename and
@@ -207,7 +221,8 @@ Not included: configurable keys or themes, and editing archives in place.
   conflict dialog. rclone is optional: without it TwinPane explains how to
   install it, and it never asks for or stores logins (`rclone config` does
   that). See [Cloud remotes](docs/USER_GUIDE.md#cloud-remotes-rclone).
-- **New folder** (`n` or `F7`), on local folders and remotes.
+- **New folder** (`F7`, or `n` → *New folder…*; `n` alone opened it in
+  v0.8.0), on local folders and remotes.
 - **Extraction of more formats** (`x` on the file): TAR, TAR.GZ/TGZ,
   TAR.BZ2, TAR.XZ, TAR.ZST, TAR.LZ4 and single GZ, BZ2, XZ, ZST, LZ4 files
   are built in; 7Z and RAR use an installed 7-Zip (links inside them are
@@ -417,11 +432,11 @@ twinpane --version
 | `b` / `B` | bookmarks / add | `M` | action menu |
 | `i` | storage | `?` / `F1` | help (with `/` filter) |
 | `~` | home folder | `q` / `F10` | quit when idle; active tasks must finish or be cancelled |
-| `Ctrl+R` ¹ | sources: local / cloud | `n` / `F7` ¹ | new folder |
-| `Ctrl+L` ¹ | refresh both panels | | |
+| `Ctrl+R` ¹ | sources: local / cloud | `n` | new file / new folder menu |
+| `Ctrl+L` ¹ | refresh both panels | `F7` ¹ | new folder (direct) |
 
-¹ New in v0.8.0. In v0.7.0, `Ctrl+R` refreshes and there is no new-folder
-key.
+¹ New in v0.8.0; since the unreleased v0.10.0, `n` opens the New file / New
+folder menu and `F7` keeps creating a folder directly.
 
 The [user guide](docs/USER_GUIDE.md#keyboard-controls) lists every key,
 including those of the viewer, dialogs, search and bulk rename.

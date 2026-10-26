@@ -403,8 +403,9 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		a.lastClick = clickState{} // a key between two taps is no double tap
 		// A text field in a dialog receives the raw message, including
-		// multi-rune input and bracketed paste.
-		if a.dialog != nil && a.dialog.input != nil {
+		// multi-rune input and bracketed paste. So does a pick list with a
+		// filter field (the format chooser).
+		if a.dialog != nil && (a.dialog.input != nil || a.dialog.filter != nil) {
 			return a, a.dialogKey(msg)
 		}
 		if a.dialog == nil && a.tasks.showing {
@@ -498,7 +499,7 @@ func (a *App) uiState() uiState {
 	return uiState{
 		dialog: a.dialog, search: a.search, advancedSearch: a.advancedSearch, bulk: a.bulk, tasks: a.tasks.showing,
 		busy: a.busy(), quitting: a.quitting, editing: a.editing, help: a.showHelp,
-		inputBox: a.dialog != nil && a.dialog.input != nil, viewer: a.viewer, props: a.props,
+		inputBox: a.dialog != nil && (a.dialog.input != nil || a.dialog.filter != nil), viewer: a.viewer, props: a.props,
 		comparison: a.comparison, folderSize: a.folderSize,
 	}
 }
@@ -620,6 +621,8 @@ func (a *App) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return a, a.refreshBoth()
 	case k.Sources.Matches(msg):
 		return a, a.openSources()
+	case k.New.Matches(msg):
+		return a, a.openNewMenu()
 	case k.Mkdir.Matches(msg):
 		return a, a.beginMkdir()
 	case k.Copy.Matches(msg):

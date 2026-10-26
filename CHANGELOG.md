@@ -9,6 +9,29 @@ The complete description of every feature is in
 
 ## [Unreleased]
 
+New file creation, and one key for both new files and new folders.
+
+### Added
+- **New file** (`n` → *New file…*, also Menu → *New file…*): creates an empty
+  file in the active local folder. The file name is typed with or without an
+  extension and carries an optional format: 238 predefined extensions in 15
+  categories, searchable by extension, format name, description or category,
+  plus any custom extension the user types. A file can also be created with
+  no format at all. A typed extension is replaced by the chosen format, never
+  stacked (`notes.md` with Markdown stays `notes.md`, never `notes.md.txt`),
+  and a live `Creates: …` line shows the resulting name.
+- Existing files and folders are never replaced (`O_EXCL`); conflicts,
+  invalid names (empty, `.`, `..`, separators, control characters, over 255
+  bytes) and filesystem errors stay in the dialog with an explanation.
+  Success refreshes the panel, focuses the new file and reports it in the
+  status line.
+
+### Changed
+- `n` opens a small New file / New folder menu instead of jumping into the
+  folder prompt. `F7` still opens the new-folder prompt directly, and the
+  folder flow itself — including cloud remotes — is unchanged. The hint bar,
+  help screen and action menu list both entries.
+
 ## [0.9.0]
 
 Advanced Search, reviewable directory comparison, folder-size analysis,

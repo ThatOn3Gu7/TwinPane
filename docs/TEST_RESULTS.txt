@@ -1,3 +1,44 @@
+New file and New folder (unreleased v0.10.0): verification log (2026-10-26T17:10Z, go1.27.3 linux/amd64)
+The change adds the `n` New file / New folder menu, the New file dialog and the
+searchable `internal/fileext` extension catalogue. Existing behaviour (folder
+creation, dialogs, hints, mouse, archives, remotes) was kept, and the two
+existing tests that pressed `n` to reach the folder prompt now open the menu
+first. Everything below ran in this sandbox (Linux x86_64, Debian 13).
+
+## Summary
+- gofmt: clean (`gofmt -l .` printed nothing).
+- `go vet ./...`: ok.
+- `go test ./...`: ok, all packages (21 with tests, 2 without).
+- `go test -race -count=1 ./internal/fileext/ ./internal/ui/`: ok (1.0 s / 82 s).
+- New tests: `internal/fileext/fileext_test.go` (catalogue shape, uniqueness,
+  find/search/rank, name composition, custom-extension validation) and
+  `internal/ui/newfile_test.go` (20 tests: menu, folder flow through the menu,
+  plain/preset/custom creation, `notes.md` not duplicated, replaced extension,
+  search by extension/name/description/category, no match, conflicts, invalid
+  names, empty name with a format, missing folder, permission denied, pasted
+  text, mouse on the menu, the Format arrow and the Ctrl+F hint, archive
+  refusal, action-menu entries, catalogue grouping, 44x18 terminal).
+- Real binary on a raw pty (scripts/ptyterm.py, 96x26 and 44x18): `n` menu,
+  `n`→`d` folder creation, `n`→`f` file creation without a format, format
+  search ("md", "png"), `notes.md` conflict message (`"notes.md" already
+  exists — nothing was changed`, original file kept), and the narrow layout
+  (dialog and chooser fully inside 44x18). Created files were 0 bytes.
+
+## Not verified here
+- rclone and 7-Zip are not installed in this sandbox, so the real-rclone and
+  real-7-Zip tests skipped as designed (`TWINPANE_REQUIRE_TOOLS` not set).
+  `TestCloudMkdirRenameDelete` (real rclone) therefore did not run; its `n`
+  press was updated to the new menu but that path is covered locally by
+  `TestLocalMkdirNameValidation`.
+- No TUI smoke scripts (tui_smoke, phase4..phase7) were run; they need tmux,
+  pyte and Neovim, which this sandbox lacks. The manual pty check above used
+  pyte only.
+- The permission test is skipped when the tests run as root (a read-only
+  folder stays writable); it ran as a normal user here.
+- Nothing ran on GitHub Actions, Termux/Android, macOS or Windows. Windows
+  name rules (`\ < > : " | ? *`, reserved devices) still come from
+  `ops.ValidateName` but were not exercised here.
+
 TwinPane 0.8.0 release preparation: verification log (2026-10-17T18:20Z, go1.23.4 linux/amd64)
 Since 0.7.0: rclone cloud remotes (Ctrl+R), refresh moved to Ctrl+L, new folder (n/F7), loading
 spinner, TAR/GZ/BZ2/XZ/ZST/LZ4 and 7Z/RAR extraction, installer output, build output paths. Fixed

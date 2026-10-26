@@ -222,7 +222,7 @@ func (a *App) refreshBoth() tea.Cmd {
 // remoteOpened reports a panel that just started showing a remote.
 func (a *App) remoteOpened(p *panel.Panel) {
 	src := p.Source()
-	a.setStatusLevel(fmt.Sprintf("%s: (%s) — c/m copy·move to the other panel · n new folder · r rename · d delete · ^R sources",
+	a.setStatusLevel(fmt.Sprintf("%s: (%s) — c/m copy·move to the other panel · n new · r rename · d delete · ^R sources",
 		src.Remote.Name, src.Remote.Type), lvlInfo)
 }
 
@@ -392,7 +392,7 @@ func (a *App) startCloudTransfer(c *cloud.Client, srcIdx int, title string, req 
 	return a.startCmds(s)
 }
 
-// ---- new folder (n / F7) -----------------------------------------------------------
+// ---- new folder (F7, or n → New folder…) --------------------------------------------
 
 func (a *App) beginMkdir() tea.Cmd {
 	if a.refuseInArchive("Creating folders") {

@@ -148,7 +148,7 @@ func (a *App) browseHints() []barItem {
 		out = append(out, item("z", "compress", "z"))
 	}
 	// phase 9, again after everything that was there before
-	out = append(out, item("^R", "sources", "ctrl+r"), item("n", "new folder", "n"))
+	out = append(out, item("^R", "sources", "ctrl+r"), item("n", "new file / folder", "n"))
 	return out
 }
 
@@ -179,7 +179,7 @@ func (a *App) remoteHints() []barItem {
 		}
 		out = append(out, item("d", "delete", "d"))
 	}
-	out = append(out, item("n", "new folder", "n"), item("^R", "sources", "ctrl+r"), item("^L", "refresh", "ctrl+l"))
+	out = append(out, item("n", "new", "n"), item("^R", "sources", "ctrl+r"), item("^L", "refresh", "ctrl+l"))
 	hidden := "show hidden"
 	if a.showHidden {
 		hidden = "hide hidden"
@@ -268,16 +268,21 @@ func (a *App) dialogHints(d *dialog) []barItem {
 		}
 	}
 	switch {
+	case d.filter != nil:
+		out := []barItem{item("type", "to filter", "")}
+		if len(d.list) > 0 {
+			out = append(out, item("⏎", "choose", "enter"))
+		}
+		return append(out, item("↑↓", "move", ""), item("Esc", "back", "esc"))
 	case d.input != nil:
 		out := []barItem{item("⏎", "OK", "enter")}
 		for _, t := range d.inToggles {
 			out = append(out, item(t.help, strings.ToLower(t.label), t.key))
 		}
-		out = append(out, item("Esc", escDesc, "esc"))
 		for _, sel := range d.selectors {
 			out = append(out, item(sel.help, sel.hint, sel.keys[1]))
 		}
-		return out
+		return append(out, item("Esc", escDesc, "esc"))
 	case d.list != nil:
 		out := []barItem{item("↑↓", "choose", "")}
 		if d.listKeyed() {
@@ -286,7 +291,7 @@ func (a *App) dialogHints(d *dialog) []barItem {
 			out = append(out, item("1-9", "pick", ""))
 		}
 		pick := "open"
-		if d.kind == dlgMenu {
+		if d.kind == dlgMenu || d.kind == dlgNewMenu {
 			pick = "run"
 		}
 		if len(d.list) > 0 {
@@ -443,7 +448,8 @@ func (a *App) fitSegment(it barItem, w int) string {
 func keyFor(s string) tea.KeyMsg {
 	special := map[string]tea.KeyType{
 		"esc": tea.KeyEsc, "enter": tea.KeyEnter, "tab": tea.KeyTab, "backspace": tea.KeyBackspace,
-		"ctrl+r": tea.KeyCtrlR, "ctrl+l": tea.KeyCtrlL, "f7": tea.KeyF7, "ctrl+t": tea.KeyCtrlT, "f4": tea.KeyF4, "up": tea.KeyUp, "down": tea.KeyDown,
+		"ctrl+r": tea.KeyCtrlR, "ctrl+l": tea.KeyCtrlL, "ctrl+f": tea.KeyCtrlF, "f7": tea.KeyF7,
+		"ctrl+t": tea.KeyCtrlT, "f4": tea.KeyF4, "up": tea.KeyUp, "down": tea.KeyDown,
 		"pgup": tea.KeyPgUp, "pgdown": tea.KeyPgDown, "left": tea.KeyLeft, "right": tea.KeyRight,
 		"shift+tab": tea.KeyShiftTab, "home": tea.KeyHome, "end": tea.KeyEnd,
 	}

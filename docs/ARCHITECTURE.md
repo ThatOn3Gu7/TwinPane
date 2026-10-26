@@ -20,6 +20,7 @@ cmd/twinpane ──► internal/ui ──► internal/panel ──► internal/f
 |---|---|---|
 | `fsys` | Reading directories, `Entry`/`Listing` types, sorting, size/time formatting, name sanitising. Defines the `Lister` interface. | stdlib only |
 | `panel` | One panel's state (path, entries, cursor, scroll offset, selection, error, loading). Has navigation methods, async loads that return `tea.Cmd`, and rendering at a given size. | `fsys`, `theme`, Bubble Tea types |
+| `fileext` | File-extension catalogue for New file: 238 extensions in 15 categories, category/name/description search, and the naming rules (`SplitExtension`, `FinalName`, `NormalizeExtension`). No I/O and no UI imports. | stdlib only |
 | `theme` | Every Lip Gloss style in one struct. | Lip Gloss |
 | `ops` | File-operation engine: `Validate`, `Run` (copy/move), `PlanDelete`/`Delete`, `Trasher` implementations, `ValidateName`/`Rename`. Reports through plain callback hooks. | stdlib, `x/sys` |
 | `editor` | Picks the external editor (`$VISUAL` → `$EDITOR` → fallbacks), checks whether a file is editable or binary, builds the `*exec.Cmd`. Phase 3: `Process` runs it with terminal hand-over and job control (`process_jobctl.go`, termios per OS). | stdlib, `x/sys` |
@@ -967,6 +968,49 @@ exit 130/143 after the cleanup trap removed the temporary folder.
   tool check, the optional-companions report (Linux and Termux) and
   interruption, under dash and bash.
 
+## New file and New folder (v0.10.0)
+
+`n` opens a small menu (`dlgNewMenu`) with New file… and New folder…; Menu →
+the same entries. New folder calls the unchanged phase-9 `beginMkdir`
+(`cloud.go`), and `F7` still binds it directly. New file is local-only:
+inside an archive the menu entry is disabled, on a remote it explains that the
+file must be created in a local folder.
+
+UI side (`internal/ui/newfile.go`):
+
+- `newFileState` holds the target panel/folder, the chosen extension and the
+  two dialogs (the file dialog stays alive while the format chooser is open,
+  so `Esc` in the chooser returns to it with everything typed).
+- `dlgNewFile` is an input dialog with one extra selector row whose ◂ ▸
+  arrows and `Ctrl+F` both open the chooser. The live `Creates: …` line is a
+  `dialog.note` rendered under the input, outside the scrolling body, so it
+  stays visible on short terminals.
+- `dlgFormat` is a pick list with a filter field (`dialog.filter`,
+  `filterLabel`, `onFilter`). `App.Update` treats filter dialogs like text
+  fields, so multi-rune messages and pastes reach the filter instead of being
+  split into command bursts. Keys: arrows/PgUp/PgDn/Home/End move, Enter
+  picks, everything else edits the filter. `plainRows` drops the number
+  column; category headings are `listItem.header` rows, rendered muted,
+  disabled and skipped by cursor movement.
+- The chooser rows come from `fileext.Search`: "(none)" (when nothing is
+  filtered), a custom `Use .xyz` row when the filter normalises to an
+  extension that is not a preset, then every matching category with its
+  extensions. `pickExt` maps a row to the extension it selects.
+- `createNewFile` composes the name with `fileext.FinalName`, validates it
+  with `ops.ValidateName` plus a base-name check, then uses `os.OpenFile`
+  with `O_CREATE|O_EXCL` (never replaces anything). Errors are phrased by
+  `newFileError` (exists / permission / missing folder / other) and shown in
+  `dialog.errLine`; nothing is closed or retyped. Success closes the dialog,
+  sets an OK status and batches `RefreshFocus(name)` for the panel with a
+  refresh of the other panel, like folder creation.
+
+Tests: `internal/fileext/fileext_test.go` (catalogue shape and uniqueness,
+find/search/rank, name composition, custom-extension validation),
+`internal/ui/newfile_test.go` (menu, folder flow, plain/preset/custom
+creation, no stacked extensions, conflicts, invalid names, empty name,
+missing folder, permission error, pastes, mouse, archive refusal, action
+menu, narrow terminal).
+
 ## Extension points for later phases
 - **Archive browsing:** ZIP and TAR-family archives use the virtual read-only
   panel interface (`List`, `InnerOf`/`VirtualPath`, `Display`, `Changed` and
@@ -1115,6 +1159,13 @@ exit 130/143 after the cleanup trap removed the temporary folder.
     refused).
   - `storage`: mountinfo parsing, mount lookup, size math, filesystem type
     and read-only flag, a real `Stat` of the test folder, unavailable values.
+  - `ui/newfile_test.go`: the New menu (entries, hints, F7), New folder
+    through the menu, file creation without a format, with a preset, with a
+    custom extension, full names (`notes.md`), replaced extensions, format
+    search by category/description/no match, conflicts, invalid names, empty
+    name with a format, missing folder, permission denied, pasted text, mouse
+    (menu rows and the ◂ arrow), archive refusal, action-menu entries, and a
+    44×18 terminal.
   - `ui/phase6_test.go`: the compress dialog (selectors, extension swap,
     remembered format, structure, single-file refusal, wrong extension,
     unavailable 7Z, overwrite confirmation, awkward names, cancel leaves

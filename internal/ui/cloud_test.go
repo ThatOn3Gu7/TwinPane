@@ -235,7 +235,12 @@ func TestCloudTransfersBothWays(t *testing.T) { // REAL rclone
 // No rclone is involved: this is the local path of the same dialog.
 func TestLocalMkdirNameValidation(t *testing.T) {
 	h, env := newOpsApp(t, nil, nil)
+	// n opens the small New menu; d is New folder (F7 opens it directly)
 	h.press("n")
+	if !h.dialogKind(dlgNewMenu) {
+		t.Fatalf("new menu:\n%s", h.view())
+	}
+	h.press("d")
 	if !h.dialogKind(dlgMkdir) {
 		t.Fatalf("new folder prompt:\n%s", h.view())
 	}
@@ -273,7 +278,7 @@ func TestCloudMkdirRenameDelete(t *testing.T) { // REAL rclone
 	h.openRemote("box")
 	p := h.a.ActivePanel()
 
-	h.press("n")
+	h.press("n", "d")
 	if !h.dialogKind(dlgMkdir) {
 		t.Fatalf("new folder prompt:\n%s", h.view())
 	}

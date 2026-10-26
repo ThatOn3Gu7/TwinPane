@@ -42,6 +42,11 @@ const (
 	dlgSources     // Sources picker (Ctrl+R): local files or an rclone remote
 	dlgMkdir       // new folder name prompt
 	dlgSyncConfirm // final approval for a reviewed directory plan
+
+	// phase 10
+	dlgNewMenu // n: small menu with New file / New folder
+	dlgNewFile // new file: name, optional format
+	dlgFormat  // searchable list of predefined file extensions
 )
 
 // dlgCompress is the compression dialog (z). It kept the kind of the
@@ -82,6 +87,8 @@ type listItem struct {
 	// instead of its number; danger draws it in the warning colour.
 	key    string
 	danger bool
+	// header marks a non-selectable group heading in a filtered list.
+	header bool
 }
 
 // listAction is an extra key of a pick-list dialog acting on the
@@ -135,11 +142,21 @@ type dialog struct {
 	input      *lineInput
 	inputLabel string
 	onSubmit   func(a *App, value string) tea.Cmd
-	errLine    string
+	// optional line under the input (e.g. a live file-name preview), kept
+	// out of the scrollable body so it stays visible
+	note    func() (string, bool)
+	errLine string
 
 	// optional switches for an input dialog (e.g. "regular expression"),
 	// flipped with their key while typing
 	inToggles []*inputToggle
+
+	// optional filter field for a pick list (format chooser): typing filters
+	// the list, ↑↓ still move and Enter picks.
+	filter      *lineInput
+	filterLabel string
+	plainRows   bool         // no number column (the format chooser)
+	onFilter    func(a *App) // rebuilds the list from filter
 
 	// optional checkbox toggled by toggleKey (e.g. "apply to all")
 	toggleLabel string
@@ -215,6 +232,9 @@ func (a *App) dialogKey(msg tea.KeyMsg) tea.Cmd {
 			d.errLine = ""
 			return nil
 		}
+	}
+	if d.filter != nil {
+		return a.filterKey(d, msg)
 	}
 	if d.input != nil {
 		if s == "enter" {
@@ -337,6 +357,62 @@ func (a *App) listKey(d *dialog, msg tea.KeyMsg) tea.Cmd {
 	return nil
 }
 
+// filterKey routes keys for a pick list with a filter field (the format
+// chooser): ↑↓/PgUp/PgDn/Home/End move through the list, typing narrows it
+// down and Enter picks the highlighted row.
+func (a *App) filterKey(d *dialog, msg tea.KeyMsg) tea.Cmd {
+	n := len(d.list)
+	move := func(delta int) {
+		if n == 0 {
+			return
+		}
+		for i := 0; i < n; i++ {
+			d.listCursor = (d.listCursor + delta + n) % n
+			if !d.list[d.listCursor].disabled {
+				return
+			}
+		}
+	}
+	switch msg.String() {
+	case "up", "ctrl+p":
+		move(-1)
+		return nil
+	case "down", "ctrl+n", "tab":
+		move(1)
+		return nil
+	case "pgup":
+		for i := 0; i < 8; i++ {
+			move(-1)
+		}
+		return nil
+	case "pgdown":
+		for i := 0; i < 8; i++ {
+			move(1)
+		}
+		return nil
+	case "home":
+		d.listCursor = n - 1
+		move(1)
+		return nil
+	case "end":
+		d.listCursor = 0
+		move(-1)
+		return nil
+	case "enter":
+		if n > 0 && !d.list[d.listCursor].disabled {
+			return d.onPick(a, d.listCursor)
+		}
+		return nil
+	}
+	if d.filter.Update(msg) {
+		d.errLine = ""
+		if d.onFilter != nil {
+			d.onFilter(a)
+		}
+	}
+	return nil
+}
+
 // listKeyed reports a list whose items have their own keys (a menu).
 func (d *dialog) listKeyed() bool {
 	for _, it := range d.list {
@@ -412,9 +488,12 @@ func (a *App) renderDialog(d *dialog) string {
 		}
 		for i, it := range d.list {
 			num := "   "
-			if keyed {
+			switch {
+			case it.header, d.plainRows:
+				num = "   "
+			case keyed:
 				num = runewidth.FillRight(it.key, 3)
-			} else if i < 9 {
+			case i < 9:
 				num = string(rune('1'+i)) + "  "
 			}
 			row := num + it.label + strings.Repeat(" ", labelW-runewidth.StringWidth(it.label))
@@ -427,7 +506,7 @@ func (a *App) renderDialog(d *dialog) string {
 			switch {
 			case i == d.listCursor:
 				body = append(body, th.ButtonFocus.Padding(0).Render(row))
-			case it.disabled:
+			case it.header, it.disabled:
 				body = append(body, th.DialogHint.Render(row))
 			case it.danger:
 				body = append(body, th.DialogWarn.Render(row))
@@ -462,6 +541,13 @@ func (a *App) renderDialog(d *dialog) string {
 	}
 
 	var tail []string
+	if d.filter != nil {
+		tail = append(tail, "")
+		if d.filterLabel != "" {
+			tail = append(tail, th.DialogText.Render(d.filterLabel))
+		}
+		tail = append(tail, d.filter.View(th, w))
+	}
 	if d.toggleLabel != "" {
 		box := "[ ]"
 		if d.toggled {
@@ -519,6 +605,17 @@ func (a *App) renderDialog(d *dialog) string {
 			}
 			tailHits = append(tailHits, pending{hitInToggle, ti, len(tail), 0, min(w, runewidth.StringWidth(box+" "+t.label+" ("+t.help+")"))})
 			tail = append(tail, th.DialogText.Render(truncRight(box+" "+t.label+" ("+t.help+")", w)))
+		}
+	}
+	if d.note != nil {
+		if txt, isWarn := d.note(); txt != "" {
+			st := th.DialogHint
+			if isWarn {
+				st = th.DialogWarn
+			}
+			for _, wl := range wrapText(sanitize(txt), w) {
+				tail = append(tail, st.Render(wl))
+			}
 		}
 	}
 	if d.errLine != "" {

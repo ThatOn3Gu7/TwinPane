@@ -46,6 +46,10 @@ type KeyMap struct {
 
 	// Phase 9: Sources took Ctrl+R (Refresh moved to Ctrl+L), Mkdir
 	Sources, Mkdir Binding
+
+	// Phase 10: n opens the New file / New folder menu; F7 still creates a
+	// folder directly.
+	New Binding
 }
 
 // DefaultKeys returns the default key bindings.
@@ -97,7 +101,8 @@ func DefaultKeys() KeyMap {
 		Storage:   Binding{[]string{"i"}, "i", "storage / free space"},
 
 		Sources: Binding{[]string{"ctrl+r"}, "^R", "source: local / cloud"},
-		Mkdir:   Binding{[]string{"n", "f7"}, "n/F7", "new folder"},
+		Mkdir:   Binding{[]string{"f7"}, "F7", "new folder (direct)"},
+		New:     Binding{[]string{"n"}, "n", "new file / new folder"},
 	}
 }
 
@@ -118,7 +123,7 @@ func (k KeyMap) helpSections() [2][]helpSection {
 		{
 			{"File operations", []Binding{k.Copy, k.Move, k.Rename, k.Delete, k.Edit, k.EditWith, k.Properties, k.Cancel}},
 			{"View & general", []Binding{k.View, k.Search, k.Hidden, k.Sort, k.Reverse, k.Refresh, k.Tasks, k.Quit, k.Help}},
-			{"Folders & cloud (rclone)", []Binding{k.Mkdir, k.Sources,
+			{"Folders & cloud (rclone)", []Binding{k.New, k.Mkdir, k.Sources,
 				{Help: "c / m", Desc: "upload / download"},
 				{Help: "Esc", Desc: "stop a slow listing"}}},
 			{"Directory analysis", []Binding{k.FolderSize, k.Compare}},
