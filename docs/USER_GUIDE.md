@@ -1184,7 +1184,8 @@ Limits (from Termux's terminal code; not tested on a phone):
   they are shown.
 - Since v0.9.0, the choice is saved and restored the next time you open
   TwinPane. It is stored in `settings.json` in the same configuration
-  directory as bookmarks.
+  directory as bookmarks, and the same switch appears in the Settings
+  screen under Panels (both drive one preference).
 
 **Bulk rename: how to finish**
 
@@ -1427,6 +1428,54 @@ v0.3.1; the matching rules below still apply)
   the selection is cleared, and the cursor stays on its item under the new
   name.
 
+## Settings screen
+
+`F9`, `Ctrl+S` and **Settings…** in the action menu (`M`, or a tap on the
+TwinPane badge) all open the same screen. `Ctrl+S` was free — copy is
+`Ctrl+C` and move is `Ctrl+M` — so no existing control moved. The screen is
+a single list with section titles:
+
+- **Panels** — startup folder for the left and the right panel (empty means
+  home; `~` and `~/path` expand at start), which panel is focused at
+  startup, focus-mode preview, and the shared hidden-files switch (the same
+  toggle as `h`).
+- **Sorting** — the default sort key, direction and directories-first for
+  panels from now on. Pressing `s`/`S` in the panels still only changes the
+  current session and is never written to the file.
+- **Notifications** — the corner the pop-up uses (bottom-right by default)
+  and how long it stays (2–10 seconds). New notifications follow the values
+  immediately; the current one keeps its place.
+- **Appearance** — theme presets: `default`, `green`, `amber`. The choice
+  repaints the whole UI at once.
+- **Editor & viewer** — the preferred editor command (empty: `$VISUAL`,
+  `$EDITOR`, then the first detected editor; a value TwinPane cannot parse
+  or find falls back with a note), editor tips, mouse input on/off (takes
+  effect at the next start; the flags and `TWINPANE_NO_MOUSE` still
+  override), and the viewer's line wrapping and line numbers for files
+  opened from now on.
+- **Compression** — the default format (`auto` picks the first capable
+  format for the selection, ZIP in practice) and the level for the
+  remembered format.
+
+**Keys on the screen:** `↑`/`↓` (or `k`/`j`) move, `←`/`→` (or `h`/`l`,
+`Space`, `Enter`) change a value — the text rows open a one-line input —
+`r` resets everything to the defaults behind a `y` confirmation, `?` opens
+the help, and `Esc` / `F9` / `Ctrl+S` close the screen. The mouse works
+too: a tap selects a row, a second tap on the selected row changes it, the
+wheel moves through the list, and the screen shrinks with the terminal.
+
+**Storage:** preferences live in `settings.json` next to `bookmarks.json`
+(`$TWINPANE_CONFIG_DIR`, default `~/.config/twinpane`) and are written
+atomically on every change. The file is versioned: unknown fields from
+older or newer files are ignored where possible, an unreadable or
+newer-version file is never overwritten by ordinary saves, and the screen
+shows what happened as a banner with the recovery hint — `r` then `y`
+is the deliberate repair that writes fresh defaults. Startup folders, the
+starting panel and the mouse preference apply at the next start;
+everything else updates live. `--no-mouse` and `TWINPANE_NO_MOUSE` still
+switch the mouse off for the session, and `--no-editor-tips` still
+disables tips whatever the screen says.
+
 ## Keyboard controls
 
 | Key | Action |
@@ -1480,6 +1529,7 @@ v0.3.1; the matching rules below still apply)
 | `Ctrl+R` | **sources**: local files or an rclone remote for the active panel (new in v0.8.0) |
 | `n` / `F7` | **new folder** (new in v0.8.0) |
 | `?` / `F1` | help (scroll with `↑`/`↓` `PgUp`/`PgDn` `g`/`G`; any other key closes it) |
+| `F9` / `Ctrl+S` | **settings** (same screen as `M` → **Settings…**; see Settings screen) |
 | `q` / `F10` / `Ctrl+C` | quit when idle; with active tasks, `q`/`F10` opens tasks and `Ctrl+C` cancels the latest |
 
 **Changed in v0.8.0:** refresh is `Ctrl+L` (was `Ctrl+R`);
@@ -1597,9 +1647,10 @@ including the end-to-end test scripts, are in
   it is open; reopen it with `Esc` then `/`. Symlinked folders are not entered.
   Use Advanced Search for content search; it has separate scan limits and skips
   exact `.git` directories by default. Large trees list faster with `fd` or
-  `find` than with the built-in walker. Sort order is per panel and is not
-  saved; hidden-file visibility is shared by both panels and is saved in
-  `settings.json`.
+  `find` than with the built-in walker. The sort cycled with `s`/`S` is per
+  panel and not saved (the *default* sort for future sessions is set in the
+  Settings screen); hidden-file visibility is shared by both panels and is
+  saved in `settings.json`.
 - Termux: the android build has not been run on a real device yet (see
   the [README](../README.md#installation)). Please report the output of `twinpane --version` with
   any problem.

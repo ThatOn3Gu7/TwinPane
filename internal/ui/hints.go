@@ -47,6 +47,8 @@ func (a *App) hints() (items []barItem, pinned *barItem) {
 		return a.liveHints(), nil
 	case a.showHelp:
 		return a.helpHints(), nil
+	case a.showSettings:
+		return a.settingsHints(), nil
 	case a.props != nil:
 		return a.propsHints(), nil
 	case a.viewer != nil:
@@ -180,7 +182,13 @@ func (a *App) browseHints() []barItem {
 	}
 	// phase 9, again after everything that was there before
 	out = append(out, item("^R", "sources", "ctrl+r"), item("n", "new folder", "n"))
-	return append(out, a.focusToggleHint()...)
+	out = append(out, a.focusToggleHint()...)
+	// phase 13: the settings screen, last like the other late additions.
+	// keepChip (and the position after the focus toggle, which keeps its
+	// own keep-chip priority) means a bare "F9" still renders from the
+	// leftover cells of a crowded bar, and the full "F9 settings" chip
+	// shows once the bar has room.
+	return append(out, barItem{key: "F9", desc: "settings", send: "f9", keepChip: true})
 }
 
 // remoteHints is the hint bar of a panel showing an rclone remote: only
@@ -512,6 +520,7 @@ func keyFor(s string) tea.KeyMsg {
 		"ctrl+r": tea.KeyCtrlR, "ctrl+l": tea.KeyCtrlL, "ctrl+a": tea.KeyCtrlA, "f7": tea.KeyF7, "ctrl+t": tea.KeyCtrlT, "f4": tea.KeyF4, "up": tea.KeyUp, "down": tea.KeyDown,
 		"pgup": tea.KeyPgUp, "pgdown": tea.KeyPgDown, "left": tea.KeyLeft, "right": tea.KeyRight,
 		"shift+tab": tea.KeyShiftTab, "home": tea.KeyHome, "end": tea.KeyEnd,
+		"f9": tea.KeyF9, "ctrl+s": tea.KeyCtrlS,
 	}
 	if t, ok := special[s]; ok {
 		return tea.KeyMsg{Type: t}

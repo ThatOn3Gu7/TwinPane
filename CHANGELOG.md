@@ -10,6 +10,28 @@ The complete description of every feature is in
 ## [Unreleased]
 
 ### Added
+- **Settings screen.** `F9`, `Ctrl+S` and **Settings…** in the TwinPane
+  action menu (`M`, or a tap on the badge) open one screen with every
+  durable preference: startup folders and which panel starts focused,
+  focus-mode preview, hidden files, the default sort key/direction/
+  directories-first, the notification corner and duration (2–10 s), the
+  theme presets (`default`, `green`, `amber`), the preferred editor and
+  editor tips, mouse input, the viewer's line wrapping and line numbers,
+  and the compression default format and level. The screen follows the
+  help/tasks layout (keyboard and mouse, its own hint bar, it shrinks with
+  the terminal). Changes apply live wherever they can — sort, hidden files,
+  theme, viewer defaults for the next file, notification settings for the
+  next pop-up — and are written atomically to `settings.json` in the
+  configuration directory on every change, extending the existing
+  preferences file: ordinary saves still refuse to overwrite a damaged or
+  newer-version file, and the screen announces one at the top with `r`
+  (confirmed with `y`) as the intentional recovery that writes fresh
+  defaults. Startup folders, the starting panel and the mouse apply at the
+  next start; session sorts (`s`/`S`) are still never saved. All flags and
+  environment variables keep their precedence (`--no-mouse`,
+  `TWINPANE_NO_MOUSE`, `--no-editor-tips`), and `Ctrl+S` was unused before
+  (copy is `Ctrl+C`, move `Ctrl+M`), so no existing control changed.
+
 - **Notifications.** Results are now reported by a small, self-erasing pop-up in
   the bottom-right corner instead of a single line at the bottom of the screen:
   copy, move and delete results (including background tasks), archive

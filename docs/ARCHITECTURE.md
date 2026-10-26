@@ -625,11 +625,24 @@ Four new packages with no UI dependency. The TUI code lives in four
 
 ### User preferences (`internal/settings`)
 - `settings.json` shares the bookmarks configuration directory and is written
-  atomically with mode 0600. The versioned preferences currently persist the
-  global hidden-files flag. The UI loads it before the panels' initial listing
-  and saves each `h`/`H`/`.` change; an unreadable or newer settings file is
-  left untouched and reported in the status line. The command passes the path
-  through `Options.SettingsPath` so tests can use an isolated file.
+  atomically with mode 0600. The versioned schema (v1) persists: the global
+  hidden-files flag, startup folders and starting panel, the default sort
+  (key, direction, directories-first), focus preview, notification
+  corner/duration, theme preset, preferred editor/tips, mouse, viewer
+  wrap/numbers, and the compression default format plus per-format levels.
+  `Save` refuses a damaged or newer-version file (checked by reloading it
+  first); `Reset` is the deliberate force-rewrite used by the recovery path.
+- The UI loads the file in `New` before the panels' first listing;
+  `applyPreferences` installs the values, `currentPrefs`/`savePrefs` write
+  them back on every change (`toggleHidden` included), and
+  `syncPanelsWithPreferences` pushes panel-affecting values to both panels.
+  `Options.StartDir` overrides the saved startup folders (tests/embedders),
+  the effective mouse is `flag && preference` (decided in `main`, since the
+  program option is fixed at startup) and tips are `flag && preference`.
+  The Settings screen (`internal/ui/settings.go`, `F9`/`Ctrl+S`/menu) edits
+  all of it live where possible and renders the corruption banner plus the
+  `r` reset confirmation. The command passes the path through
+  `Options.SettingsPath` so tests can use an isolated file.
 
 ### Open / Open with (`internal/opener`, `ui/open.go`)
 - `filetype.go`: `ByName` (an extension table) and `Sniff` (magic bytes:

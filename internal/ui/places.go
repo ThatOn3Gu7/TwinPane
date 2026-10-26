@@ -101,6 +101,20 @@ func (a *App) isBookmarked(dir string) bool {
 	return ok
 }
 
+// expandHomeDir resolves a startup folder preference: empty or ~ means the
+// home directory, ~/x expands against it, anything else passes through.
+func expandHomeDir(dir string) string {
+	dir = strings.TrimSpace(dir)
+	home := fsys.HomeDir()
+	if dir == "" || dir == "~" {
+		return home
+	}
+	if strings.HasPrefix(dir, "~/") && home != "" {
+		return filepath.Join(home, dir[2:])
+	}
+	return dir
+}
+
 // shortPath abbreviates the home folder as ~.
 func shortPath(p string) string {
 	home := fsys.HomeDir()

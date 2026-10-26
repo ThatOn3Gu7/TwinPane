@@ -96,7 +96,7 @@ func (a *App) openViewer(p *panel.Panel, e fsys.Entry) tea.Cmd {
 		return a.openRemoteViewer(p, e)
 	}
 	a.opSeq++
-	v := &viewer{seq: a.opSeq, name: e.Name, loading: true, wrap: true, numbers: true, mcur: -1}
+	v := &viewer{seq: a.opSeq, name: e.Name, loading: true, wrap: a.viewerWrap, numbers: a.viewerNums, mcur: -1}
 	var load func() (*textview.Doc, error)
 	if p.InArchive() {
 		arc := p.Archive()
@@ -152,7 +152,7 @@ func (a *App) openViewerAt(path, query string, line int, readOnly bool) tea.Cmd 
 	a.opSeq++
 	v := &viewer{
 		seq: a.opSeq, name: filepath.Base(path), where: filepath.Dir(path), path: path,
-		loading: true, wrap: true, numbers: true, mcur: -1,
+		loading: true, wrap: a.viewerWrap, numbers: a.viewerNums, mcur: -1,
 		fromAdvanced: readOnly, initialQuery: query, initialLine: line,
 	}
 	a.viewer = v

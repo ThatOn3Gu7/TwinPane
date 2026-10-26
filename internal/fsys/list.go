@@ -52,7 +52,7 @@ func (OSLister) List(path string, opts Options) (Listing, error) {
 		}
 		entries = append(entries, e)
 	}
-	SortEntries(entries, opts.Sort, opts.Desc)
+	SortEntries(entries, opts.Sort, opts.Desc, opts.MixedOrder)
 
 	if !IsRoot(abs) {
 		parent := Entry{Name: "..", Path: filepath.Dir(abs), IsDir: true, IsParent: true, Mode: fs.ModeDir}
@@ -92,8 +92,8 @@ func statEntry(dir string, de fs.DirEntry) Entry {
 
 // SortEntries sorts entries in place for display:
 //
-//   - ".." first, then directories, then everything else, whatever the
-//     direction, so folders stay grouped and distinguishable;
+//   - ".." first, then (unless mixed) directories, then everything else,
+//     whatever the direction, so folders stay grouped and distinguishable;
 //   - within each group by key, ascending or descending (desc);
 //   - entries whose metadata for the key is unavailable (stat failed, or the
 //     size of a broken link) come last in their group, in either direction;
@@ -101,13 +101,16 @@ func statEntry(dir string, de fs.DirEntry) Entry {
 //     sizes are not meaningful;
 //   - ties are broken by name, A→Z (case-insensitive, then byte order), so
 //     the order is always deterministic.
-func SortEntries(entries []Entry, key SortKey, desc bool) {
+//
+// mixed interleaves directories with files by the sort key instead of
+// grouping them first (Options.MixedOrder).
+func SortEntries(entries []Entry, key SortKey, desc, mixed bool) {
 	sort.SliceStable(entries, func(i, j int) bool {
 		a, b := entries[i], entries[j]
 		if a.IsParent != b.IsParent {
 			return a.IsParent
 		}
-		if a.IsDir != b.IsDir {
+		if !mixed && a.IsDir != b.IsDir {
 			return a.IsDir
 		}
 		if c := comparePrimary(a, b, key); c != 0 {
@@ -132,7 +135,10 @@ const unknownLast = 2
 func comparePrimary(a, b Entry, key SortKey) int {
 	switch key {
 	case SortSize:
-		if a.IsDir { // both are dirs here: by name
+		if a.IsDir || b.IsDir {
+			// Both are directories: by name. Mixed listings also meet
+			// here for a directory against a file, where a size would
+			// not be meaningful: fall through to the name tie-break.
 			return 0
 		}
 		ka, kb := sizeKnown(a), sizeKnown(b)

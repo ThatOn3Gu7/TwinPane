@@ -34,7 +34,7 @@ type KeyMap struct {
 	Search                                             Binding
 	Copy, Move, Rename, Delete, Edit                   Binding
 	EditWith                                           Binding
-	Cancel, Tasks, Help, Quit                          Binding
+	Cancel, Tasks, Help, Quit, Settings                Binding
 
 	// Phase 5
 	Properties, View         Binding
@@ -86,6 +86,7 @@ func DefaultKeys() KeyMap {
 		Cancel:     Binding{[]string{"esc"}, "Esc", "cancel dialog / operation"},
 		Tasks:      Binding{[]string{"t"}, "t", "background tasks / progress"},
 		Help:       Binding{[]string{"?", "f1"}, "?", "toggle help"},
+		Settings:   Binding{[]string{"f9", "ctrl+s"}, "F9 / ^S", "settings"},
 		Quit:       Binding{[]string{"q", "ctrl+c", "f10"}, "q", "quit"},
 
 		Properties: Binding{[]string{"P"}, "P", "properties / permissions"},
@@ -126,7 +127,7 @@ func (k KeyMap) helpSections() [2][]helpSection {
 		},
 		{
 			{"File operations", []Binding{k.Copy, k.Move, k.Rename, k.Delete, k.Edit, k.EditWith, k.Properties, k.Cancel}},
-			{"View & general", []Binding{k.View, k.Search, k.Hidden, k.Sort, k.Reverse, k.Refresh, k.Tasks, k.Quit, k.Help}},
+			{"View & general", []Binding{k.View, k.Search, k.Hidden, k.Sort, k.Reverse, k.Refresh, k.Tasks, k.Quit, k.Settings, k.Help}},
 			{"Folders & cloud (rclone)", []Binding{k.Mkdir, k.Sources,
 				{Help: "c / m", Desc: "upload / download"},
 				{Help: "Esc", Desc: "stop a slow listing"}}},

@@ -51,7 +51,8 @@ import (
 // elsewhere releases it and the countdown carries on from where it stopped.
 
 const (
-	// noticeLife is how long a notification stays before it fades out.
+	// noticeLife is the default lifetime of a notification; the settings
+	// screen's duration (a.noticeDur) overrides it per session.
 	noticeLife = 4 * time.Second
 	// noticeTick is the countdown frame. The bar drains by width/50 per frame,
 	// which reads as a smooth sweep rather than a jumping number.
@@ -172,7 +173,7 @@ func (a *App) notify(kind noticeKind, head, msg string, body ...string) {
 	a.notice = &notice{
 		seq: a.noticeSeq, kind: kind, head: head, msg: msg,
 		body:  lines,
-		total: noticeLife, left: noticeLife,
+		total: a.noticeDur, left: a.noticeDur,
 	}
 }
 
@@ -456,9 +457,10 @@ func noticeBottom(st lipgloss.Style, frac float64, width int) string {
 		st.Render("╯")
 }
 
-// noticeRect is where the pop-up is drawn: the bottom-right corner of the
-// content area, just above the status line. ok is false when there is no room
-// for a legible box.
+// noticeRect is where the pop-up is drawn: the corner of the content area
+// selected by the notification-corner setting (default bottom-right, just
+// above the status line). ok is false when there is no room for a legible
+// box.
 func (a *App) noticeRect() (x, y, w, h int, ok bool) {
 	if a.notice == nil || !a.noticeVisible() {
 		return 0, 0, 0, 0, false
@@ -481,7 +483,16 @@ func (a *App) noticeRect() (x, y, w, h int, ok bool) {
 	if len(box) == 0 || len(box)+1 > areaH {
 		return 0, 0, 0, 0, false
 	}
-	return a.width - w - 1, 1 + areaH - len(box), w, len(box), true
+	x, y = a.width-w-1, 1+areaH-len(box) // x, y are the named returns
+	switch a.noticeCorner {
+	case "bl":
+		x = 1
+	case "tr":
+		y = 1
+	case "tl":
+		x, y = 1, 1
+	}
+	return x, y, w, len(box), true
 }
 
 // noticeVisible reports whether anything is drawn on the screen that a
@@ -526,7 +537,8 @@ func (a *App) noticeAt(x, y int) bool {
 // only on the plain browsing screen, where Esc has no other meaning. Overlays,
 // the task list, the live screen and dialogs keep their own Esc behaviour.
 func (a *App) noticeEscDismisses() bool {
-	return a.dialog == nil && !a.quitting && !a.editing && !a.showHelp && !a.tasks.showing &&
+	return a.dialog == nil && !a.quitting && !a.editing && !a.showHelp && !a.showSettings &&
+		!a.tasks.showing &&
 		a.live == nil && a.viewer == nil && a.search == nil && a.advancedSearch == nil &&
 		a.bulk == nil && a.folderSize == nil && a.comparison == nil && a.props == nil
 }

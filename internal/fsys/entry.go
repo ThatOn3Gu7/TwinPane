@@ -70,15 +70,37 @@ func (k SortKey) String() string {
 // Next cycles to the following sort key.
 func (k SortKey) Next() SortKey { return (k + 1) % sortKeyCount }
 
+// ParseSortKey maps a persisted sort name ("name", "size", "time", "type")
+// to its key. Unknown names report false so callers can fall back to the
+// default instead of guessing.
+func ParseSortKey(s string) (SortKey, bool) {
+	switch s {
+	case "size":
+		return SortSize, true
+	case "time":
+		return SortTime, true
+	case "type":
+		return SortType, true
+	case "name":
+		return SortName, true
+	}
+	return SortName, false
+}
+
 // DefaultDesc is the natural direction of a key, used when switching to it:
 // names and types A→Z, sizes largest first, times newest first.
 func (k SortKey) DefaultDesc() bool { return k == SortSize || k == SortTime }
 
-// Options controls how a directory is listed.
+// Options controls how a directory is listed. The zero value keeps the
+// historical order: directories grouped before files.
 type Options struct {
 	ShowHidden bool
 	Sort       SortKey
 	Desc       bool // descending order (see SortEntries)
+	// MixedOrder interleaves files and directories by the sort key instead
+	// of grouping directories first (the settings screen's
+	// "directories first" toggle maps to !MixedOrder).
+	MixedOrder bool
 }
 
 // SortLabel describes the order for the UI, e.g. "name ↑" or "size ↓".

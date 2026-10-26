@@ -76,7 +76,7 @@ func (c *Client) List(ctx context.Context, p Path, opts fsys.Options) (fsys.List
 		}
 		entries = append(entries, e)
 	}
-	fsys.SortEntries(entries, opts.Sort, opts.Desc)
+	fsys.SortEntries(entries, opts.Sort, opts.Desc, opts.MixedOrder)
 	if !p.IsRoot() {
 		entries = append([]fsys.Entry{{Name: "..", Path: p.Dir().Arg(), IsDir: true, IsParent: true, Mode: fs.ModeDir}}, entries...)
 	}

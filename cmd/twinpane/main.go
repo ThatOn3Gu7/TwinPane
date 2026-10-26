@@ -35,9 +35,22 @@ func main() {
 	}
 
 	restore := editor.SaveTerminal(os.Stdin)
-	mouse := !*noMouse && os.Getenv("TWINPANE_NO_MOUSE") == ""
-	opts := ui.Options{Version: version, Mouse: mouse, EditorTips: !*noTips}
+	// Mouse: the durable default lives in settings.json; the flag and
+	// TWINPANE_NO_MOUSE still override it for the session (they only ever
+	// turn mouse reporting off, as before). The program option has to be
+	// decided here — Bubble Tea takes it at startup — so the preferences are
+	// loaded once for it; ui.New loads them again for everything else.
 	prefsPath, prefsErr := settings.DefaultPath()
+	mouse := !*noMouse && os.Getenv("TWINPANE_NO_MOUSE") == ""
+	if prefsErr == nil {
+		if prefs, err := settings.Load(prefsPath); err == nil {
+			mouse = prefs.Mouse
+		}
+	}
+	if *noMouse || os.Getenv("TWINPANE_NO_MOUSE") != "" {
+		mouse = false
+	}
+	opts := ui.Options{Version: version, Mouse: mouse, EditorTips: !*noTips}
 	if prefsErr != nil {
 		opts.SettingsPathError = prefsErr.Error()
 	} else {

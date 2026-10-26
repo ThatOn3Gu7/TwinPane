@@ -452,6 +452,7 @@ twinpane --version
 | `D` / `A` | compare folders / analyze sizes | `t` | background tasks |
 | `b` / `B` | bookmarks / add | `M` | action menu |
 | `i` | storage | `?` / `F1` | help (with `/` filter) |
+| `F9` / `Ctrl+S` | settings | | |
 | `~` | home folder | `q` / `F10` | quit when idle; active tasks must finish or be cancelled |
 | `Ctrl+R` ¹ | sources: local / cloud | `n` / `F7` ¹ | new folder |
 | `Ctrl+L` ¹ | refresh both panels | | |
@@ -479,6 +480,14 @@ including those of the viewer, dialogs, search and bulk rename.
 `TWINPANE_NO_MOUSE=1` (same as `--no-mouse`), `TWINPANE_CONFIG_DIR` (an
 absolute path for the bookmarks and settings files; default
 `~/.config/twinpane`, on macOS `~/Library/Application Support/twinpane`).
+
+**Settings:** `F9`, `Ctrl+S` or `M` → **Settings…** open the preferences
+screen (startup folders and starting panel, hidden files, default sort,
+notification corner/duration, theme presets, preferred editor and tips,
+mouse, viewer wrap/line numbers, compression defaults). Preferences are
+stored atomically in `settings.json` in the configuration directory; the
+flags above and `TWINPANE_NO_MOUSE` keep overriding them for the session,
+and a damaged file is reported on the screen with `r` to reset it.
 
 ## Building from source
 

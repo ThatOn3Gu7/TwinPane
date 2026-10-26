@@ -659,6 +659,29 @@ func (p *Panel) SetShowHidden(show bool) tea.Cmd {
 	return p.Refresh()
 }
 
+// SetSort applies an explicit sort key and direction (used by the settings
+// screen) and reloads, keeping the cursor entry like CycleSort. It does
+// nothing to an uninitialized panel, so it is also safe before the first
+// Load.
+func (p *Panel) SetSort(key fsys.SortKey, desc bool) tea.Cmd {
+	p.opts.Sort = key
+	p.opts.Desc = desc
+	if p.path == "" {
+		return nil
+	}
+	return p.Refresh()
+}
+
+// SetDirsFirst groups directories before files (on) or interleaves them by
+// the sort key (off), reloading as above.
+func (p *Panel) SetDirsFirst(on bool) tea.Cmd {
+	p.opts.MixedOrder = !on
+	if p.path == "" {
+		return nil
+	}
+	return p.Refresh()
+}
+
 // CycleSort switches to the next sort key in its natural direction (see
 // fsys.SortKey.DefaultDesc) and reloads; the cursor stays on the same entry.
 func (p *Panel) CycleSort() tea.Cmd {

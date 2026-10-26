@@ -101,3 +101,59 @@ func TestLoadRejectsNewerSettingsVersion(t *testing.T) {
 		t.Fatalf("Load() error = %v, want a newer-version CorruptError", err)
 	}
 }
+
+// TestResetRewritesDefaultsAndRecoversCorruptFile covers the intentional
+// recovery path: Reset force-writes the given preferences over a damaged
+// (or newer-version) file, while plain Save keeps refusing to clobber it.
+func TestResetRewritesDefaultsAndRecoversCorruptFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), FileName)
+
+	// Customised file → Reset restores the defaults on disk.
+	custom := Default()
+	custom.ShowHidden = true
+	custom.Theme = "green"
+	custom.Notice.Duration = 7
+	custom.Mouse = false
+	if err := Save(path, custom); err != nil {
+		t.Fatal(err)
+	}
+	if err := Reset(path, Default()); err != nil {
+		t.Fatalf("Reset(): %v", err)
+	}
+	got, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load after Reset: %v", err)
+	}
+	if got.ShowHidden || got.Theme != "default" || got.Notice.Duration != NoticeDurationDef || !got.Mouse {
+		t.Fatalf("Reset did not restore defaults: %+v", got)
+	}
+
+	// A damaged file: Save still refuses, Reset recovers it.
+	broken := []byte("{broken json\n")
+	if err := os.WriteFile(path, broken, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := Save(path, Default()); err == nil {
+		t.Fatal("Save must still refuse a damaged file")
+	}
+	if err := Reset(path, Default()); err != nil {
+		t.Fatalf("Reset must recover a damaged file: %v", err)
+	}
+	if got, err = Load(path); err != nil {
+		t.Fatalf("Load after recovery: %v", err)
+	}
+
+	// Newer-version files recover the same way.
+	if err := os.WriteFile(path, []byte(`{"version":99,"showHidden":true}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := Reset(path, Default()); err != nil {
+		t.Fatalf("Reset must recover a newer-version file: %v", err)
+	}
+	if got, err = Load(path); err != nil {
+		t.Fatalf("Load after version recovery: %v", err)
+	}
+	if got.ShowHidden {
+		t.Fatalf("recovered file kept foreign values: %+v", got)
+	}
+}

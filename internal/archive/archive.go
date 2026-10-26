@@ -480,7 +480,7 @@ func (a *Archive) List(inner string, opts fsys.Options) (fsys.Listing, error) {
 		}
 		es = append(es, fe)
 	}
-	fsys.SortEntries(es, opts.Sort, opts.Desc)
+	fsys.SortEntries(es, opts.Sort, opts.Desc, opts.MixedOrder)
 	up := filepath.Dir(a.Path)
 	if inner != "" {
 		pi := path.Dir(inner)

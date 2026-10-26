@@ -203,6 +203,7 @@ func (a *App) beginZip() tea.Cmd {
 		}
 		req := compress.Request{Format: c.ID, Level: a.levelIndex(c.Format), Sources: sources, Output: out, Tool: c.Tool}
 		a.lastFormat = c.ID
+		a.savePrefs(false) // remember the format for the settings default
 		if fi, err := os.Lstat(out); err == nil {
 			if fi.IsDir() {
 				a.dialog.errLine = "a folder with that name exists"
@@ -267,6 +268,7 @@ func (a *App) compressLevel(st *compressState, delta int) {
 	i := a.levelIndex(f) + delta
 	i = max(0, min(i, len(f.Levels)-1))
 	a.formatLevels[f.ID] = i
+	a.savePrefs(false) // remember the level for the settings default
 }
 
 // zipOverwriteDialog asks before replacing an existing file with the new

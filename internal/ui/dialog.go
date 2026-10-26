@@ -46,6 +46,9 @@ const (
 	dlgSources     // Sources picker (Ctrl+R): local files or an rclone remote
 	dlgMkdir       // new folder name prompt
 	dlgSyncConfirm // final approval for a reviewed directory plan
+
+	// phase 13
+	dlgSettings // settings text field / reset confirmation (F9 screen)
 )
 
 // dlgCompress is the compression dialog (z). It kept the kind of the

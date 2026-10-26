@@ -103,6 +103,8 @@ func (a *App) handleMouse(m tea.MouseMsg) tea.Cmd {
 		return a.liveMouse(ev)
 	case a.showHelp:
 		return a.helpMouse(ev) // help.go: wheel scrolls, a tap closes
+	case a.showSettings:
+		return a.settingsMouse(ev) // settings.go: wheel scrolls, taps pick rows
 	case a.props != nil:
 		return a.propsMouse(ev)
 	case a.viewer != nil:

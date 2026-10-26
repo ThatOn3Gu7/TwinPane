@@ -57,7 +57,7 @@ func (a *App) openRemoteViewer(p *panel.Panel, e fsys.Entry) tea.Cmd {
 	ctx, cancel := context.WithCancel(context.Background())
 	v := &viewer{
 		seq: a.opSeq, name: e.Name, where: loc.Display(), loading: true,
-		wrap: true, numbers: true, mcur: -1,
+		wrap: a.viewerWrap, numbers: a.viewerNums, mcur: -1,
 		remote: true, remoteLoc: loc, remoteSize: e.Size, loadCancel: cancel,
 	}
 	a.viewer = v

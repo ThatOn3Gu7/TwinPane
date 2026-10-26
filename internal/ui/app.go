@@ -36,9 +36,11 @@ const (
 
 // Options configures a new App.
 type Options struct {
-	Version  string
-	Lister   fsys.Lister // nil = local filesystem
-	StartDir string      // "" = user's home directory
+	Version string
+	Lister  fsys.Lister // nil = local filesystem
+	// StartDir overrides the settings' startup folders: both panels open
+	// there ("" = saved folders, home by default).
+	StartDir string
 
 	// Phase 2 (all optional; nil = real system behaviour)
 	Trasher   ops.Trasher // nil = ops.DefaultTrasher()
@@ -131,9 +133,29 @@ type App struct {
 	folderSize     *folderSizeView // cancellable local folder-size analysis
 
 	// phase 4
-	showHidden     bool        // one setting for both panels (h / H / .)
-	settingsPath   string      // persisted user preferences (empty disables persistence)
-	settingsErr    error       // latest settings load/save failure
+	showHidden   bool   // one setting for both panels (h / H / .)
+	settingsPath string // persisted user preferences (empty disables persistence)
+	settingsErr  error  // latest settings load/save failure
+
+	// phase 13: the Settings screen (settings.go) and the preferences it
+	// edits. Fields mirror settings.Preferences; currentPrefs() and
+	// applyPreferences() map between the two.
+	showSettings   bool
+	settingsScr    settingsScreen
+	startLeft      string // startup folder, left panel ("" = home; expanded at Init)
+	startRight     string
+	startPane      int          // panel focused at startup: 0 left, 1 right
+	defSort        fsys.SortKey // default sort; s/S keep changing the session only
+	defDesc        bool
+	defDirsFirst   bool
+	noticeCorner   string        // notification corner: "br" | "bl" | "tr" | "tl"
+	noticeDur      time.Duration // notification lifetime
+	themeName      string        // active theme preset (theme.Preset)
+	editorCmd      string        // preferred editor command line ("" = $VISUAL/$EDITOR)
+	tipsPref       bool          // editor-tips preference (the flag can still disable)
+	mousePref      bool          // mouse preference (flags/env can still disable)
+	viewerWrap     bool          // viewer defaults for a newly opened file
+	viewerNums     bool
 	footerHits     []footerHit // clickable hint-bar items of the last frame
 	helpScroll     int         // first line of the help screen shown
 	helpScrollable bool        // the help body is taller than its viewport
@@ -185,9 +207,6 @@ type App struct {
 
 // New creates the application model.
 func New(opts Options) *App {
-	if opts.StartDir == "" {
-		opts.StartDir = fsys.HomeDir()
-	}
 	a := &App{opts: opts, keys: DefaultKeys(), theme: theme.Default(), tasks: newTaskManager()}
 	a.trasher = opts.Trasher
 	if a.trasher == nil {
@@ -220,7 +239,14 @@ func New(opts Options) *App {
 		a.launch = func(argv []string) error { return opener.Launch(argv, opener.LaunchWait) }
 	}
 	a.formatLevels = map[compress.ID]int{}
+	// Defaults matching historic behaviour; the settings file overrides them.
 	a.focusPreview = true
+	a.tipsPref = true
+	a.mousePref = true
+	a.viewerWrap, a.viewerNums = true, true
+	a.noticeCorner, a.noticeDur = "br", noticeLife
+	a.themeName = "default"
+	a.defSort, a.defDesc, a.defDirsFirst = fsys.SortName, false, true
 	a.settingsPath = opts.SettingsPath
 	if opts.SettingsPathError != "" {
 		a.settingsErr = fmt.Errorf("%s", opts.SettingsPathError)
@@ -228,15 +254,27 @@ func New(opts Options) *App {
 		prefs, err := settings.Load(a.settingsPath)
 		a.settingsErr = err
 		if err == nil {
-			a.showHidden = prefs.ShowHidden
+			a.applyPreferences(prefs)
 		}
+	}
+	if opts.StartDir != "" {
+		// Explicit start directory (tests and embedders): both panels use it.
+		a.startLeft, a.startRight = opts.StartDir, opts.StartDir
+	}
+	if a.startPane == 1 {
+		a.active = 1
 	}
 	a.panels[0] = panel.New(0, opts.Lister)
 	a.panels[1] = panel.New(1, opts.Lister)
-	// Set the global preference before Init starts either panel's first load.
-	// SetShowHidden updates the option without reloading an uninitialized panel.
+	// Install the effective preferences before Init starts either panel's
+	// first load. Each SetX updates the option without reloading an
+	// uninitialized panel.
 	a.panels[0].SetShowHidden(a.showHidden)
 	a.panels[1].SetShowHidden(a.showHidden)
+	a.panels[0].SetSort(a.defSort, a.defDesc)
+	a.panels[1].SetSort(a.defSort, a.defDesc)
+	a.panels[0].SetDirsFirst(a.defDirsFirst)
+	a.panels[1].SetDirsFirst(a.defDirsFirst)
 	var notices []string
 	if opts.Notice != "" {
 		notices = append(notices, opts.Notice)
@@ -250,13 +288,107 @@ func New(opts Options) *App {
 	return a
 }
 
-// Init loads both panels in the start directory.
+// Init loads both panels in their configured startup folders (settings:
+// startup left/right, both overridden by Options.StartDir; empty = home).
 func (a *App) Init() tea.Cmd {
 	return tea.Batch(
 		tea.SetWindowTitle("TwinPane"),
-		a.panels[0].Load(a.opts.StartDir, "", panel.LoadForce),
-		a.panels[1].Load(a.opts.StartDir, "", panel.LoadForce),
+		a.panels[0].Load(expandHomeDir(a.startLeft), "", panel.LoadForce),
+		a.panels[1].Load(expandHomeDir(a.startRight), "", panel.LoadForce),
 	)
+}
+
+// applyPreferences installs loaded (or reset) preference values on the App.
+// Panel-affecting values are pushed to the panels by the caller through
+// syncPanelsWithPreferences; startup folders and the starting pane take
+// effect on the next start.
+func (a *App) applyPreferences(p settings.Preferences) {
+	p = p.Normalized()
+	a.showHidden = p.ShowHidden
+	a.startLeft, a.startRight = p.Startup.Left, p.Startup.Right
+	a.startPane = 0
+	if p.Startup.Pane == "right" {
+		a.startPane = 1
+	}
+	key, _ := fsys.ParseSortKey(p.Sort.Key)
+	a.defSort, a.defDesc, a.defDirsFirst = key, p.Sort.Desc, p.Sort.DirsFirst
+	a.focusPreview = p.FocusPreview
+	a.noticeCorner, a.noticeDur = p.Notice.Corner, p.Duration()
+	a.themeName = p.Theme
+	if th, ok := theme.Preset(a.themeName); ok {
+		a.theme = th
+	} else {
+		a.themeName, a.theme = "default", theme.Default()
+	}
+	a.editorCmd = p.Editor.Command
+	a.tipsPref, a.mousePref = p.Editor.Tips, p.Mouse
+	a.viewerWrap, a.viewerNums = p.Viewer.Wrap, p.Viewer.Numbers
+	a.lastFormat = compress.ID(p.Compress.Format)
+	for id, lv := range p.Compress.Levels {
+		a.formatLevels[compress.ID(id)] = lv
+	}
+}
+
+// syncPanelsWithPreferences applies the panel-affecting preferences to both
+// panels. Reloading only happens for panels that have a path (before Init
+// the options are simply set).
+func (a *App) syncPanelsWithPreferences() tea.Cmd {
+	return tea.Batch(
+		a.panels[0].SetShowHidden(a.showHidden), a.panels[1].SetShowHidden(a.showHidden),
+		a.panels[0].SetSort(a.defSort, a.defDesc), a.panels[1].SetSort(a.defSort, a.defDesc),
+		a.panels[0].SetDirsFirst(a.defDirsFirst), a.panels[1].SetDirsFirst(a.defDirsFirst),
+	)
+}
+
+// currentPrefs snapshots the preference fields as they are now, for saving.
+// Session-only state (a sort cycled with s/S, live panel folders) does not
+// belong here: only values the settings screen edits are included.
+func (a *App) currentPrefs() settings.Preferences {
+	pane := "left"
+	if a.startPane == 1 {
+		pane = "right"
+	}
+	levels := make(map[string]int, len(a.formatLevels))
+	for id, lv := range a.formatLevels {
+		if id != "" {
+			levels[string(id)] = lv
+		}
+	}
+	return settings.Preferences{
+		ShowHidden:   a.showHidden,
+		Startup:      settings.StartupPrefs{Left: a.startLeft, Right: a.startRight, Pane: pane},
+		Sort:         settings.SortPrefs{Key: a.defSort.String(), Desc: a.defDesc, DirsFirst: a.defDirsFirst},
+		FocusPreview: a.focusPreview,
+		Notice:       settings.NoticePrefs{Corner: a.noticeCorner, Duration: int(a.noticeDur / time.Second)},
+		Theme:        a.themeName,
+		Editor:       settings.EditorPrefs{Command: a.editorCmd, Tips: a.tipsPref},
+		Mouse:        a.mousePref,
+		Viewer:       settings.ViewerPrefs{Wrap: a.viewerWrap, Numbers: a.viewerNums},
+		Compress:     settings.CompressPrefs{Format: string(a.lastFormat), Levels: levels},
+	}
+}
+
+// savePrefs writes the current preferences. feedback reports the outcome on
+// the status line (settings screen changes); silent mode is for frequent
+// updates that have their own message (h, the compress dialog).
+func (a *App) savePrefs(feedback bool) {
+	if a.settingsPath == "" {
+		if feedback {
+			a.setStatus("settings are not persisted in this session", false)
+		}
+		return
+	}
+	if err := settings.Save(a.settingsPath, a.currentPrefs()); err != nil {
+		a.settingsErr = err
+		if feedback {
+			a.setStatusLevel("settings not saved: "+errText(err), lvlWarn)
+		}
+		return
+	}
+	a.settingsErr = nil
+	if feedback {
+		a.setStatus("settings saved", false)
+	}
 }
 
 // Accessors (used by tests and future components).
@@ -517,6 +649,7 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // burst handling in Update).
 type uiState struct {
 	dialog                                  *dialog
+	settings                                bool
 	search                                  *searchView
 	advancedSearch                          *advancedSearchView
 	bulk                                    *bulkRename
@@ -531,7 +664,8 @@ type uiState struct {
 func (a *App) uiState() uiState {
 	return uiState{
 		dialog: a.dialog, search: a.search, advancedSearch: a.advancedSearch, bulk: a.bulk, tasks: a.tasks.showing,
-		busy: a.busy(), quitting: a.quitting, editing: a.editing, help: a.showHelp,
+		settings: a.showSettings,
+		busy:     a.busy(), quitting: a.quitting, editing: a.editing, help: a.showHelp,
 		inputBox: a.dialog != nil && a.dialog.input != nil, viewer: a.viewer, props: a.props,
 		comparison: a.comparison, folderSize: a.folderSize,
 	}
@@ -555,6 +689,9 @@ func (a *App) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	if a.showHelp {
 		return a, a.helpKey(msg) // help.go
+	}
+	if a.showSettings {
+		return a, a.settingsKey(msg) // settings.go
 	}
 	if a.quitting {
 		return a, nil
@@ -590,6 +727,8 @@ func (a *App) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return a, tea.Quit
 	case k.Help.Matches(msg):
 		a.openHelp()
+	case k.Settings.Matches(msg):
+		return a, a.openSettings()
 	case k.Switch.Matches(msg):
 		a.active = 1 - a.active
 	case k.Up.Matches(msg):
@@ -767,6 +906,8 @@ func (a *App) View() string {
 	switch {
 	case a.showHelp:
 		body = a.helpView(a.height - 3)
+	case a.showSettings:
+		body = a.settingsView(a.height - 3)
 	case a.tasks.showing:
 		body = a.taskViewRender(a.height - 3)
 	case a.live != nil:
@@ -876,7 +1017,7 @@ func (a *App) toggleHidden() tea.Cmd {
 	}
 	level := lvlInfo
 	if a.settingsPath != "" {
-		if err := settings.Save(a.settingsPath, settings.Preferences{ShowHidden: a.showHidden}); err != nil {
+		if err := settings.Save(a.settingsPath, a.currentPrefs()); err != nil {
 			a.settingsErr = err
 			message += "; not saved: " + errText(err)
 			level = lvlWarn

@@ -64,6 +64,7 @@ func (a *App) menuEntries() (title string, entries []menuEntry) {
 		add(menuEntry{label: "Leave the archive", key: "esc", send: "esc"})
 		add(menuEntry{label: "Bookmarks…", key: "b", send: "b"})
 		add(menuEntry{label: "Storage info", key: "i", send: "i"})
+		add(settingsMenuEntry())
 		entries = append(entries, a.navMenuEntries(p)...)
 		entries = append(entries, a.focusMenuEntries()...)
 		return title, entries
@@ -95,6 +96,7 @@ func (a *App) menuEntries() (title string, entries []menuEntry) {
 		if len(targets) > 0 {
 			add(menuEntry{label: "Delete…", key: "d", send: "d", danger: true})
 		}
+		add(settingsMenuEntry())
 		entries = append(entries, a.focusMenuEntries()...)
 		return title, entries
 	}
@@ -166,12 +168,20 @@ func (a *App) menuEntries() (title string, entries []menuEntry) {
 	add(menuEntry{label: "Bookmarks…", key: "b", send: "b"})
 	add(menuEntry{label: "Storage info", key: "i", send: "i"})
 	add(menuEntry{label: "Analyze folder sizes", key: "A", send: "A"})
+	add(settingsMenuEntry())
 	entries = append(entries, a.navMenuEntries(p)...)
 	entries = append(entries, a.focusMenuEntries()...)
 	if len(targets) > 0 {
 		add(menuEntry{label: "Delete…", key: "d", send: "d", danger: true})
 	}
 	return title, entries
+}
+
+// settingsMenuEntry is the Settings row of the action menu (M or a tap on
+// the TwinPane badge). It re-sends F9, so the menu opens the same screen as
+// the keyboard shortcut.
+func settingsMenuEntry() menuEntry {
+	return menuEntry{label: "Settings…", detail: "F9", key: "F9", send: "f9"}
 }
 
 // openMenu shows the action menu (M).
