@@ -114,15 +114,22 @@ The [user guide](docs/USER_GUIDE.md) describes every feature in detail.
   kind of row it is. `↑`/`↓`, `PgUp`/`PgDn`, the wheel and a click all move the
   selection; the list scrolls, keeps the cursor visible and shows a scrollbar
   on its right edge.
-- `⏎` or `w` watches a running task on a live progress screen that `Esc` leaves
-  in the background; `c` cancels the selected task and `x` clears this run's
+- `⏎` or `w` watches a running task in a small floating window over the panels
+  — the same window *Stay and watch* opens for a large operation — with the
+  progress bar, the counts, every source, the target, the current item, the
+  elapsed time and, when it finishes, the result. It is sized to its content,
+  scrolls when the terminal is short, and `Esc` closes it and leaves the task
+  running in the background; `c` cancels the selected task and `x` clears this
+  run's
   finished tasks. Earlier runs are read-only: their rows never offer those
   actions, and the footer only lists what the selected row can do.
   `[`/`]` jump to the previous/next run. Active tasks must finish or be
   cancelled before quitting.
 - A copy, move or delete that is clearly large — about 256 MiB or 500 entries —
-  asks whether to run in the background or to be watched. Sending it to the
-  background shows a small, non-blocking notification with its progress.
+  asks whether to run in the background or to be watched. *Stay and watch*
+  floats that progress window over the panes (the directory behind stays
+  visible, dimmed, and comes back untouched when the window closes); sending it
+  to the background shows a small, non-blocking notification with its progress.
 
 **Notifications**
 - Results of file operations (copy, move, delete, extract, compress, rename,

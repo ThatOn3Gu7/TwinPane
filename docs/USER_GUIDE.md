@@ -363,10 +363,15 @@ into noise.
 - `↑`/`↓` or `j`/`k` selects a row (a click or the wheel works too);
   `PgUp`/`PgDn` (or the wheel over the details) scrolls its details.
 - `[` and `]` jump to the previous (older) and next (newer) run.
-- `⏎` or `w` watches a running task live: one screen with a large progress bar,
-  the counts, the current item and the elapsed time. `Esc` (or `q`) closes it
-  and leaves the task running in the background, `c` cancels it, `t` goes to the
-  task list. A prompt that needs a decision is drawn over this screen.
+- `⏎` or `w` watches a running task live: a compact window floating over the
+  panels, as wide and tall as its content needs, with the progress bar, the
+  counts, the sources, the target, the current item and the elapsed time, and
+  the result once it finishes. The directory behind stays visible (dimmed) and
+  is exactly as it was when the window closes. Long content scrolls with `↑`/`↓`,
+  `PgUp`/`PgDn` or the wheel, with the scrollbar on the right edge. `Esc` (or
+  `q`) closes it and leaves the task running in the background, `⏎` closes a
+  finished task, `c` cancels it, `t` goes to the task list. A prompt that needs
+  a decision is drawn over this window.
 - `c` cancels the selected active task. `x` clears this run's finished tasks.
   The actions follow the selected row: a row from an earlier run is read-only,
   so `c`, `x`, `⏎` and `w` explain that instead of acting, and the footer only
@@ -386,7 +391,7 @@ safety check already made. Anything smaller — the ordinary copy of a file or
 two — starts at once, with no extra dialog, exactly as before.
 
 Sending a task to the background (by answering that question, or by leaving the
-live screen with `Esc`) shows a small notification in the bottom-right corner:
+progress window with `Esc`) shows a small notification in the bottom-right corner:
 what is running, how far it is, and `t` to see the rest. See
 [Notifications](#notifications) below.
 

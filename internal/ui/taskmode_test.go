@@ -324,3 +324,150 @@ func TestLiveScreenSurvivesDialogsAndTaskList(t *testing.T) {
 		t.Fatal("switching views must not change the task")
 	}
 }
+
+// TestLiveWindowFloatsOverThePanes: "stay and watch" is a floating window like
+// the Settings screen, not a full-screen view. The directory behind stays
+// drawn around it and comes back exactly as it was when the window closes.
+func TestLiveWindowFloatsOverThePanes(t *testing.T) {
+	h, _ := newOpsApp(t, nil, nil)
+	h.send(tea.WindowSizeMsg{Width: 100, Height: 30})
+	before := ansi.Strip(h.a.View())
+	s, _ := h.a.newSession("Copying", 0, []string{"/src/big.iso"})
+	s.kind, s.to = ops.Copy, "/dst"
+	s.state = taskRunning
+	s.cancel = func() {}
+	s.prog = ops.Progress{Phase: "copying", Current: "/src/big.iso", DoneItems: 5, TotalItems: 10,
+		DoneBytes: 50 << 20, TotalBytes: 100 << 20}
+	h.a.watchTask(s)
+	v := ansi.Strip(h.a.View())
+
+	// The panes are still on screen on every side of the window.
+	for _, want := range []string{"Name", "parent directory", "name ↑"} {
+		if !strings.Contains(v, want) {
+			t.Fatalf("the panes behind the live window lost %q:\n%s", want, v)
+		}
+	}
+	lines := strings.Split(v, "\n")
+	if len(lines) != 30 {
+		t.Fatalf("view has %d lines, want 30", len(lines))
+	}
+	top, boxLine := -1, ""
+	for i, line := range lines {
+		if strings.Contains(line, "╭─ Copying") {
+			top, boxLine = i, line
+			break
+		}
+	}
+	if top <= 0 {
+		t.Fatalf("the live window is not inset from the top:\n%s", v)
+	}
+	if strings.Index(boxLine, "╭─ Copying") == 0 {
+		t.Fatalf("the live window is not inset from the left edge: %q", boxLine)
+	}
+	// Measure the box itself: the line also carries the dimmed background on
+	// both sides.
+	start, end := strings.Index(boxLine, "╭"), strings.LastIndex(boxLine, "╮")
+	if start < 0 || end < start {
+		t.Fatalf("no closed box on the title line: %q", boxLine)
+	}
+	if bw := lipgloss.Width(boxLine[start : end+len("╮")]); bw >= 100 {
+		t.Fatalf("the live window spans the whole width (%d): %q", bw, boxLine)
+	}
+	// Its height is its content, not the screen: the box ends above the
+	// status and hint lines at the bottom.
+	if top+2 >= len(lines)-3 {
+		t.Fatalf("the live window fills the height:\n%s", v)
+	}
+
+	// Closing returns the screen behind unchanged. (Leaving a running task
+	// raises its notification; that is reported by the tests above, so it is
+	// dropped here to compare the screen itself.)
+	h.press("esc")
+	h.a.notice = nil
+	after := ansi.Strip(h.a.View())
+	beforeLines, afterLines := strings.Split(before, "\n"), strings.Split(after, "\n")
+	if len(beforeLines) != len(afterLines) {
+		t.Fatalf("closing the live window changed the screen size: %d -> %d lines", len(beforeLines), len(afterLines))
+	}
+	// The status and hint bars are not part of the screen behind: leaving a
+	// running task says so there (tested above).
+	for i, want := range beforeLines[:len(beforeLines)-2] {
+		if afterLines[i] != want {
+			t.Fatalf("closing the live window changed line %d:\nbefore: %q\nafter:  %q", i, want, afterLines[i])
+		}
+	}
+}
+
+// TestLiveWindowSizesToItsContent: a short operation gets a short window, and
+// content that does not fit scrolls inside it.
+func TestLiveWindowSizesToItsContent(t *testing.T) {
+	h, _, _ := liveHarness(t)
+	h.send(tea.WindowSizeMsg{Width: 100, Height: 30})
+	top, bottom := -1, -1
+	for i, line := range strings.Split(ansi.Strip(h.a.View()), "\n") {
+		if strings.Contains(line, "╭─ Copying") {
+			top = i
+		}
+		if top >= 0 && strings.Contains(line, "╰─") {
+			bottom = i
+			break
+		}
+	}
+	if top < 0 || bottom < 0 {
+		t.Fatal("no live window box found")
+	}
+	if got := bottom - top + 1; got > 20 {
+		t.Errorf("a small operation opened a %d-row window; it should size to its content", got)
+	}
+
+	// On a short screen the body scrolls instead of being cut off: the hint
+	// line at the end is reachable with PgDn.
+	h.send(tea.WindowSizeMsg{Width: 100, Height: 14})
+	first := ansi.Strip(h.a.View())
+	if strings.Contains(first, "Esc keeps it running") {
+		t.Fatalf("the whole body already fits in 14 rows:\n%s", first)
+	}
+	if !strings.Contains(first, "50%") {
+		t.Fatalf("the progress bar should be at the top of the window:\n%s", first)
+	}
+	for i := 0; i < 4 && !strings.Contains(ansi.Strip(h.a.View()), "Esc keeps it running"); i++ {
+		h.press("pgdown")
+	}
+	if last := ansi.Strip(h.a.View()); !strings.Contains(last, "Esc keeps it running") {
+		t.Fatalf("PgDn did not reach the end of the body:\n%s", last)
+	}
+	if h.a.live == nil {
+		t.Fatal("scrolling closed the live window")
+	}
+}
+
+// TestLiveFooterShowsOneCloseHint: ⏎ and Esc both close a finished task, but
+// the hint bar shows one close chip, and Enter still works.
+func TestLiveFooterShowsOneCloseHint(t *testing.T) {
+	h, s, _ := liveHarness(t)
+	h.send(tea.WindowSizeMsg{Width: 100, Height: 30})
+	h.a.finishTask(s, taskCompleted, "Copied 1 file")
+	footer := ansi.Strip(h.footer())
+	if got := strings.Count(footer, "close"); got != 1 {
+		t.Fatalf("footer shows %d close hints: %q", got, footer)
+	}
+	if !strings.Contains(footer, "Esc") || strings.Contains(footer, "⏎") {
+		t.Fatalf("the close hint should be Esc: %q", footer)
+	}
+	for _, want := range []string{"scroll", "tasks"} {
+		if !strings.Contains(footer, want) {
+			t.Errorf("footer lost the %q hint: %q", want, footer)
+		}
+	}
+	// The other useful hint for a running task stays as it was.
+	h2, _, _ := liveHarness(t)
+	h2.send(tea.WindowSizeMsg{Width: 100, Height: 30})
+	if f := ansi.Strip(h2.footer()); !strings.Contains(f, "cancel") || !strings.Contains(f, "background") {
+		t.Errorf("running task hints = %q", f)
+	}
+	// Enter still closes the finished task.
+	h.press("enter")
+	if h.a.live != nil {
+		t.Fatal("Enter should still close the live window")
+	}
+}

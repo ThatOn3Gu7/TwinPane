@@ -10,7 +10,18 @@ The complete description of every feature is in
 ## [Unreleased]
 
 New file creation, one key for both new files and new folders, a persistent
-operation history, and the Settings screen that now owns every preference.
+operation history inside the Tasks screen, a floating "stay and watch" window,
+and the Settings screen that now owns every preference.
+
+### Changed
+- **"Stay and watch" is a floating window.** The live progress view used to take
+  the whole screen; it now floats over the panes like the Settings window — the
+  directory behind stays visible (dimmed) and comes back untouched when it
+  closes. It is sized to its content (progress bar, counts, sources, target,
+  current item, elapsed time, then the result), scrolls inside itself with the
+  scrollbar on its right border when the terminal is short, and wraps long paths
+  after a separator. The hint bar now shows a single `Esc close` chip for a
+  finished task; `⏎` still closes it too.
 
 ### Added
 - **Settings screen.** `F9`, `Ctrl+S` and **Settings…** in the TwinPane
@@ -86,10 +97,11 @@ operation history, and the Settings screen that now owns every preference.
   and a label/value details table for the selected task that wraps long values,
   shortens paths from the left and scrolls. Columns are dropped from the end on
   narrow terminals and tasks become two-line rows below about 46 columns, so a
-  phone stays readable. `⏎` or `w` opens a new live progress screen for a
-  running task (large bar, counts, current item, elapsed time); `Esc` leaves it
-  running in the background, `c` cancels, `t` goes to the task list, and prompts
-  are drawn over it. Copy, move and delete operations estimated at 256 MiB or
+  phone stays readable. `⏎` or `w` opens a compact progress window
+  floating over the panes (progress bar, counts, sources, target, current item,
+  elapsed time and the result), sized to its content and scrolling inside
+  itself on short terminals; `Esc` leaves the task running in the background,
+  `c` cancels, `t` goes to the task list, and prompts are drawn over it. Copy, move and delete operations estimated at 256 MiB or
   500 entries now ask whether to run in the background or to be watched — the
   estimate is a bounded walk (`ops.EstimateTransfer`, capped at 4000 entries)
   and a delete reuses its plan's counts, so small operations keep starting

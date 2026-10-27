@@ -214,3 +214,57 @@ headings, selection and details.
   wrapping and no line wider than the terminal.
 - Read-only history file (version 99): the box title says `read-only` even
   when the list is empty, and the file is byte-identical afterwards.
+
+## "Stay and watch" floats, and one close hint (2026-10-27T09:40Z, go1.27.3)
+
+Follow-up to the merged Tasks/history work: the live progress view is now a
+floating window like the Settings screen, and its hint bar shows a single close
+chip. Operation start, progress tracking, cancellation and notifications are
+unchanged.
+
+## Summary
+- `gofmt -l .`: clean; `go vet ./...`: ok; `go build ./...`: ok.
+- `go test -count=1 ./...`: ok, every package; `internal/ui` 133.5 s.
+- `go test -race -count=1 ./internal/ui ./internal/history`: ok
+  (141.1 s / 2.4 s).
+- Rendering change only: `View` composites the window with the same
+  `overlay()` used for dialogs and Settings (`body` no longer switches to a
+  live screen), and `liveViewRender` became `liveView`.
+
+## New tests
+- `TestLiveWindowFloatsOverThePanes`: the panels are still drawn around the
+  window (column header, "parent directory", the item counter), the box is
+  inset from the top, left and right edges, is narrower than the terminal,
+  ends well above the status and hint bars, and closing it restores every
+  screen line behind (the status/hint bars excepted: leaving a running task
+  reports itself there).
+- `TestLiveWindowSizesToItsContent`: a small operation opens a window under 20
+  rows, and on a 100×14 terminal the body scrolls — the bar is at the top and
+  `PgDn` reaches the last line instead of the content being cut off.
+- `TestLiveFooterShowsOneCloseHint`: the finished-task footer contains exactly
+  one "close" occurrence, spelled `Esc`, keeps the `scroll` and `tasks` chips,
+  the running task still offers `cancel` and `background`, and `⏎` still
+  closes the window.
+
+## Real binary on a raw pty (`scripts/ptyterm.py`)
+- 100×30, 6000 selected files answered with *Stay and watch*: the progress
+  window is a centred box over both panels (`╭─ Copying ── RUNNING · 77% ─╮`,
+  the panes' column headers and rows still visible above, below and beside
+  it), 62 cells wide — its content width, not the terminal — with the bar,
+  `4617 of 6000 items · 9.0 M/12 M`, `Source` ×3 then `… 5997 more`, `Target`,
+  `Current`, `Elapsed`, and the line `Esc keeps it running in the background ·
+  c cancels · t task list`. The footer read
+  `↑↓ scroll c cancel Esc background t tasks`.
+- The same copy a moment later: the title became `DONE`, `Result Copied 6000
+  files` appeared and the footer became `↑↓ scroll Esc close t tasks` — one
+  close chip, with `⏎` still closing the window.
+- A 420 MiB single-file copy (100×30): the box stayed 74 wide and the long name
+  (`big-file-with-a-really-long-name-that-needs-wrapping-to-fit-the-progress-window.iso`)
+  wrapped after `/` separators instead of overflowing; the result line read
+  `Copied 1 file` with `Elapsed 4s`.
+- 46×14 (phone-sized): the window shrinks to the terminal, the body scrolls
+  (two `PgDn`s brought `Result Copied 6000 files` into view), the scrollbar is drawn
+  on its right border and the footer still shows a single `Esc close`.
+- `Esc` closed the window; the panels were unchanged (the status line only noted
+  the task was still running), and `t` then showed the task as `DONE` with
+  `Copied 6000 files` in the list.

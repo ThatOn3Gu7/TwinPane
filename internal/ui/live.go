@@ -5,27 +5,31 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/ThatOn3Gu7/TwinPane/internal/fsys"
+	"github.com/ThatOn3Gu7/TwinPane/internal/scrollbar"
 )
 
-// live progress: a foreground screen that follows one background task.
+// live progress: a floating window that follows one background task.
 //
-// Large copy, move and delete operations ask how they should run, and "watch
-// progress" opens this screen. It is a view of the same opSession the task list
-// shows — nothing about the operation changes — so it can be left at any time
-// (Esc: keep running in the background, with a notification) and re-opened from
-// the task list (⏎). Prompts that need a decision (conflicts, free space) are
-// modal dialogs drawn over it as usual, and the screen shows that it is waiting
-// for the answer.
+// Large copy, move and delete operations ask how they should run, and "stay and
+// watch" opens this window. Like the Settings screen it floats above the panes
+// — the directory behind stays visible, dimmed by the backdrop — instead of
+// taking the whole screen, and it is sized to its content. It is a view of the
+// same opSession the task list shows — nothing about the operation changes — so
+// it can be left at any time (Esc: keep running in the background, with a
+// notification) and re-opened from the task list (⏎). Prompts that need a
+// decision (conflicts, free space) are modal dialogs drawn over it as usual,
+// and the window shows that it is waiting for the answer.
 
-// liveTask records which task the foreground screen follows.
+// liveTask records which task the floating window follows.
 type liveTask struct {
 	id     int
 	scroll int // first detail row shown
 }
 
-// watchTask opens the live progress screen for a task.
+// watchTask opens the live progress window for a task.
 func (a *App) watchTask(s *opSession) {
 	if s == nil {
 		return
@@ -34,7 +38,7 @@ func (a *App) watchTask(s *opSession) {
 	a.tasks.selected = s.id
 }
 
-// watchSelectedTask opens the live progress screen for the task selected in the
+// watchSelectedTask opens the live progress window for the task selected in the
 // task list. Finished tasks have nothing to watch: they keep their result in
 // the list.
 func (a *App) watchSelectedTask() tea.Cmd {
@@ -70,7 +74,7 @@ func (a *App) liveTaskSession() *opSession {
 	return a.tasks.get(a.live.id)
 }
 
-// closeLive leaves the foreground screen. A task that is still running keeps
+// closeLive leaves the floating window. A task that is still running keeps
 // running in the background and announces itself with a notification, which is
 // the whole point of leaving early.
 func (a *App) closeLive(notify bool) tea.Cmd {
@@ -82,8 +86,8 @@ func (a *App) closeLive(notify bool) tea.Cmd {
 	return nil
 }
 
-// liveKey handles the keys of the live progress screen. Panel keys do not reach
-// the panels from here: the screen is a view of one operation, not a second
+// liveKey handles the keys of the live progress window. Panel keys do not reach
+// the panels from here: the window is a view of one operation, not a second
 // browser.
 func (a *App) liveKey(msg tea.KeyMsg) tea.Cmd {
 	s := a.liveTaskSession()
@@ -130,7 +134,7 @@ func (a *App) liveKey(msg tea.KeyMsg) tea.Cmd {
 	return nil
 }
 
-// liveMouse scrolls the details block; taps do nothing (the screen has no
+// liveMouse scrolls the details block; taps do nothing (the window has no
 // targets).
 func (a *App) liveMouse(ev tea.MouseEvent) tea.Cmd {
 	if a.live == nil {
@@ -142,15 +146,15 @@ func (a *App) liveMouse(ev tea.MouseEvent) tea.Cmd {
 	return nil
 }
 
-// liveViewRender draws the foreground progress screen.
-func (a *App) liveViewRender(height int) string {
-	if height <= 0 {
-		return ""
-	}
+// liveView renders the floating progress window: a compact box over the panes,
+// as wide as its content needs and as tall as it needs, never larger than the
+// screen allows. Long content scrolls (wheel or ↑↓/PgUp/PgDn) with the thumb on
+// the right border.
+func (a *App) liveView() string {
 	s := a.liveTaskSession()
 	if s == nil {
 		a.live = nil
-		return strings.Join(fitBlock([]string{""}, height, a.width), "\n")
+		return ""
 	}
 	th := a.theme
 	title := capitalize(s.title)
@@ -158,38 +162,64 @@ func (a *App) liveViewRender(height int) string {
 	if frac, known := taskFraction(s); known && s.active() {
 		right += fmt.Sprintf(" · %.0f%%", frac*100)
 	}
-	body := a.liveBody(s, max(1, a.width-2))
-	rows := max(0, height-2)
-	// Scroll the body when it is taller than the box (short terminals).
-	maxScroll := max(0, len(body)-rows)
-	scroll := min(max(0, a.live.scroll), maxScroll)
-	body = body[scroll:]
-	var thumb []bool
-	if len(body) > rows && rows > 0 {
-		thumb = make([]bool, rows)
-		thumb[min(rows-1, max(0, scroll*rows/max(1, len(body))))] = true
+
+	// Width: a margin all around keeps the dimmed screen behind visible, and
+	// the box then shrinks to its longest line. A narrow terminal gets the
+	// full width it has.
+	maxW := min(a.width-6, 74)
+	if maxW < 24 {
+		maxW = max(4, a.width-2)
 	}
-	lines := sectionBox(th, title, right, body, a.width, height, true, thumb)
-	return strings.Join(lines, "\n")
+	body := a.liveBody(s, max(1, maxW-2))
+	want := 0
+	for _, line := range body {
+		want = max(want, ansi.StringWidth(line))
+	}
+	winW := min(maxW, max(24, want+2))
+	if inner := max(1, winW-2); inner != max(1, maxW-2) {
+		// A narrower box reflows long paths instead of cutting them off.
+		body = a.liveBody(s, inner)
+	}
+
+	// Height: the content, capped so the panes behind stay visible; anything
+	// that still does not fit scrolls.
+	winH := min(len(body)+2, max(3, a.height-4))
+	viewport := max(1, winH-2)
+	scroll := min(max(0, a.live.scroll), max(0, len(body)-viewport))
+	a.live.scroll = scroll
+	visible := body[scroll:min(scroll+viewport, len(body))]
+	thumb := scrollbar.Cells(len(body), viewport, scroll, viewport)
+	return strings.Join(sectionBox(th, title, right, visible, winW, winH, true, thumb), "\n")
 }
 
-// liveBody is the content of the live screen: the big progress bar first, then
+// liveBody is the content of the live window: the progress bar first, then
 // the same facts the details table shows, then the way out.
 func (a *App) liveBody(s *opSession, width int) []string {
 	th := a.theme
 	var out []string
 	valueW := max(8, width-taskLabelW-1)
-	add := func(label, value string) {
-		if value == "" {
-			return
-		}
-		for i, part := range wrapText(fsys.SanitizeName(value), valueW) {
+	addWrapped := func(label, value string, wrap func(string, int) []string) {
+		for i, part := range wrap(fsys.SanitizeName(value), valueW) {
 			if i == 0 {
 				out = append(out, th.PropLabel.Render(padRight(label, taskLabelW))+th.DialogText.Render(part))
 				continue
 			}
 			out = append(out, strings.Repeat(" ", taskLabelW)+th.DialogText.Render(part))
 		}
+	}
+	add := func(label, value string) {
+		if value == "" {
+			return
+		}
+		addWrapped(label, value, wrapText)
+	}
+	// Paths break after a separator: a long name is cut between segments
+	// instead of in the middle of a word.
+	addPath := func(label, value string) {
+		if value == "" {
+			return
+		}
+		addWrapped(label, value, wrapPath)
 	}
 	frac, known := taskFraction(s)
 	if known {
@@ -225,12 +255,12 @@ func (a *App) liveBody(s *opSession, width int) []string {
 			if i == 0 {
 				label = "Source"
 			}
-			add(label, p)
+			addPath(label, p)
 		}
 	}
-	add("Target", s.to)
+	addPath("Target", s.to)
 	if s.prog.Current != "" && s.active() {
-		add("Current", s.prog.Current)
+		addPath("Current", s.prog.Current)
 	}
 	add("Elapsed", taskElapsed(a, s))
 	if s.state == taskWaiting && s.waitingFor != "" {
@@ -252,10 +282,38 @@ func (a *App) liveBody(s *opSession, width int) []string {
 		}
 	}
 	out = append(out, "")
+	// One line of guidance, no close hint: the footer carries that (Esc
+	// close, or Esc background while the task still runs).
 	hint := "Esc keeps it running in the background · c cancels · t task list"
 	if !s.active() {
-		hint = "Enter or Esc closes · the result stays in the task list (t)"
+		hint = "The result stays in the task list (t)"
 	}
 	out = append(out, th.Summary.Render(hint))
+	return out
+}
+
+// wrapPath wraps a path so the breaks fall after a separator, which keeps both
+// ends of a long path recognisable. A single segment wider than the box is
+// still hard-broken, never dropped.
+func wrapPath(s string, w int) []string {
+	if w < 4 || ansi.StringWidth(s) <= w {
+		return wrapText(s, w)
+	}
+	var lines []string
+	line := ""
+	for _, seg := range strings.SplitAfter(s, "/") {
+		if line != "" && ansi.StringWidth(line+seg) > w {
+			lines = append(lines, line)
+			line = ""
+		}
+		line += seg
+	}
+	if line != "" {
+		lines = append(lines, line)
+	}
+	out := make([]string, 0, len(lines))
+	for _, l := range lines {
+		out = append(out, wrapText(l, w)...)
+	}
 	return out
 }

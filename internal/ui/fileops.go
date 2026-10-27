@@ -82,7 +82,7 @@ type opSession struct {
 
 	// mode is how the operation reports itself while it runs: in the task list
 	// only (the default, used by small operations without any prompt) or on
-	// the live progress screen (chosen for large ones, see taskmode.go).
+	// the live progress window (chosen for large ones, see taskmode.go).
 	mode opMode
 	// est is the bounded size guess shown by the mode choice.
 	est ops.Estimate

@@ -190,7 +190,7 @@ func (a *App) result(lvl int, head, msg string, body ...string) {
 // notification opens the task list, where the full details are kept.
 func (a *App) taskResult(s *opSession, lvl int, head, msg string, body ...string) {
 	if s != nil && a.live != nil && a.live.id == s.id {
-		// The live progress screen is already showing this result; a pop-up on
+		// The live progress window is already showing this result; a pop-up on
 		// top of it would only repeat what the user is reading.
 		return
 	}
@@ -535,7 +535,8 @@ func (a *App) noticeAt(x, y int) bool {
 
 // noticeEscDismisses reports whether Esc is free to dismiss the notification:
 // only on the plain browsing screen, where Esc has no other meaning. Overlays,
-// the task list, the live screen and dialogs keep their own Esc behaviour.
+// the task list, the live progress window and dialogs keep their own Esc
+// behaviour.
 func (a *App) noticeEscDismisses() bool {
 	return a.dialog == nil && !a.quitting && !a.editing && !a.showHelp && !a.showSettings &&
 		!a.tasks.showing &&

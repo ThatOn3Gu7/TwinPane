@@ -9,7 +9,7 @@ import (
 	"github.com/ThatOn3Gu7/TwinPane/internal/ops"
 )
 
-// Choosing between the background and a live progress screen.
+// Choosing between the background and the live progress window.
 //
 // Small operations keep their old behaviour: they start as soon as the user
 // confirms, run in the background, and report through the status line and the
@@ -43,7 +43,7 @@ const (
 	// modeBackground runs the task in the task list only. It is the default:
 	// small operations never ask and never take over the screen.
 	modeBackground opMode = iota
-	// modeLive opens the live progress screen for the operation.
+	// modeLive opens the live progress window for the operation.
 	modeLive
 )
 
@@ -90,7 +90,7 @@ func (a *App) confirmTaskMode(s *opSession, est ops.Estimate, start func() tea.C
 	return nil
 }
 
-// runStarted finishes an operation start: it opens the live screen when the
+// runStarted finishes an operation start: it opens the live window when the
 // user chose to watch it.
 func (a *App) runStarted(s *opSession) tea.Cmd {
 	if s != nil && s.mode == modeLive {
@@ -100,7 +100,7 @@ func (a *App) runStarted(s *opSession) tea.Cmd {
 }
 
 // modeChoiceDialog asks whether a large operation should run in the background
-// or on the live progress screen. Both answers run the operation; the question
+// or in the live progress window. Both answers run the operation; the question
 // is only where its progress is shown.
 func (a *App) modeChoiceDialog(s *opSession, est ops.Estimate, start func() tea.Cmd) {
 	verb := "Operation"
@@ -121,7 +121,7 @@ func (a *App) modeChoiceDialog(s *opSession, est ops.Estimate, start func() tea.
 		text(estimateText(est)),
 		blank(),
 		text("Running in the background leaves the panels usable and shows a small notification."),
-		text("Watching shows a full progress screen you can still leave at any time."),
+		text("Watching opens a progress window over the panels that you can still leave at any time."),
 	)
 	watch := func(a *App) tea.Cmd {
 		a.dialog = nil

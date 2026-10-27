@@ -712,6 +712,31 @@ Four new packages with no UI dependency. The TUI code lives in four
   (`App.currentPrefs`) — never as a settings file of its own. `r` on the
   Settings screen also brings the store's limit back to the default.
 
+### Live progress window (`ui/live.go`, `ui/taskmode.go`)
+- "Stay and watch" (`taskmode.go`, `modeLive`) and `⏎`/`w` in the Tasks screen
+  both open the same view of one `opSession`; nothing about the operation or
+  its progress tracking changes, and the window reads the live session on every
+  frame.
+- It is an overlay, not a screen: `View` composites it with the same `overlay()`
+  used for dialogs and the Settings window, above the panes (and above a task
+  screen it was opened from), so the directory behind stays visible, dimmed,
+  and returns unchanged when it closes. Notifications are drawn on top of it
+  afterwards, and a conflict/free-space dialog still overlays the window.
+- Size: the box is as wide as its longest line, capped at `min(width-6, 74)` and
+  at the terminal width on narrow screens, then reflows its body to that inner
+  width; height is its content capped at `height-4`. Anything left over scrolls
+  (`↑↓`/`PgUp`/`PgDn`/wheel) with `scrollbar.Cells` drawn on the right border,
+  so a short phone terminal shows the bar first and the result last.
+- `liveBody` renders the progress bar, item/byte counts, up to three sources
+  (then "… N more"), the target, the current item, the elapsed time, the last
+  error and, once finished, the result and its details. Paths wrap with
+  `wrapPath`, which breaks after a separator and only hard-breaks a single
+  segment that is wider than the box.
+- Keys stay with the window while it is open: `Esc`/`q` close it (a still-running
+  task keeps running and announces itself with a notification), `⏎` closes a
+  finished one, `c` cancels, `t` swaps to the Tasks screen. `liveHints` shows one
+  close chip (`Esc close`) even though both `⏎` and `Esc` close it.
+
 ### Open / Open with (`internal/opener`, `ui/open.go`)
 - `filetype.go`: `ByName` (an extension table) and `Sniff` (magic bytes:
   images, audio, video, PDF, ZIP-based documents and APKs, ELF/scripts,

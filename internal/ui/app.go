@@ -605,7 +605,7 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		// A notification is dismissed with Esc where Esc means nothing else.
 		// Everywhere else Esc keeps its own meaning (closing the task list, a
-		// dialog, leaving the live screen), so no shortcut is taken away.
+		// dialog, leaving the live progress window), so no shortcut is taken away.
 		if a.notice != nil && msg.String() == "esc" && a.noticeEscDismisses() {
 			a.dismissNotice()
 			return a, nil
@@ -947,8 +947,6 @@ func (a *App) View() string {
 		body = a.helpView(a.height - 3)
 	case a.tasks.showing:
 		body = a.taskViewRender(a.height - 3)
-	case a.live != nil:
-		body = a.liveViewRender(a.height - 3)
 	case a.viewer != nil:
 		body = a.viewerRender(a.height - 3)
 	case a.advancedSearch != nil:
@@ -969,6 +967,13 @@ func (a *App) View() string {
 			a.panels[1].View(a.theme, a.active == 1))
 	}
 	screen := strings.Join([]string{a.titleView(), body, a.statusView(), a.footerView()}, "\n")
+	if a.live != nil && !a.showHelp {
+		// The live progress window floats above the panes (and above the
+		// task screen it may have come from), like the Settings window: the
+		// screen behind stays visible, dimmed, and returns unchanged when it
+		// closes. Notifications are drawn on top of it below.
+		screen = overlay(screen, a.liveView(), a.width, a.height, a.theme.Backdrop)
+	}
 	screen = a.withNotice(screen)
 	if a.showSettings && !a.showHelp {
 		// The settings window floats above the panes (and anything else

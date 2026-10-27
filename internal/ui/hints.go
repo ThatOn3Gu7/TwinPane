@@ -68,15 +68,17 @@ func (a *App) hints() (items []barItem, pinned *barItem) {
 	return a.browseHints(), &help
 }
 
-// liveHints describes the live progress screen: it is a view of one running
-// task, so the chips are about leaving it, not about browsing.
+// liveHints describes the live progress window: it is a view of one running
+// task, so the chips are about leaving it, not about browsing. Both ⏎ and Esc
+// close a finished task, but only one close chip is shown: the same action does
+// not need two keys in the bar.
 func (a *App) liveHints() []barItem {
 	s := a.liveTaskSession()
 	out := []barItem{item("↑↓", "scroll", "")}
 	if s != nil && s.active() {
 		out = append(out, item("c", "cancel", "c"), item("Esc", "background", "esc"))
 	} else {
-		out = append(out, item("⏎", "close", "enter"), item("Esc", "close", "esc"))
+		out = append(out, item("Esc", "close", "esc"))
 	}
 	return append(out, item("t", "tasks", "t"))
 }
