@@ -60,7 +60,29 @@ type Preferences struct {
 	// HistorySessions is how many application runs of operation history are
 	// kept on disk (0 = DefaultHistorySessions).
 	HistorySessions int
+	// Activity configures the User Activity Log (see internal/activity).
+	Activity ActivityPrefs
 }
+
+// ActivityPrefs configures the activity log. Mode is how much is recorded:
+// "off", "warnings", "actions" (the default) or "verbose". MaxKiB is the size
+// at which the current file is rotated (0 = the default, 1 MiB) and KeepDays
+// removes rotated files older than that (0 = the default, 30 days).
+type ActivityPrefs struct {
+	Mode     string
+	MaxKiB   int
+	KeepDays int
+}
+
+// Bounds for the activity log's retention, mirrored by the settings screen.
+const (
+	ActivityMaxKiBMin = 64
+	ActivityMaxKiBDef = 1024
+	ActivityMaxKiBMax = 16384
+	ActivityDaysMin   = 1
+	ActivityDaysDef   = 30
+	ActivityDaysMax   = 365
+)
 
 // StartupPrefs selects where the two panels open. Left/Right empty means the
 // user's home directory; Pane is "left" or "right" (the panel focused first).
@@ -123,6 +145,9 @@ func Default() Preferences {
 		Viewer:          ViewerPrefs{Wrap: true, Numbers: true},
 		Compress:        CompressPrefs{Levels: map[string]int{}},
 		HistorySessions: DefaultHistorySessions,
+		// The activity log records actions by default: it is there to help
+		// when something went wrong, which is after the fact.
+		Activity: ActivityPrefs{Mode: "actions", MaxKiB: ActivityMaxKiBDef, KeepDays: ActivityDaysDef},
 	}
 }
 
@@ -167,7 +192,38 @@ func (p Preferences) Normalized() Preferences {
 		out.Compress.Levels = levels
 	}
 	out.HistorySessions = history.ClampSessions(out.HistorySessions)
+	out.Activity = out.Activity.normalized()
 	return out
+}
+
+// normalized forces the activity log's values back into their valid ranges. An
+// unknown mode falls back to the default rather than to "off" or "verbose".
+func (p ActivityPrefs) normalized() ActivityPrefs {
+	switch p.Mode {
+	case "off", "warnings", "actions", "verbose":
+	default:
+		p.Mode = "actions"
+	}
+	p.MaxKiB = ClampActivityMaxKiB(p.MaxKiB)
+	p.KeepDays = ClampActivityKeepDays(p.KeepDays)
+	return p
+}
+
+// ClampActivityMaxKiB forces a rotation size into its range (0 or an odd value
+// becomes the default).
+func ClampActivityMaxKiB(kib int) int {
+	if kib < ActivityMaxKiBMin || kib > ActivityMaxKiBMax {
+		return ActivityMaxKiBDef
+	}
+	return kib
+}
+
+// ClampActivityKeepDays forces the age limit into its range.
+func ClampActivityKeepDays(days int) int {
+	if days < ActivityDaysMin || days > ActivityDaysMax {
+		return ActivityDaysDef
+	}
+	return days
 }
 
 // Duration returns how long a notification stays, clamped to the valid
@@ -195,7 +251,14 @@ type file struct {
 	Viewer       viewerFile   `json:"viewer"`
 	Compress     compressFile `json:"compress"`
 	// HistorySessions is omitted when zero (an older file keeps the default).
-	HistorySessions int `json:"historySessions,omitempty"`
+	HistorySessions int          `json:"historySessions,omitempty"`
+	Activity        activityFile `json:"activity,omitempty"`
+}
+
+type activityFile struct {
+	Mode     string `json:"mode,omitempty"`
+	MaxKiB   int    `json:"maxKiB,omitempty"`
+	KeepDays int    `json:"keepDays,omitempty"`
 }
 
 type startupFile struct {
@@ -264,6 +327,7 @@ func (f file) decode() Preferences {
 	}
 	p.Compress = CompressPrefs{Format: f.Compress.Format, Levels: f.Compress.Levels}
 	p.HistorySessions = f.HistorySessions
+	p.Activity = ActivityPrefs{Mode: f.Activity.Mode, MaxKiB: f.Activity.MaxKiB, KeepDays: f.Activity.KeepDays}
 	return p.Normalized()
 }
 
@@ -284,6 +348,7 @@ func encode(p Preferences) file {
 		Viewer:          viewerFile{Wrap: boolPtr(p.Viewer.Wrap), Numbers: boolPtr(p.Viewer.Numbers)},
 		Compress:        compressFile{Format: p.Compress.Format, Levels: p.Compress.Levels},
 		HistorySessions: p.HistorySessions,
+		Activity:        activityFile{Mode: p.Activity.Mode, MaxKiB: p.Activity.MaxKiB, KeepDays: p.Activity.KeepDays},
 	}
 }
 

@@ -160,6 +160,7 @@ func (a *App) recordOperation(r history.Record) {
 	if r.Status == "" {
 		r.Status = history.StatusSuccess
 	}
+	a.logOperation(r)
 	a.history.Add(r)
 }
 

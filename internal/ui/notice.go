@@ -539,7 +539,7 @@ func (a *App) noticeAt(x, y int) bool {
 // behaviour.
 func (a *App) noticeEscDismisses() bool {
 	return a.dialog == nil && !a.quitting && !a.editing && !a.showHelp && !a.showSettings &&
-		!a.tasks.showing &&
+		!a.tasks.showing && a.actView == nil &&
 		a.live == nil && a.viewer == nil && a.search == nil && a.advancedSearch == nil &&
 		a.bulk == nil && a.folderSize == nil && a.comparison == nil && a.props == nil
 }

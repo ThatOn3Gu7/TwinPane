@@ -214,3 +214,49 @@ func TestResetRewritesDefaultsAndRecoversCorruptFile(t *testing.T) {
 		t.Fatalf("recovered file kept foreign values: %+v", got)
 	}
 }
+
+// TestActivityPrefsDefaultsAndRoundTrip: the activity log is on by default,
+// its values survive a save/load cycle, and nonsense in the file falls back to
+// the defaults rather than switching logging off (or to verbose).
+func TestActivityPrefsDefaultsAndRoundTrip(t *testing.T) {
+	if d := Default(); d.Activity.Mode != "actions" || d.Activity.MaxKiB != ActivityMaxKiBDef || d.Activity.KeepDays != ActivityDaysDef {
+		t.Fatalf("unexpected activity defaults: %+v", d.Activity)
+	}
+	path := filepath.Join(t.TempDir(), "settings.json")
+	p := Default()
+	p.Activity = ActivityPrefs{Mode: "verbose", MaxKiB: 4096, KeepDays: 7}
+	if err := Save(path, p); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	got, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if got.Activity != p.Activity {
+		t.Fatalf("activity prefs did not round-trip: %+v", got.Activity)
+	}
+
+	// A hand-edited file with out-of-range values loads with defaults.
+	body := `{"version":1,"activity":{"mode":"chatty","maxKiB":999999,"keepDays":-4}}`
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	got, err = Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if got.Activity.Mode != "actions" {
+		t.Fatalf("unknown mode should fall back to actions, got %q", got.Activity.Mode)
+	}
+	if got.Activity.MaxKiB != ActivityMaxKiBDef || got.Activity.KeepDays != ActivityDaysDef {
+		t.Fatalf("out-of-range retention not normalized: %+v", got.Activity)
+	}
+
+	// An older file without the field keeps the default (logging stays on).
+	if err := os.WriteFile(path, []byte(`{"version":1}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ = Load(path); got.Activity.Mode != "actions" {
+		t.Fatalf("a file without the field turned logging off: %+v", got.Activity)
+	}
+}

@@ -99,6 +99,8 @@ func (a *App) handleMouse(m tea.MouseMsg) tea.Cmd {
 		return a.dialogMouse(a.dialog, ev)
 	case a.tasks.showing:
 		return a.taskViewMouse(ev)
+	case a.actView != nil:
+		return a.activityMouse(ev)
 	case a.live != nil:
 		return a.liveMouse(ev)
 	case a.showHelp:

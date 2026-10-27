@@ -51,6 +51,11 @@ type KeyMap struct {
 	// Phase 10: n opens the New file / New folder menu; F7 still creates a
 	// folder directly.
 	New Binding
+
+	// Phase 15: L opens the activity log (what TwinPane did, for
+	// troubleshooting). It is not the operation history, which lives in the
+	// Tasks screen (t).
+	Activity Binding
 }
 
 // DefaultKeys returns the default key bindings.
@@ -109,6 +114,8 @@ func DefaultKeys() KeyMap {
 		Sources: Binding{[]string{"ctrl+r"}, "^R", "source: local / cloud"},
 		Mkdir:   Binding{[]string{"f7"}, "F7", "new folder (direct)"},
 		New:     Binding{[]string{"n"}, "n", "new file / new folder"},
+
+		Activity: Binding{[]string{"L"}, "L", "activity log"},
 	}
 }
 
@@ -128,8 +135,8 @@ func (k KeyMap) helpSections() [2][]helpSection {
 			{"Tasks & history (t)", []Binding{
 				{Help: "⏎ / w", Desc: "watch live progress"},
 				{Help: "c", Desc: "cancel the selected task"},
-				{Help: "x", Desc: "clear finished (this run)"},
-				{Help: "[ ]", Desc: "previous / next run"}}},
+				{Help: "[ ]", Desc: "previous / next run"},
+				k.Activity}},
 		},
 		{
 			{"File operations", []Binding{k.Copy, k.Move, k.Rename, k.Delete, k.Edit, k.EditWith, k.Properties, k.Cancel}},

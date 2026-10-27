@@ -9,6 +9,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/ThatOn3Gu7/TwinPane/internal/activity"
 	"github.com/ThatOn3Gu7/TwinPane/internal/editor"
 	"github.com/ThatOn3Gu7/TwinPane/internal/history"
 	"github.com/ThatOn3Gu7/TwinPane/internal/settings"
@@ -22,12 +23,21 @@ func main() {
 	showVersion := flag.Bool("version", false, "print version and exit")
 	noMouse := flag.Bool("no-mouse", false, "do not use mouse/touch input (lets the terminal select text normally)")
 	noTips := flag.Bool("no-editor-tips", false, "do not show the editor's save/quit keys before it starts")
+	logPath := flag.String("log", "", "activity log file (default: next to settings.json)")
+	logMode := flag.String("log-mode", "", "what the activity log records: off, warnings, actions (default) or verbose")
+	logSize := flag.Int("log-size", 0, "rotate the activity log at this many KiB (64–16384)")
+	logDays := flag.Int("log-days", 0, "delete rotated activity logs older than this many days (1–365)")
+	noLog := flag.Bool("no-log", false, "write no activity log for this run")
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "TwinPane %s — dual-pane terminal file manager\n\n", version)
-		fmt.Fprintf(os.Stderr, "Usage: twinpane [--version] [--no-mouse] [--no-editor-tips]\n\n")
+		fmt.Fprintf(os.Stderr, "Usage: twinpane [--version] [--no-mouse] [--no-editor-tips] [--log FILE]\n\n")
 		flag.PrintDefaults()
 		fmt.Fprintf(os.Stderr, "\nBoth panels open in your home directory. Press ? inside the app for keys.\n")
 		fmt.Fprintf(os.Stderr, "TWINPANE_NO_MOUSE=1 has the same effect as --no-mouse.\n")
+		fmt.Fprintf(os.Stderr, "The activity log (L) records what TwinPane did, for troubleshooting;\n")
+		fmt.Fprintf(os.Stderr, "it never records passwords, text-field contents or search queries.\n")
+		fmt.Fprintf(os.Stderr, "TWINPANE_LOG, TWINPANE_LOG_MODE, TWINPANE_LOG_SIZE and TWINPANE_LOG_DAYS\n")
+		fmt.Fprintf(os.Stderr, "have the same effect as the --log* flags.\n")
 	}
 	flag.Parse()
 	if *showVersion {
@@ -63,6 +73,34 @@ func main() {
 	} else {
 		opts.HistoryPath = histPath
 	}
+	// The activity log: a file next to settings.json unless --log/TWINPANE_LOG
+	// says otherwise. --no-log and --log-mode off both mean "write nothing".
+	// Every other --log* value is only a per-run override; the durable values
+	// are the ones in the Settings screen.
+	logModeValue := firstNonEmpty(*logMode, os.Getenv("TWINPANE_LOG_MODE"))
+	if *noLog {
+		logModeValue = "off"
+	}
+	opts.ActivityMode = logModeValue
+	logFile := firstNonEmpty(*logPath, os.Getenv("TWINPANE_LOG"))
+	if logFile == "" {
+		p, err := activity.DefaultPath()
+		if err != nil {
+			opts.ActivityPathError = err.Error()
+		} else {
+			logFile = p
+		}
+	}
+	opts.ActivityPath = logFile
+	if n := firstNonZero(*logSize, envInt("TWINPANE_LOG_SIZE")); n > 0 {
+		opts.ActivityMaxKiB = settings.ClampActivityMaxKiB(n)
+	}
+	if n := firstNonZero(*logDays, envInt("TWINPANE_LOG_DAYS")); n > 0 {
+		opts.ActivityKeepDays = settings.ClampActivityKeepDays(n)
+	}
+
+	// A log path that cannot be resolved is reported by the interface, like
+	// the settings and history paths.
 	if runtime.GOOS == "linux" && onAndroid() {
 		opts.Notice = "this is the Linux build running on Android: for Termux install the android-arm64 build"
 	}
@@ -92,4 +130,44 @@ func onAndroid() bool {
 	}
 	_, err := os.Stat("/system/bin/linker64")
 	return err == nil
+}
+
+// firstNonEmpty returns the first value that is not empty.
+func firstNonEmpty(values ...string) string {
+	for _, v := range values {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
+// firstNonZero returns the first value that is not zero.
+func firstNonZero(values ...int) int {
+	for _, v := range values {
+		if v != 0 {
+			return v
+		}
+	}
+	return 0
+}
+
+// envInt reads a positive integer from the environment (0 when unset or not a
+// number, which leaves the default in place).
+func envInt(name string) int {
+	v := os.Getenv(name)
+	if v == "" {
+		return 0
+	}
+	n := 0
+	for _, r := range v {
+		if r < '0' || r > '9' {
+			return 0
+		}
+		n = n*10 + int(r-'0')
+		if n > 1<<20 {
+			return 0
+		}
+	}
+	return n
 }

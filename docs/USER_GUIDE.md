@@ -498,6 +498,60 @@ A damaged history file is moved aside as `history.json.corrupt-<timestamp>`
 started. A file written by a newer TwinPane is shown read-only and is not
 overwritten.
 
+#### Activity log (`L`)
+
+The activity log is a separate record from the operation history: where the
+history answers *what happened to my files*, the activity log answers *what was
+the program doing*. It is one file, shown in one viewer (`L`), that is useful
+when something went wrong and you want to say what happened — for a bug report,
+or to see why a remote folder would not open.
+
+- **Recorded:** navigation (which folder or remote was opened), dialogs and
+  screens, menus, task start/finish/cancel, file operations, remote (rclone)
+  operations with their outcome, preference changes, warnings and errors shown
+  in the status line, and recovery from damaged files. Every external program
+  TwinPane runs (rclone, 7-Zip, the editor's helpers, openers, the search tools)
+  is recorded with its name, start, duration, exit code and result.
+- **Never recorded:** the contents of a text field (a new name, a path typed
+  into a prompt), search and filter queries, clipboard contents, the editor's
+  command input, the environment, and progress updates (the log has one entry
+  per action and per command, not one per tick).
+- **Credentials are never written.** Arguments and error text are passed
+  through a redactor before they are stored: passwords, tokens, API keys, URL
+  credentials, `Authorization` headers and secret command-line flags become
+  `***`. rclone itself is never given a password on the command line, so this is
+  a second line of defence rather than the only one.
+- **Paths are recorded** by default (they are what makes the log useful), so
+  the file contains the folders, file names and remote names you worked with.
+  Treat it like a shell history, not like a log of nothing.
+- **Modes** (Settings → *Activity log → Record*, or `--log-mode`): `actions`
+  (the default) records every action and everything more serious, `warnings`
+  records only warnings and errors, `verbose` adds diagnostics such as each
+  keyboard shortcut and the whole (redacted) command line, and `off` writes
+  nothing at all. The mode can be changed while TwinPane runs.
+- **Bounded:** the current file is rotated at 1 MiB (64 KiB–16 MiB,
+  Settings → *Rotate at*), three older files are kept (`activity.1.jsonl` …)
+  and rotated files older than 30 days are deleted (Settings → *Delete rotated
+  after*). Entries are appended one line at a time with a single write and
+  no `fsync`, so logging never slows an operation down; a crash can lose at
+  most the entry being written. A line that cannot be read back is skipped and
+  counted, never fatal.
+
+**Keys in the viewer:** `↑`/`↓` (or `k`/`j`) move, `PgUp`/`PgDn` page, `g`/`G`
+jump to the ends, `c` cycles the category filter (All Activity, Commands, File
+Operations, Navigation, UI Actions, Tasks, Cloud, Warnings & Errors, Settings,
+Recovery), `l` cycles the minimum level (all, info and up, warnings and up,
+errors only), `/` types a filter — `cat:cloud`, `lvl:error`, `ev:command` or
+plain text — `[`/`]` jump between application runs, `Enter` shows the selected
+entry's details, `r` reloads, `x` clears every filter and `Esc` closes. The
+wheel scrolls and a tap selects a row.
+
+The file is `activity.jsonl` beside `settings.json` (mode 0600), honouring
+`TWINPANE_CONFIG_DIR`. `--log FILE`, `--log-mode`, `--log-size`, `--log-days`
+and `--no-log` (or `TWINPANE_LOG`, `TWINPANE_LOG_MODE`, `TWINPANE_LOG_SIZE`,
+`TWINPANE_LOG_DAYS`) override the file and retention for one run. Nothing is
+sent anywhere: the log is local and only read by you.
+
 #### Other additions and safety fixes
 
 - **Directory comparison (`D`):** compare the two local panel folders,
@@ -1612,6 +1666,10 @@ they have room to breathe:
   history keeps (1–200, default 20). Lowering it prunes older runs at once;
   the current run is never pruned. The same limit is behind `+`/`-` in the
   Tasks screen (`t`).
+- **Activity log** — **Record** (`actions`, `warnings`, `verbose`, `off`),
+  **Rotate at** (64 KiB–16 MiB, default 1 MiB) and **Delete rotated after**
+  (1–365 days, default 30). The mode applies at once; the size and age limits
+  apply to the next start. See [Activity log (`L`)](#activity-log-l).
 
 **Keys on the screen:** `↑`/`↓` (or `k`/`j`) move, `←`/`→` (or `h`/`l`,
 `Space`, `Enter`) change a value — the text rows open a one-line input —
@@ -1677,6 +1735,7 @@ disables tips whatever the screen says.
 | `Ctrl+T` (in Advanced Search) | switch between filename and content search |
 | `Ctrl+A` (in Advanced Search) | actions for the selected result: open, jump, edit, open with, copy, move, rename, copy path, delete |
 | `t` | tasks and operation history: active progress, this run's results and earlier runs in one list (`↑`/`↓`, `[`/`]`, `c`, `x`, `⏎`/`w`) |
+| `L` | activity log: what TwinPane did, for troubleshooting (`c` category, `l` level, `/` filter, `[`/`]` run, `⏎` details) |
 | `h` / `H` / `.` | show / hide hidden files in **both** panels |
 | `s` | cycle sort: name → size → time → type |
 | `S` | reverse the sort order (↑/↓) |

@@ -43,6 +43,8 @@ func (a *App) hints() (items []barItem, pinned *barItem) {
 		return a.dialogHints(a.dialog), nil
 	case a.tasks.showing:
 		return a.taskFooterHints(), nil
+	case a.actView != nil:
+		return a.activityHints(), nil
 	case a.live != nil:
 		return a.liveHints(), nil
 	case a.showHelp:

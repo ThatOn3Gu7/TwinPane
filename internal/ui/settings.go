@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
 	"time"
@@ -68,6 +69,9 @@ const (
 	rowFormat
 	rowLevel
 	rowHistorySessions
+	rowActivity
+	rowActivitySize
+	rowActivityDays
 )
 
 // settingsRow is one preference in the list. group is printed as a section
@@ -128,6 +132,13 @@ func (a *App) settingsRows() []settingsRow {
 
 		{id: rowHistorySessions, group: "Operation history", label: "Runs kept",
 			value: a.historyKeepLabel()},
+
+		{id: rowActivity, group: "Activity log", label: "Record",
+			value: a.actMode.Label(), after: "what TwinPane did"},
+		{id: rowActivitySize, label: "Rotate at",
+			value: fmt.Sprintf("%d KiB", a.actMaxKiB), after: "keeps 3 older files"},
+		{id: rowActivityDays, label: "Delete rotated after",
+			value: plural(a.actKeepDays, "day")},
 	}
 	return rows
 }
@@ -369,6 +380,29 @@ func (a *App) settingsAdjust(rows []settingsRow, delta int) tea.Cmd {
 			li = 0
 		}
 		a.formatLevels[f.ID] = li
+	case rowActivity:
+		// The log is written by the same process that edits this preference,
+		// so the new mode takes effect at once.
+		a.actMode = a.actMode.Next(delta)
+		if a.actLog != nil {
+			a.actLog.SetMode(a.actMode)
+		}
+	case rowActivitySize:
+		a.actMaxKiB += delta * 256
+		if a.actMaxKiB > settings.ActivityMaxKiBMax {
+			a.actMaxKiB = settings.ActivityMaxKiBMin
+		}
+		if a.actMaxKiB < settings.ActivityMaxKiBMin {
+			a.actMaxKiB = settings.ActivityMaxKiBMax
+		}
+	case rowActivityDays:
+		a.actKeepDays += delta * 5
+		if a.actKeepDays > settings.ActivityDaysMax {
+			a.actKeepDays = settings.ActivityDaysMin
+		}
+		if a.actKeepDays < settings.ActivityDaysMin {
+			a.actKeepDays = settings.ActivityDaysMax
+		}
 	case rowHistorySessions:
 		// The history store prunes older runs as soon as the limit drops, so
 		// the screen and the store can never disagree.
@@ -380,6 +414,7 @@ func (a *App) settingsAdjust(rows []settingsRow, delta int) tea.Cmd {
 			}
 		}
 	}
+	a.logSetting(a.settingsRows()[i])
 	a.savePrefs(true)
 	return cmd
 }

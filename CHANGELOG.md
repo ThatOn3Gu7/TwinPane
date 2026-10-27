@@ -13,6 +13,19 @@ New file creation, one key for both new files and new folders, a persistent
 operation history inside the Tasks screen, a floating "stay and watch" window,
 and the Settings screen that now owns every preference.
 
+### Added
+- **Activity log (`L`)**: a persistent record of what TwinPane did — navigation,
+  dialogs, screens, tasks, file and remote operations, settings changes,
+  warnings and errors, and every external command with its duration, exit code
+  and result — in one append-only file, with category and level filters over
+  the same entries. Passwords, tokens, API keys, URL credentials, `Authorization`
+  headers and secret command-line flags are redacted before anything is written;
+  text-field contents, search queries, clipboard contents, the editor's input
+  and the environment are never recorded. Modes `actions` (default),
+  `warnings`, `verbose` and `off`; rotation (1 MiB, three older files) and a
+  30-day age limit; `--log*` flags and `TWINPANE_LOG*` variables. The operation
+  history is unchanged and still lives in the Tasks screen.
+
 ### Changed
 - **"Stay and watch" is a floating window.** The live progress view used to take
   the whole screen; it now floats over the panes like the Settings window — the

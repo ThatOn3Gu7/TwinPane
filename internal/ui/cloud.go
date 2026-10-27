@@ -13,6 +13,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/ThatOn3Gu7/TwinPane/internal/activity"
 	"github.com/ThatOn3Gu7/TwinPane/internal/cloud"
 	"github.com/ThatOn3Gu7/TwinPane/internal/fsys"
 	"github.com/ThatOn3Gu7/TwinPane/internal/ops"
@@ -451,6 +452,11 @@ func (a *App) beginMkdir() tea.Cmd {
 // startCloudOp runs one remote operation as a retained background task.
 func (a *App) startCloudOp(idx int, title, name, what, from, to string, run func(ctx context.Context) error) tea.Cmd {
 	s, ctx := a.newSession(title, idx, nil)
+	a.logActivity(activity.Entry{
+		Level: activity.LevelInfo.String(), Cat: activity.CatCloud, Ev: "cloud.start",
+		Msg: fmt.Sprintf("%s %q in %s", strings.ToLower(what), name, to), Op: title,
+		Status: "running", Kind: cloudOpKind(what),
+	})
 	s.prog = ops.Progress{Phase: "working", TotalItems: 1, Current: name}
 	if from != "" {
 		s.from = []string{from}
@@ -466,6 +472,7 @@ func (a *App) startCloudOp(idx int, title, name, what, from, to string, run func
 }
 
 func (a *App) finishCloudOp(s *opSession, m opCloudDoneMsg) tea.Cmd {
+	a.logCloudResult(s, m.what, m.focus, m.err)
 	var summary string
 	var level int
 	var state taskState
@@ -693,7 +700,95 @@ func (a *App) startCloudDelete(idx int, c *cloud.Client, p *panel.Panel, targets
 	return a.startCmds(s)
 }
 
+// logCloudResult records the outcome of a remote operation, with the same
+// warning/error levels the classifier gives the status line.
+func (a *App) logCloudResult(s *opSession, what, name string, err error) {
+	if a == nil || a.actLog == nil {
+		return
+	}
+	l := activity.LevelInfo
+	status := "ok"
+	msg := fmt.Sprintf("%s %q", strings.ToLower(what), name)
+	switch {
+	case err == nil:
+	case cloud.KindOf(err) == cloud.KindCanceled:
+		l, status = activity.LevelWarn, "cancelled"
+		msg += ": cancelled"
+	default:
+		l, status = activity.LevelError, "failed"
+		msg += ": " + err.Error()
+	}
+	e := activity.Entry{
+		Level: l.String(), Cat: activity.CatCloud, Ev: "cloud.done",
+		Msg: msg, Status: status, Kind: cloudOpKind(what),
+	}
+	if s != nil {
+		e.Op = s.title
+	}
+	if err != nil {
+		e.Err = err.Error()
+		var ce *cloud.Error
+		if errors.As(err, &ce) {
+			e.Code = ce.Code
+			e.Kind = cloudOpKind(what) + "/" + cloudKindName(ce.Kind)
+		}
+	}
+	a.logActivity(e)
+}
+
+// cloudOpKind groups remote operations for the log.
+func cloudOpKind(what string) string {
+	switch what {
+	case "Uploaded", "Downloaded":
+		return "transfer"
+	case "Deleted":
+		return "delete"
+	case "Created folder", "Renamed to":
+		return "change"
+	}
+	return "remote"
+}
+
+// cloudKindName names a classification for the log. The names are stable
+// identifiers, not sentences: they are searched with ev:/text filters.
+func cloudKindName(k cloud.ErrKind) string {
+	switch k {
+	case cloud.KindCanceled:
+		return "canceled"
+	case cloud.KindNotFound:
+		return "not-found"
+	case cloud.KindNoRemote:
+		return "no-remote"
+	case cloud.KindConfigLocked:
+		return "config-locked"
+	case cloud.KindAuth:
+		return "auth"
+	case cloud.KindNetwork:
+		return "network"
+	case cloud.KindPermission:
+		return "permission"
+	case cloud.KindQuota:
+		return "quota"
+	case cloud.KindUnsupported:
+		return "unsupported"
+	case cloud.KindExists:
+		return "exists"
+	case cloud.KindInvalid:
+		return "invalid"
+	}
+	return "other"
+}
+
 func (a *App) finishCloudDelete(s *opSession, res cloudDeleteResult) tea.Cmd {
+	name := ""
+	if s != nil {
+		name = s.first
+	}
+	err := res.fatal
+	if err == nil && res.canceled {
+		err = fmt.Errorf("%w", context.Canceled)
+	}
+	a.logCloudResult(s, "Deleted", name, err)
 	p := a.panels[s.srcPanel]
 	ok := !res.canceled && res.fatal == nil && len(res.errors) == 0
 	focus := ""

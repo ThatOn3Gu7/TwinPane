@@ -170,6 +170,7 @@ func (a *App) menuEntries() (title string, entries []menuEntry) {
 	add(menuEntry{label: "Storage info", key: "i", send: "i"})
 	add(menuEntry{label: "Analyze folder sizes", key: "A", send: "A"})
 	add(settingsMenuEntry())
+	add(menuEntry{label: "Activity log", detail: "what TwinPane did", key: "L", send: "L"})
 	entries = append(entries, a.navMenuEntries(p)...)
 	entries = append(entries, a.focusMenuEntries()...)
 	if len(targets) > 0 {

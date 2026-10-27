@@ -1332,3 +1332,36 @@ their scroll row, short dialogs without an indicator, long bookmark lists).
     Enter), a mock handler named `md-handler` (not run while waiting, run
     once on Open), the binary warning, the help frame while scrolling, the
     filter, and 30×7 / 30×10 terminals.
+
+## Activity log (`internal/activity`, `internal/ui/activity.go`, `internal/ui/activityview.go`)
+
+Two records, two purposes. `internal/history` is the *operation* record: what
+happened to files, browsable in the Tasks screen, written atomically per
+operation. `internal/activity` is the *action* record: what the program was
+doing, for troubleshooting, written as an append-only NDJSON line per action.
+
+Three properties make it cheap enough to leave on:
+
+- **One file, appends only.** Each entry is one `write` to an `O_APPEND` file,
+  so a line is never interleaved with another instance's line and a crash loses
+  at most the entry in flight. No `fsync`: this is diagnostics, not a record of
+  truth. Rotation at a configurable size (three older files) plus an age limit
+  keeps the footprint bounded; malformed lines are skipped and counted.
+- **Central hooks, not per-call sites.** Every external program goes through
+  `proc.Start`, so `proc.SetTrace` reports all of them (`internal/proc/trace.go`).
+  Warnings and errors land in `App.setStatusLevel`. Dialogs, screens and
+  overlays are detected by diffing `App.dialog` and a screen name in `Update`
+  instead of at the ~100 places that assign them. Navigation is noticed where a
+  panel applies a load. Tasks, operations, cloud calls and settings changes each
+  have one funnel. Nothing per progress tick, per cursor move or per frame.
+- **Redaction in the sink.** `activity.Store.Log` runs `Redact` on every field
+  before encoding, so a call site cannot write a credential by accident; the
+  redactor covers passwords, tokens, keys, URL userinfo, `Authorization`
+  headers and secret flags, in messages, error text and command arguments.
+  Text-field contents, search queries, the clipboard and the environment are
+  never passed to it in the first place.
+
+The viewer (`L`) is a full-body screen following the Tasks screen's pattern:
+one snapshot of the log, a category filter (`activity.CatFilter`, including a
+"Warnings & Errors" filter that cuts across categories), a minimum-level filter
+and a typed query. Filters never change what is stored.

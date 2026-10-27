@@ -160,6 +160,7 @@ func (a *App) newSession(title string, srcPanel int, targets []string) (*opSessi
 	}
 	a.tasks.add(s)
 	a.historyBegin(s)
+	a.logTaskStart(s)
 	return s, ctx
 }
 
@@ -225,6 +226,7 @@ func (a *App) finishTask(s *opSession, state taskState, summary string, details 
 		s.cancel = nil
 	}
 	a.historyComplete(s)
+	a.logTaskDone(s)
 	// The row moved from the running group to the finished one.
 	a.tasks.liveRev++
 }
@@ -326,6 +328,7 @@ func (a *App) cancelTask(id int) bool {
 		// The modal owns the current decision; its Esc action replies safely.
 		return false
 	}
+	a.logTaskCancel(s)
 	s.canceling = true
 	s.state = taskCanceling
 	a.tasks.removePrompts(id)

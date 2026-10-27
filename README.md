@@ -158,6 +158,31 @@ The [user guide](docs/USER_GUIDE.md) describes every feature in detail.
   is saved as a preference. A damaged file is kept as
   `history.json.corrupt-<timestamp>` and a fresh history is started.
 
+**Activity log (`L`)**
+- A second, separate record for troubleshooting: navigation, dialogs, screens,
+  task start/finish/cancel, file operations, remote (rclone) operations,
+  preference changes, warnings and errors, and every external program TwinPane
+  runs (name, duration, exit code and result). The operation history above
+  answers *what happened to my files*; this answers *what was the program
+  doing*.
+- One log and one viewer, with category filters over the same entries: All
+  Activity, Commands, File Operations, Navigation, UI Actions, Tasks, Cloud,
+  Warnings & Errors, Settings, Recovery — plus a minimum-level filter and a
+  query (`cat:cloud`, `lvl:error`, `ev:command` or plain text).
+- **No secrets, no typing.** Every message, error line and command argument is
+  redacted (passwords, tokens, API keys, URL credentials, `Authorization`
+  headers, secret flags) before it is written. Text-field contents, search
+  queries, clipboard contents, the editor's input and the environment are never
+  recorded. **Paths and remote names are recorded** because they are what makes
+  the log useful.
+- Modes: `actions` (default), `warnings`, `verbose` (adds shortcuts and full
+  command lines) and `off` — in Settings or with `--log-mode`. Bounded by
+  rotation (1 MiB, three older files) and age (30 days), append-only, and
+  malformed lines are skipped instead of failing.
+- `activity.jsonl` in the configuration directory (mode 0600). `--log FILE`,
+  `--log-size`, `--log-days`, `--no-log` and the `TWINPANE_LOG*` variables
+  override the file and retention for one run.
+
 **Directory comparison**
 - Compare the two local panel folders (`D`), ignoring exact `.git` directories
   by default (`g` includes them). `f` hides matching rows; `h` can verify
@@ -481,6 +506,8 @@ rm -rf ~/.config/twinpane      # bookmarks, if you used them (macOS: ~/Library/A
 twinpane                    # both panels open in your home folder
 twinpane --no-mouse         # keyboard only; the terminal can select text
 twinpane --no-editor-tips   # no save/quit card before the editor starts with e
+twinpane --log-mode verbose # what the activity log records (off/warnings/actions/verbose)
+twinpane --log /tmp/tp.jsonl --no-log
 twinpane --version
 ```
 
@@ -496,6 +523,7 @@ twinpane --version
 | `s` / `S` | sort / reverse | `o` / `O` | open / open with… |
 | `h` | hidden files | `P` | properties |
 | `D` / `A` | compare folders / analyze sizes | `t` | tasks & operation history (one list) |
+| `L` | activity log (what TwinPane did) | `F9` / `Ctrl+S` | settings |
 | `b` / `B` | bookmarks / add | `M` | action menu |
 | `i` | storage | `?` / `F1` | help (with `/` filter) |
 | `F9` / `Ctrl+S` | settings | | |
@@ -522,7 +550,9 @@ including those of the viewer, dialogs, search and bulk rename.
 | tap a hint or button | same as pressing its key |
 | right click (mouse) | select / deselect |
 
-**Environment variables:** `VISUAL` / `EDITOR` (the editor),
+**Environment variables:** `VISUAL` / `EDITOR` (the editor), `TWINPANE_LOG`
+/ `TWINPANE_LOG_MODE` / `TWINPANE_LOG_SIZE` / `TWINPANE_LOG_DAYS` (the activity
+log, same as the `--log*` flags),
 `TWINPANE_NO_MOUSE=1` (same as `--no-mouse`), `TWINPANE_CONFIG_DIR` (an
 absolute path for the bookmarks and settings files; default
 `~/.config/twinpane`, on macOS `~/Library/Application Support/twinpane`).
@@ -531,7 +561,8 @@ absolute path for the bookmarks and settings files; default
 preferences window over the panes — the directory behind stays visible —
 (startup folders and starting panel, hidden files, default sort,
 notification corner/duration, theme presets, preferred editor and tips,
-mouse, viewer wrap/line numbers, compression defaults). Preferences are
+mouse, viewer wrap/line numbers, compression defaults, operation-history
+retention, and the activity log's mode and retention). Preferences are
 stored atomically in `settings.json` in the configuration directory; the
 flags above and `TWINPANE_NO_MOUSE` keep overriding them for the session,
 and a damaged file is reported on the screen with `r` to reset it.

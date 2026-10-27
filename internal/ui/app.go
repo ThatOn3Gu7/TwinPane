@@ -15,6 +15,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/ThatOn3Gu7/TwinPane/internal/activity"
 	"github.com/ThatOn3Gu7/TwinPane/internal/bookmarks"
 	"github.com/ThatOn3Gu7/TwinPane/internal/cloud"
 	"github.com/ThatOn3Gu7/TwinPane/internal/compress"
@@ -90,6 +91,18 @@ type Options struct {
 	HistoryPath string
 	// HistoryPathError reports a failure resolving the default history path.
 	HistoryPathError string
+
+	// ActivityPath is the User Activity Log file. Empty disables the log
+	// (tests, embedders); the command sets activity.DefaultPath().
+	ActivityPath string
+	// ActivityPathError reports a failure resolving the default log path.
+	ActivityPathError string
+	// ActivityMode overrides the "activity log" preference for this run
+	// (--log-mode); empty uses the saved preference.
+	ActivityMode string
+	// ActivityMaxKiB and ActivityKeepDays override the log's retention for
+	// this run (--log-size, --log-days); zero keeps the preference.
+	ActivityMaxKiB, ActivityKeepDays int
 }
 
 // status levels
@@ -213,6 +226,20 @@ type App struct {
 	notice        *notice
 	noticeSeq     int
 	noticeTicking bool
+
+	// Phase 15: the User Activity Log (activity.go, activityview.go). The
+	// store is nil when logging is disabled (no path, or mode "off").
+	activityPath string
+	actLog       *activity.Store
+	actErr       error
+	actMode      activity.Mode
+	actMaxKiB    int
+	actKeepDays  int
+	actRestore   func()
+	actView      *activityView
+	actDialog    *dialog // dialog seen last frame (activity log diffing)
+	actScreen    string  // screen seen last frame
+	actExited    bool
 }
 
 // New creates the application model.
@@ -290,6 +317,10 @@ func New(opts Options) *App {
 	if a.history == nil {
 		a.history, _ = history.Memory(histOpts)
 	}
+	// The activity log shares the history's run ID, so the two records can be
+	// read together. It is opened before the first panel load, so the startup
+	// itself is in the log.
+	a.initActivityLog(opts.ActivityPath, opts.ActivityPathError, opts.ActivityMode)
 	a.panels[0] = panel.New(0, opts.Lister)
 	a.panels[1] = panel.New(1, opts.Lister)
 	// Install the effective preferences before Init starts either panel's
@@ -313,6 +344,12 @@ func New(opts Options) *App {
 	}
 	if len(notices) > 0 {
 		a.setStatusLevel(strings.Join(notices, " · "), lvlWarn)
+	}
+	if a.settingsErr != nil {
+		a.logRecovery("recovery.settings", "settings: "+a.settingsErr.Error())
+	}
+	if historyErr != nil {
+		a.logRecovery("recovery.history", "history: "+historyErr.Error())
 	}
 	return a
 }
@@ -360,6 +397,11 @@ func (a *App) applyPreferences(p settings.Preferences) {
 	if a.history != nil {
 		_ = a.history.SetLimit(p.HistorySessions)
 	}
+	a.actMode = activity.ParseMode(p.Activity.Mode)
+	a.actMaxKiB, a.actKeepDays = p.Activity.MaxKiB, p.Activity.KeepDays
+	if a.actLog != nil {
+		a.actLog.SetMode(a.actMode)
+	}
 }
 
 // syncPanelsWithPreferences applies the panel-affecting preferences to both
@@ -400,6 +442,9 @@ func (a *App) currentPrefs() settings.Preferences {
 		Compress:     settings.CompressPrefs{Format: string(a.lastFormat), Levels: levels},
 		// Retention belongs to the history store; the settings file records it.
 		HistorySessions: a.historyRetention(),
+		// The activity log's retention and mode live here: they are what the
+		// Settings screen edits (the store is re-created on the next start).
+		Activity: settings.ActivityPrefs{Mode: a.actMode.String(), MaxKiB: a.actMaxKiB, KeepDays: a.actKeepDays},
 	}
 }
 
@@ -445,6 +490,9 @@ func (a *App) setStatus(msg string, isErr bool) {
 
 func (a *App) setStatusLevel(msg string, lvl int) {
 	a.status, a.statusErr, a.statusLevel = msg, lvl == lvlErr, lvl
+	// Warnings and errors end up here, which makes this the one place that
+	// needs to know about them (see activity.go).
+	a.logStatus(msg, lvl)
 }
 
 // Busy reports whether any background file operation is still active.
@@ -469,6 +517,11 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	a.syncSelections()
 	a.syncBadges()
 	a.syncMode()
+	a.logUIChanges()
+	if a.quitting && !a.actExited {
+		a.actExited = true
+		a.closeActivityLog()
+	}
 	return m, a.syncNotice(a.syncSpinner(cmd))
 }
 
@@ -563,6 +616,7 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		p := a.panels[msg.PanelID]
 		wasArc, wasRem := p.Archive(), p.Source()
+		wasPath := p.Path()
 		if err := p.Apply(msg); err != nil {
 			switch {
 			case cloud.KindOf(err) == cloud.KindCanceled:
@@ -577,6 +631,7 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else if src := p.Source(); src != nil && (wasRem == nil || wasRem.Remote != src.Remote) {
 			a.remoteOpened(p)
 		}
+		a.logNavigation(msg.PanelID, wasPath, p.Path())
 		return a, nil
 
 	case remotesMsg:
@@ -609,6 +664,9 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if a.notice != nil && msg.String() == "esc" && a.noticeEscDismisses() {
 			a.dismissNotice()
 			return a, nil
+		}
+		if a.dialog == nil && a.actView != nil {
+			return a, a.activityKey(msg)
 		}
 		if a.dialog == nil && a.live != nil && !a.showHelp {
 			return a, a.liveKey(msg)
@@ -686,6 +744,7 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // burst handling in Update).
 type uiState struct {
 	dialog                                  *dialog
+	activity                                bool
 	settings                                bool
 	search                                  *searchView
 	advancedSearch                          *advancedSearchView
@@ -704,7 +763,7 @@ func (a *App) uiState() uiState {
 		settings: a.showSettings,
 		busy:     a.busy(), quitting: a.quitting, editing: a.editing, help: a.showHelp,
 		inputBox: a.dialog != nil && (a.dialog.input != nil || a.dialog.filter != nil), viewer: a.viewer, props: a.props,
-		comparison: a.comparison, folderSize: a.folderSize,
+		comparison: a.comparison, folderSize: a.folderSize, activity: a.actView != nil,
 	}
 }
 
@@ -723,6 +782,9 @@ func (a *App) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		a.quitting = true
 		return a, tea.Quit
+	}
+	if a.actView != nil {
+		return a, a.activityKey(msg) // activityview.go
 	}
 	if a.showHelp {
 		return a, a.helpKey(msg) // help.go
@@ -744,6 +806,7 @@ func (a *App) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	a.setStatus("", false)
+	a.logKeyAction(msg)
 	p := a.panels[a.active]
 	if p.InRemote() {
 		if what := a.remoteUnsupported(msg); what != "" {
@@ -754,6 +817,8 @@ func (a *App) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch {
 	case k.Tasks.Matches(msg):
 		a.openTasks()
+	case k.Activity.Matches(msg):
+		return a, a.openActivityView()
 	case k.Quit.Matches(msg):
 		if s := a.tasks.latestActive(); s != nil {
 			a.openTasks()
@@ -947,6 +1012,8 @@ func (a *App) View() string {
 		body = a.helpView(a.height - 3)
 	case a.tasks.showing:
 		body = a.taskViewRender(a.height - 3)
+	case a.actView != nil:
+		body = a.activityRender(a.height - 3)
 	case a.viewer != nil:
 		body = a.viewerRender(a.height - 3)
 	case a.advancedSearch != nil:
