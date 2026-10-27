@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -29,6 +30,7 @@ type bulkRename struct {
 	cursor   int
 	offset   int
 	applying bool
+	started  time.Time // when ApplyBatchRename started (for the history)
 
 	// remembered prompt values
 	find, repl     string
@@ -403,6 +405,7 @@ func (a *App) bulkApply() tea.Cmd {
 	b := a.bulk
 	b.applying = true
 	plan := b.plan
+	b.started = a.now()
 	a.setStatus(fmt.Sprintf("renaming %s…", plural(plan.Changes, "item")), false)
 	return func() tea.Msg {
 		res, err := ops.ApplyBatchRename(context.Background(), plan)
@@ -416,6 +419,7 @@ func (a *App) bulkDone(m bulkDoneMsg) tea.Cmd {
 		return nil
 	}
 	a.bulk = nil
+	a.recordBulkRename(b.started, b.dir, m.res, m.err)
 	p := a.panels[b.panel]
 	other := a.panels[1-b.panel]
 	// Keep the panel cursor on the same item under its new name.

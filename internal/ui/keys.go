@@ -83,7 +83,7 @@ func DefaultKeys() KeyMap {
 		Edit:       Binding{[]string{"e", "f4"}, "e/F4", "edit in default editor"},
 		EditWith:   Binding{[]string{"E"}, "E", "edit with… (choose editor)"},
 		Cancel:     Binding{[]string{"esc"}, "Esc", "cancel dialog / operation"},
-		Tasks:      Binding{[]string{"t"}, "t", "background tasks / progress"},
+		Tasks:      Binding{[]string{"t"}, "t", "tasks & operation history"},
 		Help:       Binding{[]string{"?", "f1"}, "?", "toggle help"},
 		Quit:       Binding{[]string{"q", "ctrl+c", "f10"}, "q", "quit"},
 

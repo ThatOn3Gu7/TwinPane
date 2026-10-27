@@ -497,6 +497,7 @@ func (a *App) executeComparisonPlan(plan dircompare.Plan) tea.Cmd {
 	s, ctx := a.newSession("Synchronizing directories", -1, sources)
 	s.title = "Synchronizing directories"
 	s.to = "Reviewed local plan"
+	a.historyTouch(s)
 	s.kind = ops.Copy
 	s.prog = ops.Progress{Phase: "validating", TotalItems: plan.Totals().Actions}
 	a.comparison = nil
@@ -549,6 +550,14 @@ func (a *App) finishSync(s *opSession, execution dircompare.Execution, plan dirc
 	}
 	if execution.CreatedDirs > 0 {
 		details = append(details, fmt.Sprintf("Created %d directory(ies)", execution.CreatedDirs))
+	}
+	s.hist.files, s.hist.dirs, s.hist.bytes = execution.CopiedFiles, execution.CreatedDirs, execution.Bytes
+	s.hist.result = fmt.Sprintf("%d of %d reviewed actions completed", completed, plan.Totals().Actions)
+	for _, err := range execution.Errors {
+		s.hist.errors = append(s.hist.errors, errText(err))
+	}
+	if execution.Changed != nil {
+		s.hist.errors = append(s.hist.errors, errText(execution.Changed))
 	}
 	a.finishTask(s, state, summary, details...)
 	a.setStatusLevel(summary, level)

@@ -9,9 +9,34 @@ The complete description of every feature is in
 
 ## [Unreleased]
 
-New file creation, and one key for both new files and new folders.
+New file creation, one key for both new files and new folders, and a
+persistent operation history.
 
 ### Added
+- **Persistent operation history** (`t`, then `h`): every file operation —
+  copy, move, delete (trash or permanent), rename (single, bulk and from the
+  Properties dialog), new file, new folder, compress, extract, synchronization,
+  permission changes and the remote/rclone operations — is recorded with its
+  operation type, source and destination paths, affected items, start and
+  finish times, duration, final status, result (including rclone's exit code),
+  errors and counts. Records are grouped by application run: runs are listed
+  newest first and operations inside a run newest first, and the history is
+  still there after a restart. Statuses are DONE, PARTIAL, FAILED, CANCELED and
+  INTERRUPTED; an operation TwinPane never saw finish (a kill, a crash, a power
+  loss) is stored as interrupted and never claims success. Only operations are
+  recorded — never navigation or other UI actions, and never one entry per
+  progress update.
+- The history lives in `history.json` in the same configuration directory as
+  `settings.json`. It is written atomically (temporary file, `fsync`, rename,
+  mode 0600) under one mutex, so concurrent background tasks cannot corrupt it
+  and records can be merged when two TwinPane windows run at once. Damage is
+  handled by moving the file aside as `history.json.corrupt-<timestamp>`,
+  reporting it and starting a fresh history; a file from a newer TwinPane is
+  shown read-only and never overwritten.
+- **Retention**: how many runs are kept is configurable (1–200, default 20)
+  and saved in `settings.json`; `+`/`-` in the history view change it and prune
+  older runs immediately. The running session is never pruned, and the file is
+  additionally bounded per run and by a size ceiling.
 - **New file** (`n` → *New file…*, also Menu → *New file…*): creates an empty
   file in the active local folder. The file name is typed with or without an
   extension and carries an optional format: 238 predefined extensions in 15

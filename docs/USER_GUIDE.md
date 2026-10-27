@@ -162,6 +162,51 @@ path and result or error.
   a time. Archive creation keeps its dedicated progress dialog visible through
   completion or failure.
 
+#### Operation history (`t` then `h`)
+
+The Tasks screen also keeps a written record of the file operations TwinPane
+performed, and it survives restarts. Press `t` and then `h` to switch between
+this run's background tasks and the history; `h` or `Esc` returns.
+
+- Runs are listed newest first, and the operations inside a run newest first.
+  Each run is one launch of TwinPane, so the file is grouped by run rather than
+  by folder or by day.
+- Recorded are the file operations themselves: copy, move, delete (trash or
+  permanent), rename (single, bulk and from the Properties dialog), new file,
+  new folder, compress, extract, synchronization plans, permission changes and
+  the remote (rclone) operations — upload, download, remote rename, remote
+  folder creation and remote delete. Navigation, dialogs, sorting, searching
+  and other UI actions are never recorded.
+- Each record keeps the operation type, source and destination paths, the
+  affected items, start and finish times, duration, the final status, the
+  result (including rclone's exit code) and the errors. `↑`/`↓` selects an
+  operation, `PgUp`/`PgDn` scrolls its details, `[` and `]` switch to older and
+  newer runs.
+- Statuses are `DONE`, `PARTIAL` (some items failed or the operation was
+  stopped after doing work), `FAILED`, `CANCELED` and `INTERRUPTED`. An
+  operation that TwinPane never saw finish — because the program was killed,
+  crashed or the machine lost power — is stored as **INTERRUPTED**, never as
+  done: its outcome is unknown and the details say so.
+- `+` and `-` change how many runs are kept (1–200, default 20). The limit is
+  saved in `settings.json` and older runs are pruned straight away; the run you
+  are in is never pruned. Records are also capped per run, so the file stays
+  small.
+- The history does not replace the live task list: progress, cancel (`c`),
+  clear (`x`) and notifications work exactly as before.
+
+The record is stored in `history.json` in the same configuration directory as
+`settings.json` and `bookmarks.json` (`$TWINPANE_CONFIG_DIR`, otherwise
+`$XDG_CONFIG_HOME/twinpane/`, `~/.config/twinpane/`, then `~/.twinpane/`). It
+is written atomically (temporary file, `fsync`, rename, mode 0600) after every
+operation, so a crash cannot leave a half-written file and two simultaneous
+TwinPane windows cannot corrupt it. Only operation records are added — never
+one entry per progress update — so file operations are not slowed down.
+
+A damaged history file is moved aside as `history.json.corrupt-<timestamp>`
+(never deleted), a warning is shown in the status line and a fresh history is
+started. A file written by a newer TwinPane is shown read-only and is not
+overwritten.
+
 #### Other additions and safety fixes
 
 - **Directory comparison (`D`):** compare the two local panel folders,
@@ -1264,7 +1309,7 @@ v0.3.1; the matching rules below still apply)
 | `/` | **find**: live filename search box below the active panel's folder |
 | `Ctrl+G` (while `/` is open) | open Advanced Search |
 | `Ctrl+T` (in Advanced Search) | switch between filename and content search |
-| `t` | view background task progress and results |
+| `t` | view background task progress and results; `h` inside shows the persistent operation history |
 | `h` / `H` / `.` | show / hide hidden files in **both** panels |
 | `s` | cycle sort: name → size → time → type |
 | `S` | reverse the sort order (↑/↓) |

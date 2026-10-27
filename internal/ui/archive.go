@@ -343,6 +343,7 @@ func (a *App) startExtract(srcIdx int, req archive.ExtractRequest) tea.Cmd {
 	req.DestDir = filepath.Clean(req.DestDir)
 	s, ctx := a.newSession("Extracting", srcIdx, []string{req.Archive})
 	s.to = req.DestDir
+	a.historyTouch(s)
 	h := a.hooks(ctx, s)
 	go func() {
 		if ctx.Err() != nil {
@@ -422,6 +423,14 @@ func (a *App) finishExtract(s *opSession, res archive.ExtractResult, parent, par
 		a.setStatusLevel(summary, lvlWarn)
 	default:
 		a.setStatusLevel(summary, lvlErr)
+	}
+	s.hist.files, s.hist.dirs, s.hist.bytes = res.Files, res.Dirs, res.Bytes
+	s.hist.errors = itemErrorTexts(res.Errors)
+	if res.Fatal != nil {
+		s.hist.errors = append(s.hist.errors, errText(res.Fatal))
+	}
+	if res.Unsafe > 0 {
+		s.hist.result = fmt.Sprintf("%d unsafe archive path(s) refused", res.Unsafe)
 	}
 	a.finishTask(s, state, summary, details...)
 	return tea.Batch(cmds...)

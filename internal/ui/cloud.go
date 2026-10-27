@@ -376,6 +376,7 @@ func (a *App) startCloudTransfer(c *cloud.Client, srcIdx int, title string, req 
 	req.Items = append([]cloud.TransferItem(nil), req.Items...)
 	s, ctx := a.newSession(title, srcIdx, nil)
 	s.kind, s.to = req.Kind, req.Dest.Display()
+	a.historyTouch(s)
 	for i, it := range req.Items {
 		n := it.Src.Base()
 		s.names[n] = true
@@ -430,14 +431,17 @@ func (a *App) beginMkdir() tea.Cmd {
 			a.dialog.errLine = fmt.Sprintf("%q already exists", v)
 			return nil
 		}
+		started := a.now()
 		if err := os.Mkdir(target, 0o755); err != nil {
 			if errors.Is(err, fs.ErrExist) {
 				a.dialog.errLine = fmt.Sprintf("%q already exists", v)
-			} else {
-				a.dialog.errLine = errText(err)
+				return nil
 			}
+			a.recordNewItem("New folder", started, target, err)
+			a.dialog.errLine = errText(err)
 			return nil
 		}
+		a.recordNewItem("New folder", started, target, nil)
 		a.dialog = nil
 		a.setStatusLevel(fmt.Sprintf("Created folder %q", v), lvlOK)
 		return tea.Batch(p.RefreshFocus(v), a.panels[1-idx].Refresh())
@@ -454,6 +458,7 @@ func (a *App) startCloudOp(idx int, title, name, what, from, to string, run func
 		s.from = []string{from}
 	}
 	s.to = to
+	a.historyTouch(s)
 	s.names[name], s.first = true, name
 	go func() {
 		err := run(ctx)
@@ -491,6 +496,10 @@ func (a *App) finishCloudOp(s *opSession, m opCloudDoneMsg) tea.Cmd {
 		}
 	}
 	cmd := a.refreshPanelsAt(s.panelPaths[s.srcPanel], m.focus)
+	s.hist.result = cloudResultText(m.err)
+	if m.err != nil {
+		s.hist.errors = append(s.hist.errors, errText(m.err))
+	}
 	a.finishTask(s, state, summary, details...)
 	a.setStatusLevel(summary, level)
 	return cmd
@@ -692,6 +701,11 @@ func (a *App) finishCloudDelete(s *opSession, res cloudDeleteResult) tea.Cmd {
 			summary += " — cancelled"
 		}
 		a.setStatusLevel(summary, lvlErr)
+	}
+	s.hist.result = cloudResultText(res.fatal)
+	s.hist.errors = itemErrorTexts(res.errors)
+	if res.fatal != nil {
+		s.hist.errors = append(s.hist.errors, errText(res.fatal))
 	}
 	a.finishTask(s, state, summary, details...)
 	return cmd

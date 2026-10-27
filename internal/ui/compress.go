@@ -301,6 +301,7 @@ func (a *App) startZip(srcIdx int, req compress.Request) tea.Cmd {
 	}
 	s, ctx := a.newSession(title, srcIdx, req.Sources)
 	s.to = req.Output
+	a.historyTouch(s)
 	a.compressProgress = &compressProgressState{
 		id: s.id, req: req, format: f, started: s.started,
 		progress: ops.Progress{Phase: "starting"},
@@ -352,6 +353,17 @@ func (a *App) finishZip(s *opSession, res compress.Result) tea.Cmd {
 			level = lvlWarn
 		}
 		a.setStatusLevel(summary, level)
+	}
+	s.hist.files, s.hist.dirs, s.hist.links, s.hist.bytes = res.Files, res.Dirs, res.Links, res.Bytes
+	s.hist.errors = itemErrorTexts(res.Errors)
+	if res.Fatal != nil {
+		s.hist.errors = append(s.hist.errors, errText(res.Fatal))
+	}
+	if res.CleanupErr != nil {
+		s.hist.errors = append(s.hist.errors, "temporary output cleanup: "+errText(res.CleanupErr))
+	}
+	if res.Output != "" {
+		s.hist.result = "wrote " + res.Output
 	}
 	a.finishTask(s, state, summary, details...)
 	return cmd

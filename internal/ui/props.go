@@ -14,6 +14,7 @@ import (
 	"github.com/ThatOn3Gu7/TwinPane/internal/archive"
 	"github.com/ThatOn3Gu7/TwinPane/internal/fileinfo"
 	"github.com/ThatOn3Gu7/TwinPane/internal/fsys"
+	"github.com/ThatOn3Gu7/TwinPane/internal/history"
 	"github.com/ThatOn3Gu7/TwinPane/internal/ops"
 )
 
@@ -278,13 +279,16 @@ func (a *App) propsApply() tea.Cmd {
 	}
 	p := a.panels[pv.panel]
 	path := in.Path
+	started := a.now()
 	var done []string
 	if wantRename {
 		if err := ops.Rename(in.Dir, in.Name, newName); err != nil {
+			a.recordRename("Rename", started, in.Path, "", err)
 			pv.setMsg("Not renamed: "+errText(err), lvlErr)
 			pv.focus = pfName
 			return nil
 		}
+		a.recordRename("Rename", started, in.Path, filepath.Join(in.Dir, newName), nil)
 		done = append(done, fmt.Sprintf("renamed to %q", newName))
 		path = filepath.Join(in.Dir, newName)
 		if p.IsSelected(in.Name) {
@@ -293,9 +297,21 @@ func (a *App) propsApply() tea.Cmd {
 	}
 	var permErr error
 	if wantPerm {
+		permStarted := a.now()
 		if permErr = fileinfo.Chmod(path, pv.perm); permErr == nil {
 			done = append(done, "permissions set to "+fileinfo.Symbolic(pv.perm)+" ("+fileinfo.Octal(pv.perm)+")")
 		}
+		a.recordOperation(history.Record{
+			Op:      "Permissions",
+			Started: permStarted,
+			Sources: []string{path},
+			Dest:    filepath.Dir(path),
+			Items:   []string{filepath.Base(path)},
+			Status:  historyStatusFor(permErr),
+			Summary: permSummary(path, pv.perm, permErr),
+			Errors:  historyErrors(permErr),
+			Result:  fileinfo.Symbolic(pv.perm) + " (" + fileinfo.Octal(pv.perm) + ")",
+		})
 	}
 	// show what is on disk now
 	if ni, err := fileinfo.Stat(path); err == nil {

@@ -245,9 +245,11 @@ func (a *App) createNewFile(st *newFileState, typed string) tea.Cmd {
 		return nil
 	}
 	target := filepath.Join(st.dir, name)
+	started := a.now()
 	// O_EXCL: create only; an existing file or folder is never replaced.
 	f, err := os.OpenFile(target, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
 	if err != nil {
+		a.recordNewItem("New file", started, target, err)
 		d.errLine = newFileError(name, err)
 		return nil
 	}
@@ -255,9 +257,11 @@ func (a *App) createNewFile(st *newFileState, typed string) tea.Cmd {
 		// The empty file was created but could not be finished: remove it so
 		// the dialog still means "nothing was changed".
 		os.Remove(target)
+		a.recordNewItem("New file", started, target, err)
 		d.errLine = newFileError(name, err)
 		return nil
 	}
+	a.recordNewItem("New file", started, target, nil)
 	a.dialog = nil
 	st.dlg = nil
 	a.setStatusLevel(fmt.Sprintf("Created file %q", fsys.SanitizeName(name)), lvlOK)

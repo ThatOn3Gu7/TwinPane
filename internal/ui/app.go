@@ -20,6 +20,7 @@ import (
 	"github.com/ThatOn3Gu7/TwinPane/internal/compress"
 	"github.com/ThatOn3Gu7/TwinPane/internal/editor"
 	"github.com/ThatOn3Gu7/TwinPane/internal/fsys"
+	"github.com/ThatOn3Gu7/TwinPane/internal/history"
 	"github.com/ThatOn3Gu7/TwinPane/internal/opener"
 	"github.com/ThatOn3Gu7/TwinPane/internal/ops"
 	"github.com/ThatOn3Gu7/TwinPane/internal/panel"
@@ -82,6 +83,11 @@ type Options struct {
 	SettingsPath string
 	// SettingsPathError reports a failure resolving the default settings path.
 	SettingsPathError string
+	// HistoryPath is the persistent operation history file. Empty keeps
+	// history in memory only (useful for tests).
+	HistoryPath string
+	// HistoryPathError reports a failure resolving the default history path.
+	HistoryPathError string
 }
 
 // status levels
@@ -131,9 +137,11 @@ type App struct {
 	folderSize     *folderSizeView // cancellable local folder-size analysis
 
 	// phase 4
-	showHidden     bool        // one setting for both panels (h / H / .)
-	settingsPath   string      // persisted user preferences (empty disables persistence)
-	settingsErr    error       // latest settings load/save failure
+	showHidden     bool   // one setting for both panels (h / H / .)
+	settingsPath   string // persisted user preferences (empty disables persistence)
+	settingsErr    error  // latest settings load/save failure
+	historyPath    string // persisted operation history (empty = memory only)
+	history        *history.Store
 	footerHits     []footerHit // clickable hint-bar items of the last frame
 	helpScroll     int         // first line of the help screen shown
 	helpScrollable bool        // the help body is taller than its viewport
@@ -203,14 +211,29 @@ func New(opts Options) *App {
 	}
 	a.formatLevels = map[compress.ID]int{}
 	a.settingsPath = opts.SettingsPath
+	prefs := settings.Preferences{HistorySessions: settings.DefaultHistorySessions}
 	if opts.SettingsPathError != "" {
 		a.settingsErr = fmt.Errorf("%s", opts.SettingsPathError)
 	} else if a.settingsPath != "" {
-		prefs, err := settings.Load(a.settingsPath)
+		loaded, err := settings.Load(a.settingsPath)
 		a.settingsErr = err
 		if err == nil {
+			prefs = loaded
 			a.showHidden = prefs.ShowHidden
 		}
+	}
+	// Operation history: one dedicated file in the config directory. Without
+	// a path the records still exist for this run, but are forgotten on exit.
+	histOpts := history.Options{MaxSessions: prefs.HistorySessions, Version: opts.Version}
+	var historyErr error
+	a.historyPath = opts.HistoryPath
+	if opts.HistoryPathError != "" {
+		historyErr = fmt.Errorf("%s", opts.HistoryPathError)
+	} else if a.historyPath != "" {
+		a.history, historyErr = history.Open(a.historyPath, histOpts)
+	}
+	if a.history == nil {
+		a.history, _ = history.Memory(histOpts)
 	}
 	a.panels[0] = panel.New(0, opts.Lister)
 	a.panels[1] = panel.New(1, opts.Lister)
@@ -224,6 +247,9 @@ func New(opts Options) *App {
 	}
 	if a.settingsErr != nil {
 		notices = append(notices, "settings: "+a.settingsErr.Error())
+	}
+	if historyErr != nil {
+		notices = append(notices, "history: "+historyErr.Error())
 	}
 	if len(notices) > 0 {
 		a.setStatusLevel(strings.Join(notices, " · "), lvlWarn)
@@ -247,6 +273,7 @@ func (a *App) ActivePanel() *panel.Panel { return a.panels[a.active] }
 func (a *App) Status() (string, bool)    { return a.status, a.statusErr }
 func (a *App) HelpVisible() bool         { return a.showHelp }
 func (a *App) ShowHidden() bool          { return a.showHidden }
+func (a *App) History() *history.Store   { return a.history }
 
 func (a *App) setStatus(msg string, isErr bool) {
 	lvl := lvlInfo

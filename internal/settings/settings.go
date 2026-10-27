@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/ThatOn3Gu7/TwinPane/internal/bookmarks"
+	"github.com/ThatOn3Gu7/TwinPane/internal/history"
 )
 
 const (
@@ -22,11 +23,25 @@ const (
 // Preferences contains settings that apply across app restarts.
 type Preferences struct {
 	ShowHidden bool `json:"showHidden"`
+	// HistorySessions is how many application runs (sessions) of operation
+	// history are kept on disk. Zero means the default.
+	HistorySessions int `json:"historySessions,omitempty"`
 }
 
+// DefaultHistorySessions is the retention limit used when the user has not
+// chosen one.
+const DefaultHistorySessions = history.DefaultSessions
+
 type file struct {
-	Version    int  `json:"version"`
-	ShowHidden bool `json:"showHidden"`
+	Version         int  `json:"version"`
+	ShowHidden      bool `json:"showHidden"`
+	HistorySessions int  `json:"historySessions,omitempty"`
+}
+
+// Normalize fills in defaults and clamps values into the supported range.
+func (p Preferences) Normalize() Preferences {
+	p.HistorySessions = history.ClampSessions(p.HistorySessions)
+	return p
 }
 
 // CorruptError indicates that a settings file could not be read safely. Files
@@ -61,13 +76,13 @@ func Load(path string) (Preferences, error) {
 	}
 	data, err := os.ReadFile(path)
 	if errors.Is(err, fs.ErrNotExist) {
-		return Preferences{}, nil
+		return Preferences{}.Normalize(), nil // defaults
 	}
 	if err != nil {
 		return Preferences{}, fmt.Errorf("read settings %s: %w", path, err)
 	}
 	if len(strings.TrimSpace(string(data))) == 0 {
-		return Preferences{}, nil
+		return Preferences{}.Normalize(), nil // defaults
 	}
 	var saved file
 	if err := json.Unmarshal(data, &saved); err != nil {
@@ -79,7 +94,10 @@ func Load(path string) (Preferences, error) {
 			Err:  fmt.Errorf("written by a newer TwinPane (format %d)", saved.Version),
 		}
 	}
-	return Preferences{ShowHidden: saved.ShowHidden}, nil
+	return Preferences{
+		ShowHidden:      saved.ShowHidden,
+		HistorySessions: history.ClampSessions(saved.HistorySessions),
+	}, nil
 }
 
 // Save writes preferences atomically with private file permissions. It first
@@ -94,7 +112,12 @@ func Save(path string, preferences Preferences) error {
 	if _, err := Load(path); err != nil {
 		return fmt.Errorf("cannot save settings: %w", err)
 	}
-	data, err := json.MarshalIndent(file{Version: version, ShowHidden: preferences.ShowHidden}, "", "  ")
+	preferences = preferences.Normalize()
+	data, err := json.MarshalIndent(file{
+		Version:         version,
+		ShowHidden:      preferences.ShowHidden,
+		HistorySessions: preferences.HistorySessions,
+	}, "", "  ")
 	if err != nil {
 		return err
 	}

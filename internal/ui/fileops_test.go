@@ -234,6 +234,10 @@ func newOpsApp(t *testing.T, tr ops.Trasher, edEnv *editor.Env) (*harness, *opsE
 			return nil
 		},
 		BookmarksPath: env.bmPath,
+		// Preferences and the operation history live in the temp config dir,
+		// so no test touches the real user configuration.
+		SettingsPath: filepath.Join(root, "config", "settings.json"),
+		HistoryPath:  filepath.Join(root, "config", "history.json"),
 		Exec: func(c tea.ExecCommand, fn tea.ExecCallback) tea.Cmd {
 			proc, ok := c.(*editor.Process)
 			if !ok {
@@ -965,7 +969,7 @@ func TestFooterAndHelpShowOperationKeys(t *testing.T) {
 	h.send(tea.WindowSizeMsg{Width: 80, Height: 24})
 	h.press("?")
 	v = h.view()
-	for _, want := range []string{"Navigation", "File operations", "c/F5", "m/F6", "r/F2", "d/F8/Del", "e/F4", "background tasks", "Esc", "^L", "quit", "close help"} {
+	for _, want := range []string{"Navigation", "File operations", "c/F5", "m/F6", "r/F2", "d/F8/Del", "e/F4", "tasks & operation history", "Esc", "^L", "quit", "close help"} {
 		if !strings.Contains(v, want) {
 			t.Errorf("help at 80x24 lacks %q:\n%s", want, v)
 		}

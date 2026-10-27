@@ -39,6 +39,12 @@ type taskManager struct {
 	showing      bool
 	prompts      []taskPrompt
 	activePrompt int
+
+	// persistent operation history view (history.go / historyview.go)
+	histShowing bool
+	histSession int // selected run, 0 = newest
+	histOp      int // selected operation within that run, 0 = newest
+	histOffset  int // first detail line shown
 }
 
 const (
@@ -241,6 +247,7 @@ type taskPrompt struct {
 
 func (a *App) openTasks() {
 	a.tasks.showing = true
+	a.tasks.histShowing = false
 	if s := a.tasks.latestActive(); s != nil {
 		a.tasks.selected = s.id
 	} else if s := a.tasks.selectedTask(); s != nil {
@@ -254,7 +261,19 @@ func (a *App) closeTasks() {
 }
 
 func (a *App) taskViewKey(msg tea.KeyMsg) tea.Cmd {
+	if a.tasks.histShowing {
+		if cmd, handled := a.historyViewKey(msg); handled {
+			return cmd
+		}
+	}
 	switch msg.String() {
+	case "h":
+		// Switch between this run's tasks and the recorded history.
+		a.tasks.histShowing = !a.tasks.histShowing
+		if a.tasks.histShowing {
+			a.resetHistorySelection()
+		}
+		a.tasks.histOffset = 0
 	case "esc", "t":
 		a.closeTasks()
 		a.setStatus("", false)
@@ -284,6 +303,9 @@ func (a *App) taskViewKey(msg tea.KeyMsg) tea.Cmd {
 }
 
 func (a *App) taskViewMouse(ev tea.MouseEvent) tea.Cmd {
+	if a.tasks.histShowing {
+		return a.historyViewMouse(ev)
+	}
 	if ev.IsWheel() {
 		delta := wheelDelta(ev)
 		listRows := taskListRows(a.height-3, len(a.tasks.order))
@@ -386,6 +408,9 @@ func taskRowStyle(a *App, s *opSession, selected bool) lipgloss.Style {
 func (a *App) taskViewRender(height int) string {
 	if height <= 0 {
 		return ""
+	}
+	if a.tasks.histShowing {
+		return a.historyViewRender(height)
 	}
 	width := a.width
 	items := a.tasks.newest()
@@ -504,12 +529,16 @@ func (a *App) taskDetails(s *opSession, width int) []string {
 
 // taskFooterHints returns the actions available while the task list is open.
 func (a *App) taskFooterHints() []barItem {
+	if a.tasks.histShowing {
+		return a.historyFooterHints()
+	}
 	return []barItem{
 		item("t/Esc", "close tasks", "esc"),
 		item("↑↓", "select", ""),
 		item("c", "cancel selected", "c"),
 		item("PgUp/Dn", "details", ""),
 		item("x", "clear finished", "x"),
+		item("h", "past runs", "h"),
 	}
 }
 

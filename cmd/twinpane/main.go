@@ -10,6 +10,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/ThatOn3Gu7/TwinPane/internal/editor"
+	"github.com/ThatOn3Gu7/TwinPane/internal/history"
 	"github.com/ThatOn3Gu7/TwinPane/internal/settings"
 	"github.com/ThatOn3Gu7/TwinPane/internal/ui"
 )
@@ -42,6 +43,12 @@ func main() {
 		opts.SettingsPathError = prefsErr.Error()
 	} else {
 		opts.SettingsPath = prefsPath
+	}
+	histPath, histErr := history.DefaultPath()
+	if histErr != nil {
+		opts.HistoryPathError = histErr.Error()
+	} else {
+		opts.HistoryPath = histPath
 	}
 	if runtime.GOOS == "linux" && onAndroid() {
 		opts.Notice = "this is the Linux build running on Android: for Termux install the android-arm64 build"

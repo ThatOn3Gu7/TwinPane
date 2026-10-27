@@ -110,6 +110,19 @@ The [user guide](docs/USER_GUIDE.md) describes every feature in detail.
   `c`, or clear finished history with `x`. Active tasks must finish or be
   cancelled before quitting.
 
+**Operation history**
+- Every file operation is also written to a persistent history: copy, move,
+  delete, rename, new file/folder, compress, extract, permission changes and
+  remote (rclone) work, with paths, items, times, duration, status, result and
+  errors. Press `t` then `h` to browse it; runs and operations are listed newest
+  first, and the history is still there after a restart. Unfinished work is
+  stored as **interrupted**, never as success.
+- It lives in `history.json` in the same configuration folder as
+  `settings.json` and is written atomically after each operation. `+`/`-` in the
+  history view change how many runs are kept (1–200, default 20); the limit is
+  saved as a preference. A damaged file is kept as
+  `history.json.corrupt-<timestamp>` and a fresh history is started.
+
 **Directory comparison**
 - Compare the two local panel folders (`D`), ignoring exact `.git` directories
   by default (`g` includes them). `f` hides matching rows; `h` can verify
@@ -428,7 +441,7 @@ twinpane --version
 | `/` | find by name; `Ctrl+G` opens Advanced Search | `z` / `x` | compress / extract |
 | `s` / `S` | sort / reverse | `o` / `O` | open / open with… |
 | `h` | hidden files | `P` | properties |
-| `D` / `A` | compare folders / analyze sizes | `t` | background tasks |
+| `D` / `A` | compare folders / analyze sizes | `t` | background tasks; `h` = operation history |
 | `b` / `B` | bookmarks / add | `M` | action menu |
 | `i` | storage | `?` / `F1` | help (with `/` filter) |
 | `~` | home folder | `q` / `F10` | quit when idle; active tasks must finish or be cancelled |

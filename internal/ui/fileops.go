@@ -86,6 +86,7 @@ type opSession struct {
 	kind       ops.Kind
 	isDelete   bool
 	plan       ops.DeletePlan
+	hist       opHistory // persistent history record (history.go)
 }
 
 func (s *opSession) active() bool {
@@ -129,6 +130,7 @@ func (a *App) newSession(title string, srcPanel int, targets []string) (*opSessi
 		}
 	}
 	a.tasks.add(s)
+	a.historyBegin(s)
 	return s, ctx
 }
 
@@ -193,6 +195,7 @@ func (a *App) finishTask(s *opSession, state taskState, summary string, details 
 		s.cancel()
 		s.cancel = nil
 	}
+	a.historyComplete(s)
 }
 
 func taskOutcome(canceled bool, fatal error, errors int, partial bool) taskState {
@@ -467,6 +470,7 @@ func (a *App) beginTransfer(kind ops.Kind) tea.Cmd {
 	// any path in case a source or destination changes while the dialog is open.
 	s, _ := a.newSession("Checking "+kind.String(), srcIdx, paths)
 	s.kind, s.to = kind, req.DestDir
+	a.historyTouch(s)
 	s.state = taskPlanning
 	s.prog = ops.Progress{Phase: "validating", TotalItems: len(paths)}
 	a.setStatus("Checking "+kind.String()+" paths…", false)
@@ -516,6 +520,7 @@ func (a *App) startTransfer(s *opSession, req ops.Request) tea.Cmd {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	s.cancel, s.title, s.kind, s.to = cancel, req.Kind.Verb(), req.Kind, req.DestDir
+	a.historyTouch(s)
 	s.state, s.waitingFor = taskRunning, ""
 	h := a.hooks(ctx, s)
 	go func() {
@@ -643,6 +648,13 @@ func (a *App) finishTransfer(s *opSession, res ops.Result) tea.Cmd {
 		summary = fmt.Sprintf("%s cancelled — not enough free space", capitalize(s.kind.String()))
 		state = taskCanceled
 		details = append(details, "No items were processed because the free-space check did not permit continuing")
+	}
+	s.hist.files, s.hist.dirs, s.hist.bytes = res.Files, res.Dirs, res.Bytes
+	s.hist.result = cloudResultText(res.Fatal)
+	s.hist.errors = itemErrorTexts(res.Errors)
+	s.hist.errors = append(s.hist.errors, itemErrorTexts(res.Leftovers)...)
+	if res.Fatal != nil {
+		s.hist.errors = append(s.hist.errors, errText(res.Fatal))
 	}
 	a.finishTask(s, state, summary, details...)
 	switch {
@@ -780,6 +792,7 @@ func (a *App) startDelete(s *opSession, plan ops.DeletePlan) tea.Cmd {
 	} else {
 		s.to = "Permanent deletion"
 	}
+	a.historyTouch(s)
 	s.state, s.waitingFor = taskRunning, ""
 	s.isDelete, s.plan = true, plan
 	if s.cancel != nil {
@@ -822,6 +835,11 @@ func (a *App) finishDelete(s *opSession, res ops.DeleteResult) tea.Cmd {
 	}
 	if len(res.Failed) > 0 && !res.UseTrash {
 		details = append(details, "Folders that still contain undeletable items were kept")
+	}
+	s.hist.files, s.hist.dirs = res.Files, res.Dirs
+	s.hist.errors = itemErrorTexts(res.Failed)
+	if res.UseTrash {
+		s.hist.result = "moved to the trash"
 	}
 	state := taskOutcome(res.Canceled, nil, len(res.Failed), partial)
 	switch {
@@ -868,10 +886,14 @@ func (a *App) renameOne(e fsys.Entry) tea.Cmd {
 			a.setStatus("name unchanged", false)
 			return nil
 		}
+		started := a.now()
 		if err := ops.Rename(dir, old, v); err != nil {
+			// A rename that was attempted and failed is an operation too.
+			a.recordRename("Rename", started, filepath.Join(dir, old), "", err)
 			a.dialog.errLine = errText(err)
 			return nil
 		}
+		a.recordRename("Rename", started, filepath.Join(dir, old), filepath.Join(dir, v), nil)
 		a.dialog = nil
 		a.setStatusLevel(fmt.Sprintf("Renamed %q to %q", old, v), lvlOK)
 		focus := v

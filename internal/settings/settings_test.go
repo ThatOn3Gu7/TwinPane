@@ -101,3 +101,60 @@ func TestLoadRejectsNewerSettingsVersion(t *testing.T) {
 		t.Fatalf("Load() error = %v, want a newer-version CorruptError", err)
 	}
 }
+
+func TestHistoryRetentionDefaultsAndPersists(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config", FileName)
+	prefs, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if prefs.HistorySessions != DefaultHistorySessions || DefaultHistorySessions != 20 {
+		t.Fatalf("default retention = %d, want %d", prefs.HistorySessions, DefaultHistorySessions)
+	}
+
+	// A settings file from before the option existed keeps the default.
+	os.MkdirAll(filepath.Dir(path), 0o700)
+	if err := os.WriteFile(path, []byte(`{"version":1,"showHidden":true}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	prefs, err = Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !prefs.ShowHidden || prefs.HistorySessions != DefaultHistorySessions {
+		t.Fatalf("old file: %+v", prefs)
+	}
+
+	if err := Save(path, Preferences{ShowHidden: true, HistorySessions: 5}); err != nil {
+		t.Fatal(err)
+	}
+	prefs, err = Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if prefs.HistorySessions != 5 || !prefs.ShowHidden {
+		t.Fatalf("saved preferences = %+v", prefs)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), `"historySessions": 5`) {
+		t.Fatalf("settings file lacks the retention limit: %s", data)
+	}
+
+	// Out-of-range values are clamped instead of rejected.
+	if err := Save(path, Preferences{HistorySessions: 100000}); err != nil {
+		t.Fatal(err)
+	}
+	if prefs, _ = Load(path); prefs.HistorySessions != 200 {
+		t.Fatalf("clamped retention = %d, want 200", prefs.HistorySessions)
+	}
+	// Zero means "default", so the option is omitted rather than written as 0.
+	if err := Save(path, Preferences{ShowHidden: false}); err != nil {
+		t.Fatal(err)
+	}
+	if prefs, _ = Load(path); prefs.HistorySessions != DefaultHistorySessions {
+		t.Fatalf("retention after zero = %d", prefs.HistorySessions)
+	}
+}

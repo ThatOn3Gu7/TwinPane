@@ -632,6 +632,46 @@ Four new packages with no UI dependency. The TUI code lives in four
   left untouched and reported in the status line. The command passes the path
   through `Options.SettingsPath` so tests can use an isolated file.
 
+### Operation history (`internal/history`, `ui/history.go`, `ui/historyview.go`)
+- `history.json` sits next to `settings.json` (same config directory) and holds
+  `{"version":1,"sessions":[{ID, Started, Version, Operations:[…]}]}`. A
+  session is one TwinPane launch; its operations are stored newest first, and
+  sessions are sorted newest first on load. A record keeps the operation type,
+  status, start/finish times, source paths, destination, affected items, a
+  one-line summary, the tool result (rclone exit code), the error lines,
+  optional details and the file/folder/link/byte counts.
+- `Store` (`Open`, `Memory`, `Start`, `Finish`, `Add`, `SetLimit`, `Sessions`,
+  `CurrentID`, `Err`, `ReadOnly`) keeps everything under one mutex, so
+  concurrent background tasks can neither interleave writes nor see partial
+  state. Every change writes the whole file through a temporary file in the
+  config directory, `fsync`, `rename` and mode 0600, and re-stats the file to
+  detect (and merge) sessions another instance wrote meanwhile. Records are
+  capped (32 sources, 64 items in the store, 512-byte strings) and the file is
+  bounded by the retention limit, a per-session cap and a 4 MiB ceiling.
+- Statuses are `running`, `success`, `partial`, `failed`, `canceled` and
+  `interrupted`. Loading rewrites `running` to `interrupted` (and adds a note)
+  so an operation killed with the process never claims success; the record
+  carries no finish time and no duration. Unknown statuses in a hand-edited
+  file are treated the same way. Damaged files are renamed to
+  `history.json.corrupt-<timestamp>` and reported; a file with a newer format
+  version is loaded read-only and never replaced.
+- Recording hooks: `newSession` starts a record (`historyBegin`), `finishTask`
+  finishes it (`historyComplete`) — so every terminal path of every background
+  task (success, failure, cancel, partial, low-space refusal) is recorded once
+  — and the finish handlers (`finishTransfer`, `finishDelete`, `finishZip`,
+  `finishExtract`, `finishCloudOp`, `finishCloudDelete`, `finishSync`) attach
+  counts, error lines and the rclone exit code (`cloud.Error.Code`).
+  Foreground work (rename, bulk rename, Properties rename/permissions, New
+  file, New folder) calls `recordRename`, `recordBulkRename` or
+  `recordNewItem`. Progress updates are never recorded.
+- UI: the Tasks screen (`t`) has a second view (`h`)
+  `ui/historyview.go`: run rows, the selected run's operation rows and the
+  selected operation's details, with `↑↓`/`[`/`]`/`PgUp`/`PgDn` and `+`/`-`
+  for the retention limit (saved to `settings.json`). Widths are truncated to
+  the terminal and the layout shrinks to a header-only body on very short
+  screens. `Options.HistoryPath` overrides the file (tests) and empty keeps
+  the records in memory only.
+
 ### Open / Open with (`internal/opener`, `ui/open.go`)
 - `filetype.go`: `ByName` (an extension table) and `Sniff` (magic bytes:
   images, audio, video, PDF, ZIP-based documents and APKs, ELF/scripts,
@@ -1177,6 +1217,17 @@ their scroll row, short dialogs without an indicator, long bookmark lists).
     name with a format, missing folder, permission denied, pasted text, mouse
     (menu rows and the ◂ arrow), archive refusal, action-menu entries, and a
     44×18 terminal.
+  - `history`: retention defaults and limits, record/reload round trips,
+    newest-first ordering, pruning (never the running session), statuses
+    (failure, cancel, interrupted), damaged/newer/hand-edited files, concurrent
+    writes, two stores on one file, permissions, size bounds, `Update` while
+    running.
+  - `ui/history_test.go`: background recording (copy, move, delete), failures,
+    cancellations and interruptions, foreground rename/new file/new folder,
+    archive and permission records, rclone exit codes, persistence across
+    restarts, retention from settings and the `+`/`-` keys, browsing and
+    details, a 40×12 terminal, damaged and newer files, and that progress
+    updates create no records.
   - `ui/phase6_test.go`: the compress dialog (selectors, extension swap,
     remembered format, structure, single-file refusal, wrong extension,
     unavailable 7Z, overwrite confirmation, awkward names, cancel leaves
