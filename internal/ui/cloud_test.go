@@ -358,7 +358,7 @@ func TestCloudGatingAndErrorState(t *testing.T) { // REAL rclone
 	h, env := newCloudApp(t)
 	h.openRemote("box")
 	h.focus("notes.md")
-	for _, k := range []string{"v", "e", "z", "P", "/", "B", "i", "enter"} {
+	for _, k := range []string{"e", "z", "P", "/", "B", "i"} {
 		h.a.setStatus("", false)
 		h.press(k)
 		if h.a.dialog != nil || h.a.viewer != nil || h.a.search != nil || len(env.execs) != 0 {
@@ -366,6 +366,22 @@ func TestCloudGatingAndErrorState(t *testing.T) { // REAL rclone
 		}
 		if st := h.status(); !strings.Contains(st, "copy") || !h.a.statusErr {
 			t.Fatalf("%q: status %q", k, st)
+		}
+	}
+	// Reading is allowed: "v" and Enter open the read-only remote preview
+	// (viewer_remote.go). It says so, and editing from it is refused.
+	for _, k := range []string{"v", "enter"} {
+		h.press(k)
+		h.until("read-only preview", func() bool { return h.a.viewer != nil && !h.a.viewer.loading })
+		if !h.a.viewer.remote {
+			t.Fatalf("%q must open a read-only remote preview", k)
+		}
+		if v := h.view(); !strings.Contains(v, "READ-ONLY") {
+			t.Fatalf("%q: the preview must say it is read-only:\n%s", k, v)
+		}
+		h.press("esc")
+		if h.a.viewer != nil {
+			t.Fatalf("%q: Esc must close the preview", k)
 		}
 	}
 	// a bookmark jump from a remote panel returns it to local files
@@ -580,8 +596,10 @@ func TestCloudCancelTransfer(t *testing.T) { // REAL rclone, slowed down with RC
 	if d := time.Since(start); d > 10*time.Second {
 		t.Fatalf("cancelling took %v", d)
 	}
-	if st := strings.ToLower(h.status()); !strings.Contains(st, "cancel") {
-		t.Fatalf("status: %q", h.status())
+	// The outcome is reported as a notification now: heading, message and
+	// severity rather than a line in the status bar.
+	if st := strings.ToLower(h.reported()); !strings.Contains(st, "cancel") || h.reportedLevel() != lvlWarn {
+		t.Fatalf("cancellation report %q level %d", h.reported(), h.reportedLevel())
 	}
 	ents, _ := os.ReadDir(env.cloud)
 	for _, e := range ents {

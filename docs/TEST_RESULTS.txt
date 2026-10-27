@@ -287,6 +287,12 @@ The activity log (`internal/activity`) and its viewer (`L`) were added in
   1.04 s / 1.03 s).
 - `scripts/release_notes.sh v0.10.0`: renders the `## [0.10.0]` section plus
   the install and verify sections (the release workflow's own check).
+- The suite was then run again as CI runs it: real rclone 1.75.2, 7-Zip
+  26.03 (`7zz`), and `nano`/`vim` on `PATH`, with `TWINPANE_REQUIRE_TOOLS=1`
+  so the real-tool tests fail instead of skipping. All 22 packages passed
+  (`internal/ui` 148.9 s), and `-race ./internal/ui ./internal/activity
+  ./internal/history ./internal/proc ./internal/settings` passed
+  (155.2 s / 1.17 s / 2.37 s / 1.04 s / 1.03 s).
 
 ## What the activity-log tests cover
 - `internal/activity`: one NDJSON line per entry with the header fields
@@ -343,8 +349,27 @@ The activity log (`internal/activity`) and its viewer (`L`) were added in
   the viewer put its own entries under `This session`, i.e. their `run` equals
   the current `history.json` session ID.
 
-## Not verified here
-- rclone and 7-Zip are not installed in this sandbox, so command tracing was
-  exercised with stand-in programs (`TWINPANE_FAKE_RCLONE`, test scripts) rather
-  than real cloud transfers and real archive tools; CI installs both and runs
-  the same code paths with `TWINPANE_REQUIRE_TOOLS=1`.
+## Tests that were stale after the merge
+
+Three `internal/ui` tests failed in CI from `b6b7930` onwards (they pass in a
+sandbox without rclone, editors or 7-Zip, which is why the local runs were
+green). Each asserted behaviour that an earlier feature had changed; the tests
+were realigned, the application code was not touched.
+
+- `TestCloudGatingAndErrorState` still listed `v` and `enter` among the keys
+  that "must not act on a remote file". Since the read-only remote preview,
+  both open the viewer, so the test now keeps the write keys in the refusal
+  loop and asserts that `v` and `Enter` open a preview marked `READ-ONLY`,
+  that it is flagged as remote, and that `Esc` closes it.
+- `TestCloudCancelTransfer` read the cancellation from the status line, but a
+  result is now a notification (`taskResult` clears the status). It asserts on
+  `h.reported()` and `h.reportedLevel()` (`warn`), the same helpers the
+  notification tests use.
+- `TestCtrlOIgnoredWhileOverlayOwnsKeyboard` sent the literal `"esc"` through
+  the raw helper in `app_test.go`, which built a three-rune burst that the
+  viewer read as typeahead (`e` starts the editor). The helper now emits a real
+  `tea.KeyEsc`, so `press(a, "esc")` closes instead of editing.
+
+Reproduced locally by installing real rclone 1.75.2 and 7-Zip and putting
+editors on `PATH`, which is the CI setup; all three pass there, and the whole
+suite is green with `TWINPANE_REQUIRE_TOOLS=1`.
