@@ -2,20 +2,40 @@ package ui
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/ThatOn3Gu7/TwinPane/internal/fsys"
 	"github.com/ThatOn3Gu7/TwinPane/internal/history"
 	"github.com/ThatOn3Gu7/TwinPane/internal/settings"
 )
 
-// The Tasks screen has two views: the live background tasks of this run, and
-// the persistent operation history (all recorded runs, newest first). Both
-// share the same header, list and detail layout so the screen looks the same
-// whichever view is open.
+// Persistent operation history inside the Tasks screen.
+//
+// The Tasks screen lists three kinds of rows in one continuous, scrollable
+// list, grouped by application run:
+//
+//	── This run · 06:02 · 1 active · 2 finished ──────────────────
+//	▸ 1  ● RUNNING   Copying   ██████░░░░ 40% · 3/8   12 M/30 M  0:04
+//	  2  ✓ DONE      Delete    ████████ 100% · 1/1     6 B/6 B   2s
+//	── Today 05:03 · 3 operations ───────────────────────────────
+//	    05:03:47 ✓ DONE      Copy      → /tmp/photos/2024
+//	    05:02:11 ✕ FAILED    Upload    → drive:backup
+//
+// The first section is this run: its active tasks (pinned first, so running
+// work is always on screen with its live progress), then everything else it
+// did newest first — finished tasks and the records of operations that never
+// had a task row (rename, new file, permissions). The sections below it are
+// the earlier runs from the history store, newest first, each with its
+// operations newest first.
+//
+// Live rows are the task manager's sessions, so progress, canceling and watch
+// keep working; historical rows are copies from the store and are read-only:
+// no row action (cancel, watch, clear) ever touches them.
 
 // historySessions returns the recorded runs, newest first.
 func (a *App) historySessions() []history.Session {
@@ -33,222 +53,472 @@ func (a *App) historyRetention() int {
 	return a.history.Limit()
 }
 
-// resetHistorySelection selects the newest run that has operations, so the
-// screen never opens on an empty block while there is something to inspect.
-func (a *App) resetHistorySelection() {
-	a.tasks.histSession, a.tasks.histOp, a.tasks.histOffset = 0, 0, 0
-	for i, sess := range a.historySessions() {
-		if len(sess.Operations()) > 0 {
-			a.tasks.histSession = i
+// currentSessionIndex is this run's session in sessions, or -1 when the store
+// keeps no session for this run (a read-only file from a newer TwinPane, or
+// persistence disabled).
+func (a *App) currentSessionIndex(sessions []history.Session) int {
+	if a.history == nil {
+		return -1
+	}
+	id := a.history.CurrentID()
+	if id == "" {
+		return -1
+	}
+	for i := range sessions {
+		if sessions[i].ID == id {
+			return i
+		}
+	}
+	return -1
+}
+
+// ---- the merged list ---------------------------------------------------------
+
+// taskSelKind says what the cursor is on.
+type taskSelKind int
+
+const (
+	selLiveTask taskSelKind = iota // a task of this run (running or finished)
+	selRecord                      // a recorded operation from the history
+)
+
+// taskEntryKind is the kind of one row or heading of the merged list.
+type taskEntryKind int
+
+const (
+	taskEntryHeading taskEntryKind = iota // a run heading (not selectable)
+	taskEntryLive                         // a background task of this run
+	taskEntryRecord                       // a recorded operation (read-only)
+	taskEntryEmpty                        // "nothing yet" inside a heading
+)
+
+// taskEntry is one row of the Tasks screen. Live entries point at their
+// session so progress keeps updating; record entries point into the history
+// snapshot the list was built from (kept alive by the entries themselves).
+type taskEntry struct {
+	kind    taskEntryKind
+	title   string // heading or placeholder text
+	current bool   // heading of this run
+	sess    int    // history session index (-1 = this run)
+	op      int    // operation index inside that session (newest first)
+	task    *opSession
+	rec     *history.Record
+	run     time.Time // when the record's run started
+	started time.Time // when the operation started (ordering)
+}
+
+// taskEntries is the list the Tasks screen shows. It is rebuilt only when the
+// task list or the recorded history changed, so redrawing during progress
+// updates costs nothing: the rows read the live sessions directly.
+func (a *App) taskEntries() []taskEntry {
+	if a == nil {
+		return nil
+	}
+	rev := uint64(0)
+	if a.history != nil {
+		rev = a.history.Revision()
+	}
+	m := &a.tasks
+	if m.entriesValid && m.entriesRev == rev && m.entriesLiveRev == m.liveRev {
+		return m.entries
+	}
+	m.entries = a.buildTaskEntries()
+	m.entriesRev, m.entriesLiveRev, m.entriesValid = rev, m.liveRev, true
+	a.ensureTaskSelection(m.entries)
+	return m.entries
+}
+
+// buildTaskEntries merges this run's tasks with the recorded runs.
+func (a *App) buildTaskEntries() []taskEntry {
+	sessions := a.historySessions()
+	cur := a.currentSessionIndex(sessions)
+	live := a.tasks.newest()
+
+	out := make([]taskEntry, 0, len(live)+16)
+
+	// Everything this run did that is not an active task, newest first:
+	// finished tasks plus the records that never had a task row.
+	linked := make(map[string]bool, len(live))
+	for _, s := range live {
+		if s.hist.id != "" {
+			linked[s.hist.id] = true
+		}
+	}
+	active := make([]*opSession, 0, len(live))
+	rest := make([]taskEntry, 0, len(live)+8)
+	finished := 0
+	for _, s := range live {
+		if s.active() {
+			active = append(active, s)
+			continue
+		}
+		finished++
+		rest = append(rest, taskEntry{kind: taskEntryLive, task: s, sess: -1, started: s.started})
+	}
+	recorded := 0
+	if cur >= 0 {
+		for i := range sessions[cur].Ops {
+			r := &sessions[cur].Ops[i]
+			// A task row already shows its own record; records the user
+			// cleared from the list stay cleared until the next run.
+			if linked[r.ID] || a.tasks.cleared[r.ID] {
+				continue
+			}
+			recorded++
+			rest = append(rest, taskEntry{
+				kind: taskEntryRecord, rec: r, sess: cur, op: i,
+				run: sessions[cur].Started, started: r.Started,
+			})
+		}
+	}
+	sort.SliceStable(rest, func(i, j int) bool { return rest[i].started.After(rest[j].started) })
+
+	out = append(out, taskEntry{
+		kind: taskEntryHeading, current: true, sess: cur,
+		title: a.runHeading(sessions, cur, len(active), finished, recorded),
+	})
+	// Active tasks stay on top: running work must never scroll out of sight
+	// behind a long list of finished rows.
+	for _, s := range active {
+		out = append(out, taskEntry{kind: taskEntryLive, task: s, sess: -1, started: s.started})
+	}
+	out = append(out, rest...)
+
+	// Earlier runs, newest first. A run that recorded nothing has nothing to
+	// group, so it is skipped instead of leaving an empty heading behind.
+	var earlier []taskEntry
+	for i := range sessions {
+		if i == cur || len(sessions[i].Ops) == 0 {
+			continue
+		}
+		earlier = append(earlier, taskEntry{
+			kind: taskEntryHeading, sess: i,
+			title: a.sessionHeading(sessions[i]),
+		})
+		for j := range sessions[i].Ops {
+			earlier = append(earlier, taskEntry{
+				kind: taskEntryRecord, rec: &sessions[i].Ops[j], sess: i, op: j,
+				run: sessions[i].Started, started: sessions[i].Ops[j].Started,
+			})
+		}
+	}
+	// The explanation for an empty screen belongs on an empty screen only;
+	// with earlier runs below, their rows say what this screen is for.
+	if len(active) == 0 && len(rest) == 0 && len(earlier) == 0 {
+		out = append(out, taskEntry{kind: taskEntryEmpty,
+			title: "Nothing yet — copy, move, rename, create or delete something."})
+	}
+	out = append(out, earlier...)
+	return out
+}
+
+// runHeading is the "This run" heading with the counts that fit.
+func (a *App) runHeading(sessions []history.Session, cur, active, finished, recorded int) string {
+	title := "This run"
+	if cur >= 0 && !sessions[cur].Started.IsZero() {
+		title += " · " + sessions[cur].Started.Local().Format("15:04")
+	}
+	var parts []string
+	if active > 0 {
+		parts = append(parts, fmt.Sprintf("%d active", active))
+	}
+	if finished > 0 {
+		parts = append(parts, fmt.Sprintf("%d finished", finished))
+	}
+	if recorded > 0 {
+		parts = append(parts, fmt.Sprintf("%d recorded", recorded))
+	}
+	if len(parts) == 0 {
+		return title + " · nothing yet"
+	}
+	return title + " · " + strings.Join(parts, " · ")
+}
+
+// sessionHeading describes an earlier run: when it started and what it did.
+func (a *App) sessionHeading(sess history.Session) string {
+	title := dayLabel(sess.Started, a.now()) + " · " + plural(len(sess.Ops), "operation")
+	failed := 0
+	for _, r := range sess.Ops {
+		if r.Status == history.StatusFailed || r.Status == history.StatusInterrupted {
+			failed++
+		}
+	}
+	if failed > 0 {
+		title += fmt.Sprintf(" · %d failed", failed)
+	}
+	return title
+}
+
+// dayLabel names a moment relative to now, so a heading reads "Today 06:02"
+// instead of an ISO timestamp.
+func dayLabel(t, now time.Time) string {
+	if t.IsZero() {
+		return "Earlier"
+	}
+	t, now = t.Local(), now.Local()
+	switch {
+	case sameDay(t, now):
+		return "Today " + t.Format("15:04")
+	case sameDay(t, now.AddDate(0, 0, -1)):
+		return "Yesterday " + t.Format("15:04")
+	case t.Year() == now.Year():
+		return t.Format("Jan 2 15:04")
+	}
+	return t.Format("2006-01-02 15:04")
+}
+
+func sameDay(a, b time.Time) bool {
+	y1, m1, d1 := a.Date()
+	y2, m2, d2 := b.Date()
+	return y1 == y2 && m1 == m2 && d1 == d2
+}
+
+// ---- selection ---------------------------------------------------------------
+
+// selectable reports whether a row can hold the cursor.
+func selectable(e taskEntry) bool {
+	return e.kind == taskEntryLive || e.kind == taskEntryRecord
+}
+
+// selectedTaskEntryIndex is the index of the selected row (-1 when the
+// selection does not exist any more).
+func (a *App) selectedTaskEntryIndex(entries []taskEntry) int {
+	for i := range entries {
+		e := entries[i]
+		switch {
+		case e.kind == taskEntryLive && a.tasks.selKind == selLiveTask &&
+			e.task != nil && e.task.id == a.tasks.selected:
+			return i
+		case e.kind == taskEntryRecord && a.tasks.selKind == selRecord &&
+			e.sess == a.tasks.histSession && e.op == a.tasks.histOp:
+			return i
+		}
+	}
+	return -1
+}
+
+// selectedTaskEntry is the selected row, if any.
+func (a *App) selectedTaskEntry() (taskEntry, bool) {
+	entries := a.taskEntries()
+	if i := a.selectedTaskEntryIndex(entries); i >= 0 {
+		return entries[i], true
+	}
+	return taskEntry{}, false
+}
+
+// selectTaskEntry puts the cursor on entries[idx] (headings are ignored).
+func (a *App) selectTaskEntry(entries []taskEntry, idx int) {
+	if idx < 0 || idx >= len(entries) {
+		return
+	}
+	e := entries[idx]
+	switch e.kind {
+	case taskEntryLive:
+		if e.task == nil {
+			return
+		}
+		if a.tasks.selKind != selLiveTask || a.tasks.selected != e.task.id {
+			a.tasks.detailOffset = 0
+		}
+		a.tasks.selKind, a.tasks.selected = selLiveTask, e.task.id
+	case taskEntryRecord:
+		if a.tasks.selKind != selRecord || a.tasks.histSession != e.sess || a.tasks.histOp != e.op {
+			a.tasks.detailOffset = 0
+		}
+		a.tasks.selKind, a.tasks.histSession, a.tasks.histOp = selRecord, e.sess, e.op
+	}
+}
+
+// ensureTaskSelection keeps the cursor on a row that still exists: a cleared
+// task, a pruned run or a changed retention limit can remove the old one.
+func (a *App) ensureTaskSelection(entries []taskEntry) {
+	if a.selectedTaskEntryIndex(entries) >= 0 {
+		return
+	}
+	for i := range entries {
+		if selectable(entries[i]) {
+			a.selectTaskEntry(entries, i)
 			return
 		}
 	}
 }
 
-// clampHistorySelection keeps the run/operation selection inside the
-// available records.
-func (a *App) clampHistorySelection() ([]history.Session, history.Session) {
-	sessions := a.historySessions()
-	if len(sessions) == 0 {
-		a.tasks.histSession, a.tasks.histOp = 0, 0
-		return nil, history.Session{}
+// moveTaskSelection moves the cursor by delta rows, skipping headings.
+func (a *App) moveTaskSelection(delta int) {
+	entries := a.taskEntries()
+	idx := a.selectedTaskEntryIndex(entries)
+	dir := 1
+	if delta < 0 {
+		dir = -1
 	}
-	if a.tasks.histSession < 0 || a.tasks.histSession >= len(sessions) {
-		a.tasks.histSession = max(0, min(len(sessions)-1, a.tasks.histSession))
+	if idx < 0 {
+		for i := range entries {
+			if selectable(entries[i]) {
+				a.selectTaskEntry(entries, i)
+				return
+			}
+		}
+		return
 	}
-	sess := sessions[a.tasks.histSession]
-	ops := sess.Operations()
-	if len(ops) == 0 {
-		a.tasks.histOp = 0
-	} else if a.tasks.histOp < 0 || a.tasks.histOp >= len(ops) {
-		a.tasks.histOp = max(0, min(len(ops)-1, a.tasks.histOp))
+	for i := idx + dir; i >= 0 && i < len(entries); i += dir {
+		if selectable(entries[i]) {
+			a.selectTaskEntry(entries, i)
+			return
+		}
 	}
-	return sessions, sess
 }
 
-// selectedHistoryRecord returns the operation the history view has selected.
-func (a *App) selectedHistoryRecord() (history.Record, history.Session, bool) {
-	_, sess := a.clampHistorySelection()
-	ops := sess.Operations()
-	if len(ops) == 0 {
-		return history.Record{}, sess, false
+// jumpTaskRun moves to the next newer (newer = true) or older run section and
+// selects its first row. The list is newest-first, so "newer" walks up.
+// Sections without rows are skipped.
+func (a *App) jumpTaskRun(newer bool) {
+	entries := a.taskEntries()
+	sel := a.selectedTaskEntryIndex(entries)
+	if sel < 0 {
+		a.ensureTaskSelection(entries)
+		return
 	}
-	return ops[a.tasks.histOp], sess, true
+	head := -1
+	for i := sel; i >= 0; i-- {
+		if entries[i].kind == taskEntryHeading {
+			head = i
+			break
+		}
+	}
+	if head < 0 {
+		return
+	}
+	dir := 1 // older: down the list
+	if newer {
+		dir = -1
+	}
+	for i := head + dir; i >= 0 && i < len(entries); i += dir {
+		if entries[i].kind != taskEntryHeading {
+			continue
+		}
+		for j := i + 1; j < len(entries) && entries[j].kind != taskEntryHeading; j++ {
+			if selectable(entries[j]) {
+				a.selectTaskEntry(entries, j)
+				return
+			}
+		}
+	}
 }
 
-// historyLayout says where each part of the history view starts, so drawing
-// and mouse clicks agree. Rows count from the top of the body.
-type historyLayout struct {
-	sessions   int // first run row
-	sessRows   int
-	ops        int // first operation row
-	opRows     int
-	details    int // first detail row
-	detailRows int
-}
+// ---- row rendering -----------------------------------------------------------
 
-func historyLayoutFor(height, sessionCount, opCount int) historyLayout {
-	l := historyLayout{sessions: 1, details: height}
-	if height <= 1 {
-		l.sessRows, l.ops, l.opRows = 0, height, 0
-		return l
+// taskHeadingLine draws a run heading as a rule with its title in it, so the
+// sections are visibly separated at any width.
+func (a *App) taskHeadingLine(title string, innerW int, current bool) string {
+	style := a.theme.ColumnHeader
+	if current {
+		style = a.theme.HelpTitle
 	}
-	avail := height - 1 // the header takes the first row
-	// Runs get up to a third of the screen, operations up to half of the rest.
-	l.sessRows = min(sessionCount, max(1, avail/3))
-	l.ops = l.sessions + l.sessRows + 1 // one blank line between the blocks
-	rest := avail - l.sessRows - 1
-	if rest < 2 {
-		l.ops, l.opRows = height, 0
-		return l
-	}
-	l.opRows = min(opCount, max(1, rest/2))
-	l.details = l.ops + l.opRows + 1 // one blank line before the details
-	if l.details > height {
-		l.details = height
-	}
-	l.detailRows = max(0, height-l.details)
-	return l
-}
-
-// historyViewRender draws the operation history inside the Tasks screen.
-func (a *App) historyViewRender(height int) string {
-	if height <= 0 {
+	if innerW <= 0 {
 		return ""
 	}
-	width := a.width
-	sessions, sess := a.clampHistorySelection()
-	ops := sess.Operations()
-	layout := historyLayoutFor(height, len(sessions), len(ops))
-
-	lines := []string{a.historyHeader(len(sessions))}
-	// Runs
-	if layout.sessRows > 0 {
-		lines = append(lines, a.historySessionRows(sessions, layout.sessRows, width)...)
+	label := " " + fsys.SanitizeName(title) + " "
+	if ansi.StringWidth(label)+4 > innerW {
+		return style.Render(truncRight("──"+label, innerW))
 	}
-	// Operations of the selected run
-	if layout.opRows > 0 {
-		for len(lines) < layout.ops {
-			lines = append(lines, "")
-		}
-		for _, line := range a.historyOpRows(ops, layout.opRows, width) {
-			lines = append(lines, line)
-		}
-	}
-	// Details of the selected operation
-	if rec, _, ok := a.selectedHistoryRecord(); ok && layout.details < height {
-		for len(lines) < layout.details {
-			lines = append(lines, "")
-		}
-		details := a.historyRecordDetails(rec, width)
-		if a.tasks.histOffset >= len(details) {
-			a.tasks.histOffset = max(0, len(details)-1)
-		}
-		for _, line := range details[a.tasks.histOffset:] {
-			if len(lines) >= height {
-				break
-			}
-			lines = append(lines, line)
-		}
-	}
-	for len(lines) < height {
-		lines = append(lines, "")
-	}
-	if len(lines) > height {
-		lines = lines[:height]
-	}
-	return strings.Join(lines, "\n")
+	fill := strings.Repeat("─", innerW-2-ansi.StringWidth(label))
+	return style.Render("──" + label + fill)
 }
 
-func (a *App) historyHeader(count int) string {
-	ops := 0
-	sessions := a.historySessions()
-	for _, sess := range sessions {
-		ops += len(sess.Operations())
+// recordGlyph is the one-cell status mark of a record. It uses the same
+// shapes as a live task's state, so one list reads consistently.
+func recordGlyph(st history.Status) string {
+	switch st {
+	case history.StatusSuccess:
+		return "✓"
+	case history.StatusFailed:
+		return "✕"
+	case history.StatusPartial:
+		return "▲"
+	case history.StatusCanceled:
+		return "⊘"
+	case history.StatusInterrupted:
+		return "?"
+	case history.StatusRunning:
+		return "●"
 	}
-	header := fmt.Sprintf("Operation history · %s · %s · keeping %d",
-		plural(count, "run"), plural(ops, "operation"), a.historyRetention())
-	if a.history != nil && a.history.ReadOnly() {
-		header += " · read-only (file from a newer TwinPane)"
-	}
-	return a.theme.HelpTitle.Render(fitWidth(header, a.width))
+	return "?"
 }
 
-// historySessionRows renders the run list, scrolled so the selected run is
-// visible.
-func (a *App) historySessionRows(sessions []history.Session, rows, width int) []string {
-	if len(sessions) == 0 {
-		return []string{a.theme.Empty.Render(fitWidth("No operations recorded yet. Copy, move, delete, rename, create or archive something.", width))}
+// recordStyle colours a recorded status the same way a task state is coloured.
+func (a *App) recordStyle(st history.Status) lipgloss.Style {
+	switch st {
+	case history.StatusSuccess:
+		return a.theme.StatusOK
+	case history.StatusFailed:
+		return a.theme.StatusErr
+	case history.StatusPartial, history.StatusCanceled, history.StatusInterrupted:
+		return a.theme.StatusWarn
 	}
-	offset := a.tasks.histSession - rows + 1
-	offset = max(0, min(offset, len(sessions)-rows))
-	offset = max(0, offset)
-	end := min(len(sessions), offset+rows)
-	out := make([]string, 0, end-offset)
-	for i := offset; i < end; i++ {
-		sess := sessions[i]
-		marker := "  "
-		if i == a.tasks.histSession {
-			marker = "> "
-		}
-		row := marker + history.SessionSummary(sess)
-		if sess.Version != "" {
-			row += " · " + sess.Version
-		}
-		style := a.theme.TitleText
-		if i == a.tasks.histSession {
-			style = a.theme.CursorActive
-		}
-		out = append(out, style.Render(fitWidth(fsys.SanitizeName(row), width)))
-	}
-	return out
+	return a.theme.HelpTitle
 }
 
-// historyOpRows renders the operations of the selected run, scrolled so the
-// selected operation is visible.
-func (a *App) historyOpRows(ops []history.Record, rows, width int) []string {
-	if len(ops) == 0 {
-		return []string{a.theme.Empty.Render(fitWidth("   This run has no operations.", width))}
+// recordRowLines renders one recorded operation: one table row (two lines on
+// a narrow terminal), aligned with the live task rows.
+func (a *App) recordRowLines(l taskLayout, e taskEntry, selected bool) []string {
+	r := e.rec
+	if r == nil {
+		return nil
 	}
-	offset := a.tasks.histOp - rows + 1
-	offset = max(0, min(offset, len(ops)-rows))
-	offset = max(0, offset)
-	end := min(len(ops), offset+rows)
-	out := make([]string, 0, end-offset)
-	for i := offset; i < end; i++ {
-		r := ops[i]
-		marker := "     "
-		if i == a.tasks.histOp {
-			marker = "   › "
-		}
-		row := fmt.Sprintf("%s%s %-8s %-16s %s", marker, clockOf(r.Started), r.Status.Label(), r.Op, historyRowTarget(r))
-		style := a.theme.TitleText
-		if i == a.tasks.histOp {
-			style = a.theme.CursorActive
-		} else {
-			switch r.Status {
-			case history.StatusSuccess:
-				style = a.theme.StatusOK
-			case history.StatusFailed:
-				style = a.theme.StatusErr
-			case history.StatusPartial, history.StatusCanceled, history.StatusInterrupted:
-				style = a.theme.StatusWarn
-			}
-		}
-		out = append(out, style.Render(fitWidth(fsys.SanitizeName(row), width)))
+	style := a.recordStyle(r.Status)
+	glyph := recordGlyph(r.Status)
+	op := fsys.SanitizeName(capitalize(r.Op))
+	target := recordTarget(r)
+	marker := "  "
+	if selected {
+		marker = a.theme.HelpTitle.Render("▸") + " "
 	}
-	return out
+	if l.compact {
+		head := marker + style.Render(glyph) + " " +
+			a.theme.Info.Render(truncRight(op, max(6, l.innerW-4)))
+		detail := "   " + a.theme.Summary.Render(truncRight(
+			r.Status.Label()+" · "+clockOf(r.Started)+" "+target, max(6, l.innerW-4)))
+		if selected {
+			head = a.theme.CursorActive.Render(fitWidth(ansi.Strip(head), l.innerW))
+			detail = a.theme.CursorInactive.Render(fitWidth(ansi.Strip(detail), l.innerW))
+		}
+		return []string{head, detail}
+	}
+	c := l.columns
+	var b strings.Builder
+	b.WriteString(marker)
+	b.WriteString(strings.Repeat(" ", taskIDW)) // history rows have no task number
+	stateW := 2                                 // glyph only, like a narrow live row
+	if c.stateWord {
+		stateW = taskStateW
+		b.WriteString(style.Render(padRight(glyph+" "+r.Status.Label(), taskStateW)))
+	} else {
+		b.WriteString(style.Render(glyph) + " ")
+	}
+	b.WriteString(a.theme.Info.Render(padRight(truncRight(op, max(1, c.opW-1)), c.opW)))
+	// The progress and size columns carry no meaning for a finished record;
+	// the space shows what it acted on instead.
+	rest := max(1, l.innerW-taskMarkerW-taskIDW-stateW-c.opW)
+	if target != "" {
+		target = " " + target
+	}
+	b.WriteString(a.theme.Summary.Render(truncRight(clockOf(r.Started)+target, rest)))
+	row := truncRight(b.String(), l.innerW)
+	if selected {
+		return []string{a.theme.CursorActive.Render(fitWidth(ansi.Strip(row), l.innerW))}
+	}
+	return []string{fitWidth(row, l.innerW)}
 }
 
-// historyRowTarget is the short path shown at the end of an operation row.
-func historyRowTarget(r history.Record) string {
+// recordTarget is the short path shown at the end of a recorded row.
+func recordTarget(r *history.Record) string {
 	switch {
 	case r.Dest != "":
-		return "→ " + r.Dest
+		return "→ " + fsys.SanitizeName(r.Dest)
 	case len(r.Sources) > 0:
-		return r.Sources[0]
+		return fsys.SanitizeName(r.Sources[0])
 	case len(r.Items) > 0:
-		return r.Items[0]
+		return fsys.SanitizeName(r.Items[0])
 	}
 	return ""
 }
@@ -260,72 +530,96 @@ func clockOf(t time.Time) string {
 	return t.Local().Format("15:04:05")
 }
 
-// historyRecordDetails renders one recorded operation as detail lines.
-func (a *App) historyRecordDetails(r history.Record, width int) []string {
-	label := func(k, v string) []string {
-		if v == "" {
-			return nil
-		}
-		parts := wrapText(k+v, max(1, width))
-		for i := range parts {
-			parts[i] = a.theme.DialogText.Render(parts[i])
-		}
-		return parts
+// recordDetailRows is the Details panel of a recorded operation: the same
+// label/value layout as a task's details.
+func (a *App) recordDetailRows(e taskEntry, width int) []string {
+	r := e.rec
+	if r == nil {
+		return nil
 	}
-	lines := []string{a.theme.HelpTitle.Render(fmt.Sprintf("Details · %s", fsys.SanitizeName(r.Op)))}
-	lines = append(lines, label("Operation: ", r.Op)...)
-	lines = append(lines, label("State: ", r.Status.Label())...)
+	th := a.theme
+	valueW := max(8, width-taskLabelW-1)
+	var lines []string
+	add := func(label, value string) {
+		if value == "" {
+			return
+		}
+		wrapped := wrapText(fsys.SanitizeName(value), valueW)
+		for i, part := range wrapped {
+			if i == 0 {
+				lines = append(lines, th.PropLabel.Render(padRight(label, taskLabelW))+th.DialogText.Render(part))
+				continue
+			}
+			lines = append(lines, strings.Repeat(" ", taskLabelW)+th.DialogText.Render(part))
+		}
+	}
+	addPath := func(label, path string) {
+		if path == "" {
+			return
+		}
+		lines = append(lines, th.PropLabel.Render(padRight(label, taskLabelW))+
+			th.DialogPath.Render(truncLeft(fsys.SanitizeName(path), valueW)))
+	}
+
+	add("Operation", capitalize(r.Op))
+	add("State", r.Status.Label())
+	if !e.run.IsZero() {
+		add("Session", dayLabel(e.run, a.now()))
+	}
 	if !r.Started.IsZero() {
-		lines = append(lines, label("Started: ", r.Started.Local().Format("2006-01-02 15:04:05"))...)
+		add("Started", r.Started.Local().Format("2006-01-02 15:04:05"))
 	}
 	if d := r.Duration(); d > 0 {
-		lines = append(lines, label("Duration: ", d.Round(time.Millisecond).String())...)
+		add("Duration", d.Round(time.Millisecond).String())
 	}
-	const pathCap = 12
+	const sourceCap = 6
 	for i, p := range r.Sources {
-		if i == pathCap {
-			lines = append(lines, label("       ", fmt.Sprintf("… %d more source paths", len(r.Sources)-pathCap))...)
+		if i == sourceCap {
+			add("Source", fmt.Sprintf("… %d more", len(r.Sources)-sourceCap))
 			break
 		}
-		prefix := "From: "
-		if i > 0 {
-			prefix = "       "
+		label := ""
+		if i == 0 {
+			label = "From:"
 		}
-		lines = append(lines, label(prefix, fsys.SanitizeName(p))...)
+		addPath(label, p)
 	}
-	lines = append(lines, label("To: ", fsys.SanitizeName(r.Dest))...)
-	if len(r.Items) > 0 {
-		const itemCap = 12
-		for i, it := range r.Items {
-			if i == itemCap {
-				lines = append(lines, label("       ", fmt.Sprintf("… %d more items", len(r.Items)-itemCap))...)
-				break
-			}
-			prefix := "Items: "
-			if i > 0 {
-				prefix = "       "
-			}
-			lines = append(lines, label(prefix, fsys.SanitizeName(it))...)
+	addPath("To:", r.Dest)
+	const itemCap = 6
+	for i, it := range r.Items {
+		if i == itemCap {
+			add("Items", fmt.Sprintf("… %d more", len(r.Items)-itemCap))
+			break
 		}
+		label := ""
+		if i == 0 {
+			label = "Items:"
+		}
+		add(label, it)
 	}
-	lines = append(lines, label("Result: ", historyCounts(r))...)
-	lines = append(lines, label("Summary: ", fsys.SanitizeName(r.Summary))...)
-	lines = append(lines, label("Exit: ", r.Result)...)
-	for i, e := range r.Errors {
-		prefix := "Error: "
-		if i > 0 {
-			prefix = "       "
+	add("Result", historyCounts(r))
+	add("Summary", r.Summary)
+	add("Tool", r.Result)
+	for i, errText := range r.Errors {
+		label := ""
+		if i == 0 {
+			label = "Error:"
 		}
-		lines = append(lines, label(prefix, fsys.SanitizeName(e))...)
+		add(label, errText)
 	}
 	for _, detail := range r.Details {
-		lines = append(lines, label("• ", fsys.SanitizeName(detail))...)
+		add("•", detail)
+	}
+	if width > 0 {
+		for i, line := range lines {
+			lines[i] = ansi.Truncate(line, width, "…")
+		}
 	}
 	return lines
 }
 
 // historyCounts summarises the counts an operation reported.
-func historyCounts(r history.Record) string {
+func historyCounts(r *history.Record) string {
 	var parts []string
 	if r.Files > 0 {
 		parts = append(parts, plural(r.Files, "file"))
@@ -343,76 +637,6 @@ func historyCounts(r history.Record) string {
 		return ""
 	}
 	return strings.Join(parts, ", ")
-}
-
-// historyFooterHints returns the actions available in the history view.
-func (a *App) historyFooterHints() []barItem {
-	return []barItem{
-		item("h/Esc", "live tasks", "h"),
-		item("↑↓", "operation", ""),
-		item("[ ]", "run", ""),
-		item("+/-", "keep more/fewer", ""),
-		item("PgUp/Dn", "details", "pgup"),
-	}
-}
-
-// historyViewKey handles keys in the history view. It returns handled=false
-// for keys this view does not use, so they keep their usual meaning.
-func (a *App) historyViewKey(msg tea.KeyMsg) (tea.Cmd, bool) {
-	sessions, _ := a.clampHistorySelection()
-	switch msg.String() {
-	case "esc", "t":
-		a.closeTasks()
-		a.setStatus("", false)
-		return nil, true
-	case "h", "tab":
-		a.tasks.histShowing = false
-		a.tasks.histOffset = 0
-		return nil, true
-	case "up", "k":
-		if a.tasks.histOp > 0 {
-			a.tasks.histOp--
-			a.tasks.histOffset = 0
-		}
-		return nil, true
-	case "down", "j":
-		if ops := a.selectedHistoryOps(); a.tasks.histOp < len(ops)-1 {
-			a.tasks.histOp++
-			a.tasks.histOffset = 0
-		}
-		return nil, true
-	case "[":
-		if a.tasks.histSession < len(sessions)-1 {
-			a.tasks.histSession++
-			a.tasks.histOp, a.tasks.histOffset = 0, 0
-		}
-		return nil, true
-	case "]":
-		if a.tasks.histSession > 0 {
-			a.tasks.histSession--
-			a.tasks.histOp, a.tasks.histOffset = 0, 0
-		}
-		return nil, true
-	case "+", "=":
-		a.changeHistoryRetention(1)
-		return nil, true
-	case "-", "_":
-		a.changeHistoryRetention(-1)
-		return nil, true
-	case "pgup", "ctrl+b":
-		a.tasks.histOffset = max(0, a.tasks.histOffset-5)
-		return nil, true
-	case "pgdown", "ctrl+f":
-		a.tasks.histOffset += 5
-		return nil, true
-	}
-	return nil, false
-}
-
-// selectedHistoryOps returns the operations of the selected run.
-func (a *App) selectedHistoryOps() []history.Record {
-	_, sess := a.clampHistorySelection()
-	return sess.Operations()
 }
 
 // changeHistoryRetention raises or lowers the number of runs kept on disk,
@@ -443,35 +667,6 @@ func (a *App) changeHistoryRetention(delta int) {
 		}
 	}
 	a.setStatusLevel(msg, level)
-	// The selection may have been pruned away.
-	a.clampHistorySelection()
-}
-
-// historyViewMouse handles clicks and the wheel in the history view.
-func (a *App) historyViewMouse(ev tea.MouseEvent) tea.Cmd {
-	sessions, _ := a.clampHistorySelection()
-	ops := a.selectedHistoryOps()
-	layout := historyLayoutFor(a.height-3, len(sessions), len(ops))
-	if ev.IsWheel() {
-		a.tasks.histOffset = max(0, a.tasks.histOffset+wheelDelta(ev))
-		return nil
-	}
-	if ev.Action != tea.MouseActionRelease || ev.Button != tea.MouseButtonLeft {
-		return nil
-	}
-	row := ev.Y - 2 // the body starts under the status line
-	if row >= layout.sessions && layout.sessRows > 0 && row < layout.sessions+layout.sessRows {
-		offset := max(0, min(a.tasks.histSession-layout.sessRows+1, len(sessions)-layout.sessRows))
-		if idx := offset + row - layout.sessions; idx >= 0 && idx < len(sessions) {
-			a.tasks.histSession, a.tasks.histOp, a.tasks.histOffset = idx, 0, 0
-		}
-		return nil
-	}
-	if row >= layout.ops && layout.opRows > 0 && row < layout.ops+layout.opRows {
-		offset := max(0, min(a.tasks.histOp-layout.opRows+1, len(ops)-layout.opRows))
-		if idx := offset + row - layout.ops; idx >= 0 && idx < len(ops) {
-			a.tasks.histOp, a.tasks.histOffset = idx, 0
-		}
-	}
-	return nil
+	// The selection may have been pruned away with its run.
+	a.ensureTaskSelection(a.taskEntries())
 }

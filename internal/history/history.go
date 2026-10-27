@@ -235,6 +235,7 @@ type Store struct {
 	readOnly bool      // a newer file: never replaced
 	lastSize int64     // size of our last write, to detect outside changes
 	lastMod  time.Time // modification time of our last write
+	rev      uint64    // bumped whenever the recorded sessions change
 }
 
 // DefaultPath returns the history file path in the shared TwinPane
@@ -317,6 +318,20 @@ func Open(path string, opts Options) (*Store, error) {
 
 // Close is a no-op kept for symmetry: every change is already on disk.
 func (s *Store) Close() error { return nil }
+
+// Revision changes whenever the recorded sessions change: a record starts,
+// updates or finishes, a foreground operation is added, the retention limit
+// prunes sessions or a file written by another instance is merged. The UI uses
+// it to rebuild the operations it shows only when there is something new,
+// instead of copying the whole history on every frame.
+func (s *Store) Revision() uint64 {
+	if s == nil {
+		return 0
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.rev
+}
 
 // Path returns the history file path ("" when the store has none).
 func (s *Store) Path() string {
@@ -826,6 +841,7 @@ func (s *Store) load() error {
 	if st, err := os.Stat(s.path); err == nil {
 		s.lastSize, s.lastMod = st.Size(), st.ModTime()
 	}
+	s.rev++
 	return nil
 }
 
@@ -895,6 +911,7 @@ func (s *Store) persistLocked() error {
 	if s.readOnly {
 		return s.err
 	}
+	s.rev++
 	s.mergeExternalLocked()
 	s.pruneLocked()
 	data, err := json.MarshalIndent(file{Version: formatVersion, Sessions: s.sessions}, "", "  ")

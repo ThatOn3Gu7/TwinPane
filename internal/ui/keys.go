@@ -125,11 +125,11 @@ func (k KeyMap) helpSections() [2][]helpSection {
 				{Help: "⌫ / Esc", Desc: "leave the archive"},
 				k.Extract, k.ExtractAll, k.Zip}},
 			{"Open & places", []Binding{k.Menu, k.OpenExt, k.OpenWith, k.Bookmarks, k.Bookmark, k.Storage}},
-			{"Background tasks (t)", []Binding{
+			{"Tasks & history (t)", []Binding{
 				{Help: "⏎ / w", Desc: "watch live progress"},
 				{Help: "c", Desc: "cancel the selected task"},
-				{Help: "x", Desc: "clear finished tasks"},
-				{Help: "h", Desc: "operation history"}}},
+				{Help: "x", Desc: "clear finished (this run)"},
+				{Help: "[ ]", Desc: "previous / next run"}}},
 		},
 		{
 			{"File operations", []Binding{k.Copy, k.Move, k.Rename, k.Delete, k.Edit, k.EditWith, k.Properties, k.Cancel}},

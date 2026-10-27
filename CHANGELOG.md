@@ -134,7 +134,8 @@ operation history, and the Settings screen that now owns every preference.
   the query, the panels, `/`, the viewer, the editor or the dialogs, and no
   existing Advanced Search key changed. Copy path uses the terminal clipboard
   (OSC 52) and reports the path in the status line.
-- **Persistent operation history** (`t`, then `h`): every file operation —
+- **Persistent operation history** (in the Tasks screen, `t`): every file
+  operation —
   copy, move, delete (trash or permanent), rename (single, bulk and from the
   Properties dialog), new file, new folder, compress, extract, synchronization,
   permission changes and the remote/rclone operations — is recorded with its
@@ -147,6 +148,18 @@ operation history, and the Settings screen that now owns every preference.
   loss) is stored as interrupted and never claims success. Only operations are
   recorded — never navigation or other UI actions, and never one entry per
   progress update.
+- **One Tasks screen.** The history is not a second screen and has no key of
+  its own: `t` shows a single continuous
+  list — active tasks with live progress, this run's finished tasks, then the
+  operations of earlier runs under their own date/time headings, current run
+  first and newest operation first inside a run. One cursor walks the whole
+  list (`↑`/`↓`, the wheel, a click; `[`/`]` jump between runs), the details
+  panel follows whatever row is selected, the list scrolls with the cursor
+  kept in view and the scrollbar on its right edge, and the table folds into
+  two-line rows on narrow terminals. Rows from earlier runs are read-only:
+  `c`, `x`, `⏎` and `w` refuse them with an explanation, the footer lists only
+  what the selected row can do, and clearing this run's finished tasks leaves
+  the recorded history untouched.
 - The history lives in `history.json` in the same configuration directory as
   `settings.json`. It is written atomically (temporary file, `fsync`, rename,
   mode 0600) under one mutex, so concurrent background tasks cannot corrupt it
@@ -155,7 +168,7 @@ operation history, and the Settings screen that now owns every preference.
   reporting it and starting a fresh history; a file from a newer TwinPane is
   shown read-only and never overwritten.
 - **Retention**: how many runs are kept is configurable (1–200, default 20)
-  and saved in `settings.json`; `+`/`-` in the history view and the
+  and saved in `settings.json`; `+`/`-` in the Tasks screen and the
   **Operation history → Runs kept** row of the Settings screen change it and
   prune older runs immediately. The running session is never pruned, and the file is
   additionally bounded per run and by a size ceiling.

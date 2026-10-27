@@ -11,6 +11,7 @@ import (
 
 	"github.com/ThatOn3Gu7/TwinPane/internal/fsys"
 	"github.com/ThatOn3Gu7/TwinPane/internal/ops"
+	"github.com/ThatOn3Gu7/TwinPane/internal/scrollbar"
 )
 
 // taskState distinguishes live work from retained outcomes.
@@ -40,11 +41,23 @@ type taskManager struct {
 	prompts      []taskPrompt
 	activePrompt int
 
-	// persistent operation history view (history.go / historyview.go)
-	histShowing bool
-	histSession int // selected run, 0 = newest
-	histOp      int // selected operation within that run, 0 = newest
-	histOffset  int // first detail line shown
+	// The list also shows the recorded operations of earlier runs
+	// (historyview.go). selKind says what the cursor is on: a live task of
+	// this run (selected) or a stored record (histSession + histOp). Historical
+	// rows are read-only. cleared remembers the records of finished tasks the
+	// user cleared from this run's list, so they do not come back as rows.
+	selKind     taskSelKind
+	histSession int // index into historySessions() of the selected record
+	histOp      int // index into that run's operations (newest first)
+	cleared     map[string]bool
+
+	// entries is the merged list. It is rebuilt only when the task list or the
+	// recorded history changed, so progress updates redraw for free.
+	entries        []taskEntry
+	entriesRev     uint64
+	entriesLiveRev int
+	entriesValid   bool
+	liveRev        int
 }
 
 const (
@@ -83,7 +96,10 @@ func (m *taskManager) add(s *opSession) {
 	}
 	m.byID[s.id] = s
 	m.order = append(m.order, s.id)
-	m.selected = s.id
+	// New work takes the cursor, as it always did while the list held only
+	// tasks: the screen then shows the operation that just started.
+	m.selected, m.selKind = s.id, selLiveTask
+	m.liveRev++
 }
 
 func (m *taskManager) remove(id int) {
@@ -100,6 +116,7 @@ func (m *taskManager) remove(id int) {
 			m.selected = m.order[len(m.order)-1]
 		}
 	}
+	m.liveRev++
 }
 
 func (m *taskManager) newest() []*opSession {
@@ -209,6 +226,14 @@ func (m *taskManager) clearFinished() int {
 	for _, id := range m.order {
 		s := m.byID[id]
 		if s == nil || !s.active() {
+			// The record stays in the history file; only this run's row goes,
+			// so it must not reappear as a "recorded" row straight away.
+			if s != nil && s.hist.id != "" {
+				if m.cleared == nil {
+					m.cleared = make(map[string]bool)
+				}
+				m.cleared[s.hist.id] = true
+			}
 			delete(m.byID, id)
 			removed++
 			continue
@@ -223,6 +248,7 @@ func (m *taskManager) clearFinished() int {
 		}
 	}
 	m.listOffset, m.detailOffset = 0, 0
+	m.liveRev++
 	return removed
 }
 
@@ -250,13 +276,19 @@ func (a *App) openTasks() {
 	// The list says everything the notification says, and more.
 	a.dismissNotice()
 	a.tasks.showing = true
-	a.tasks.histShowing = false
-	if s := a.tasks.latestActive(); s != nil {
-		a.tasks.selected = s.id
-	} else if s := a.tasks.selectedTask(); s != nil {
-		a.tasks.selected = s.id
-	}
 	a.tasks.listOffset, a.tasks.detailOffset = 0, 0
+	// Start on running work; otherwise on the newest row there is, which is
+	// this run's last task or — when it did nothing yet — the newest recorded
+	// operation of an earlier run.
+	if s := a.tasks.latestActive(); s != nil {
+		a.tasks.selKind, a.tasks.selected = selLiveTask, s.id
+		return
+	}
+	if s := a.tasks.selectedTask(); s != nil {
+		a.tasks.selKind, a.tasks.selected = selLiveTask, s.id
+		return
+	}
+	a.ensureTaskSelection(a.taskEntries())
 }
 
 func (a *App) closeTasks() {
@@ -264,28 +296,18 @@ func (a *App) closeTasks() {
 }
 
 func (a *App) taskViewKey(msg tea.KeyMsg) tea.Cmd {
-	if a.tasks.histShowing {
-		// The history view owns the keys: its unhandled keys must never reach
-		// the live task actions below (x would clear tasks, c would cancel
-		// one) while the user is reading past runs. "h" returns to the tasks.
-		cmd, _ := a.historyViewKey(msg)
-		return cmd
-	}
 	switch msg.String() {
-	case "h":
-		// Switch between this run's tasks and the recorded history.
-		a.tasks.histShowing = !a.tasks.histShowing
-		if a.tasks.histShowing {
-			a.resetHistorySelection()
-		}
-		a.tasks.histOffset = 0
 	case "esc", "t":
 		a.closeTasks()
 		a.setStatus("", false)
 	case "up", "k":
-		a.tasks.selectDelta(-1)
+		a.moveTaskSelection(-1)
 	case "down", "j":
-		a.tasks.selectDelta(1)
+		a.moveTaskSelection(1)
+	case "[":
+		a.jumpTaskRun(false) // the previous (older) run section
+	case "]":
+		a.jumpTaskRun(true) // the next (newer) run section
 	case "pgup", "ctrl+b":
 		a.tasks.detailOffset = max(0, a.tasks.detailOffset-5)
 	case "pgdown", "ctrl+f":
@@ -293,32 +315,64 @@ func (a *App) taskViewKey(msg tea.KeyMsg) tea.Cmd {
 	case "enter", "w":
 		return a.watchSelectedTask() // live.go
 	case "c", "ctrl+c":
-		if s := a.tasks.selectedTask(); s != nil && s.active() {
-			a.cancelTask(s.id)
-		} else {
-			a.setStatusLevel("The selected task has already finished", lvlInfo)
-		}
+		return a.cancelSelectedEntry()
 	case "x":
-		n := a.tasks.clearFinished()
-		if n == 0 {
-			a.setStatusLevel("No completed tasks to clear", lvlInfo)
-		} else {
-			a.setStatusLevel(fmt.Sprintf("Cleared %s", plural(n, "completed task")), lvlOK)
-		}
+		return a.clearFinishedEntries()
+	case "+", "=":
+		a.changeHistoryRetention(1)
+	case "-", "_":
+		a.changeHistoryRetention(-1)
 	}
 	return nil
 }
 
-func (a *App) taskViewMouse(ev tea.MouseEvent) tea.Cmd {
-	if a.tasks.histShowing {
-		return a.historyViewMouse(ev)
+// cancelSelectedEntry cancels the selected task. Only a running task of this
+// run can be cancelled: a recorded operation is a read-only row.
+func (a *App) cancelSelectedEntry() tea.Cmd {
+	e, ok := a.selectedTaskEntry()
+	switch {
+	case !ok:
+		a.setStatusLevel("Nothing is selected", lvlInfo)
+	case e.kind == taskEntryRecord:
+		a.setStatusLevel("Recorded operations are read-only — nothing to cancel", lvlInfo)
+	case e.task == nil || !e.task.active():
+		a.setStatusLevel("The selected task has already finished", lvlInfo)
+	default:
+		a.cancelTask(e.task.id)
 	}
+	return nil
+}
+
+// clearFinishedEntries clears this run's finished tasks. History records are
+// never touched, so the action is refused while a record is selected.
+func (a *App) clearFinishedEntries() tea.Cmd {
+	if e, ok := a.selectedTaskEntry(); ok && e.kind == taskEntryRecord {
+		a.setStatusLevel("Recorded operations are read-only — x only clears this run's finished tasks", lvlInfo)
+		return nil
+	}
+	n := a.tasks.clearFinished()
+	if n == 0 {
+		a.setStatusLevel("No completed tasks to clear", lvlInfo)
+	} else {
+		a.setStatusLevel(fmt.Sprintf("Cleared %s", plural(n, "completed task")), lvlOK)
+	}
+	a.ensureTaskSelection(a.taskEntries())
+	return nil
+}
+
+// taskWatchable reports whether the selected row is a running task.
+func (a *App) taskWatchable() bool {
+	e, ok := a.selectedTaskEntry()
+	return ok && e.kind == taskEntryLive && e.task != nil && e.task.active()
+}
+
+func (a *App) taskViewMouse(ev tea.MouseEvent) tea.Cmd {
 	l := a.taskLayout(a.height - 3)
 	// The list starts on screen row 1 (the title bar is row 0) inside its
-	// border; the first row is the table header unless the rows are compact.
+	// border; the column header, when drawn, is the list's first row.
 	listTop := 2
-	if !l.compact && l.columns.progress {
-		listTop = 3
+	if l.header {
+		listTop++
 	}
 	listBottom := 1 + l.listH - 1 // the list box's bottom border
 	if ev.IsWheel() {
@@ -326,7 +380,7 @@ func (a *App) taskViewMouse(ev tea.MouseEvent) tea.Cmd {
 		if ev.Y >= listBottom && l.detailsH > 0 {
 			a.tasks.detailOffset = max(0, a.tasks.detailOffset+delta)
 		} else if delta != 0 {
-			a.tasks.selectDelta(delta)
+			a.moveTaskSelection(delta)
 		}
 		return nil
 	}
@@ -337,18 +391,16 @@ func (a *App) taskViewMouse(ev tea.MouseEvent) tea.Cmd {
 		return nil
 	}
 	row := ev.Y - listTop
-	if l.compact {
-		row /= 2
-	}
 	if row < 0 || row >= l.listRows {
 		return nil
 	}
-	items := a.tasks.newest()
-	idx := a.tasks.listOffset + row
-	if idx < len(items) {
-		a.tasks.selected = items[idx].id
-		a.tasks.detailOffset = 0
+	entries := a.taskEntries()
+	lines, offset, rows := a.taskListWindow(l, entries)
+	idx := offset + row
+	if idx < 0 || idx >= len(lines) || idx >= offset+rows {
+		return nil
 	}
+	a.selectTaskEntry(entries, lines[idx].entry)
 	return nil
 }
 
@@ -363,7 +415,7 @@ func (a *App) taskViewMouse(ev tea.MouseEvent) tea.Cmd {
 const (
 	taskMarkerW = 2  // "▸ " before the selected row
 	taskIDW     = 3  // task number
-	taskStateW  = 12 // state glyph + word
+	taskStateW  = 14 // state glyph + word ("✕ INTERRUPTED") + gap
 	taskSizeW   = 13 // "120 M/266 M"
 	taskTimeW   = 6  // "  0:08"
 	taskMinOpW  = 12 // narrowest operation column still worth drawing
@@ -375,11 +427,12 @@ const (
 type taskLayout struct {
 	width    int
 	innerW   int  // width inside the list box
-	compact  bool // two lines per task: no table
+	compact  bool // two lines per row: no table
+	header   bool // draw the table's column header row
 	columns  taskColumns
 	listH    int // rows of the list section (borders included)
 	detailsH int // rows of the details section (0 = not drawn)
-	listRows int // task entries that fit in the list section
+	listRows int // list lines that fit under the header
 }
 
 // taskColumns selects which table columns are drawn.
@@ -436,16 +489,14 @@ func (a *App) taskLayout(height int) taskLayout {
 		avail -= l.columns.progW
 	}
 	l.columns.opW = max(8, avail)
-	// Rows that fit: two lines each in compact mode, otherwise one.
+	// Lines that fit, one per row (two in compact mode), minus the pinned
+	// column header of the table layout.
+	l.header = !l.compact && l.columns.progress
 	rows := max(0, l.listH-2) // borders
-	if !l.compact && l.columns.progress {
-		rows-- // header row
+	if l.header {
+		rows-- // pinned header row
 	}
-	if l.compact {
-		l.listRows = rows / 2
-	} else {
-		l.listRows = rows
-	}
+	l.listRows = rows
 	return l
 }
 
@@ -644,24 +695,22 @@ func (a *App) taskViewRender(height int) string {
 	if height <= 0 {
 		return ""
 	}
-	if a.tasks.histShowing {
-		return a.historyViewRender(height)
-	}
 	th := a.theme
-	items := a.tasks.newest()
-	if len(items) == 0 {
+	entries := a.taskEntries()
+	if !a.tasksShowingAnything(entries) {
 		body := []string{
 			"",
 			" " + th.Empty.Render("Nothing here yet."),
 			" " + th.Summary.Render("Copy, move or delete something and its progress is kept here."),
 		}
-		box := sectionBox(th, "Background tasks", "idle", body, a.width, min(height, 6), true, nil)
+		box := sectionBox(th, taskBoxTitle, a.taskHeaderLabel(entries), body, a.width, min(height, 6), true, nil)
 		return strings.Join(fitBlock(box, height, a.width), "\n")
 	}
 	l := a.taskLayout(height)
 	if l.listRows == 0 {
-		// Too short for the framed list: still show the selected task.
-		lines := a.taskDetailsRows(a.tasks.selectedTask(), max(1, a.width-1))
+		// Too short for the framed list: still show the selected row.
+		e, _ := a.selectedTaskEntry()
+		lines := a.taskDetailsForEntry(e, max(1, a.width-1))
 		return strings.Join(fitBlock(lines, height, a.width), "\n")
 	}
 	var out []string
@@ -672,25 +721,163 @@ func (a *App) taskViewRender(height int) string {
 	return strings.Join(fitBlock(out, height, a.width), "\n")
 }
 
+// taskBoxTitle names the screen: tasks and recorded history are one list now.
+const taskBoxTitle = "Tasks & history"
+
+// tasksShowingAnything reports whether the list has any row besides the
+// "nothing yet" placeholder of this run.
+func (a *App) tasksShowingAnything(entries []taskEntry) bool {
+	for _, e := range entries {
+		if selectable(e) {
+			return true
+		}
+	}
+	return false
+}
+
 func (a *App) taskListBox(l taskLayout, focused bool) []string {
 	th := a.theme
-	items := a.tasks.newest()
-	active := a.tasks.activeCount()
-	finished := len(items) - active
-	right := fmt.Sprintf("%d active · %d finished", active, finished)
+	entries := a.taskEntries()
 	body := make([]string, 0, max(0, l.listH-2))
-	if !l.compact && l.columns.progress {
+	if l.header {
 		body = append(body, th.ColumnHeader.Render(truncRight(a.taskHeaderRow(l), l.innerW)))
 	}
-	visible := a.tasks.visibleTasks(l.listRows)
-	for _, s := range visible {
-		body = append(body, a.taskRowLines(l, s)...)
+	lines, offset, rows := a.taskListWindow(l, entries)
+	for i := offset; i < offset+rows && i < len(lines); i++ {
+		body = append(body, lines[i].text)
 	}
 	// Empty rows keep the box tidy when the list is short.
 	for len(body) < max(0, l.listH-2) {
 		body = append(body, "")
 	}
-	return sectionBox(th, "Background tasks", right, body, a.width, l.listH, focused, nil)
+	return sectionBox(th, taskBoxTitle, a.taskHeaderLabel(entries),
+		body, a.width, l.listH, focused, taskThumb(len(lines), rows, offset, max(0, l.listH-2), l.header))
+}
+
+// taskHeaderLabel is the right-aligned summary of the box's top border.
+func (a *App) taskHeaderLabel(entries []taskEntry) string {
+	active, finished, recorded := 0, 0, 0
+	for _, e := range entries {
+		switch e.kind {
+		case taskEntryLive:
+			if e.task != nil && e.task.active() {
+				active++
+			} else {
+				finished++
+			}
+		case taskEntryRecord:
+			recorded++
+		}
+	}
+	var parts []string
+	if active > 0 {
+		parts = append(parts, fmt.Sprintf("%d active", active))
+	}
+	if finished > 0 {
+		parts = append(parts, fmt.Sprintf("%d finished", finished))
+	}
+	if recorded > 0 {
+		parts = append(parts, fmt.Sprintf("%d recorded", recorded))
+	}
+	if len(parts) == 0 {
+		// Nothing to count, but a read-only store still has to say so.
+		parts = append(parts, "idle")
+	}
+	if a.history != nil && recorded > 0 {
+		parts = append(parts, fmt.Sprintf("keeping %d", a.historyRetention()))
+	}
+	if a.history != nil && a.history.ReadOnly() {
+		parts = append(parts, "read-only")
+	}
+	return strings.Join(parts, " · ")
+}
+
+// taskLine is one rendered line of the list and the entry it belongs to.
+type taskLine struct {
+	text  string
+	entry int
+}
+
+// taskListLines renders every row of the merged list: run headings, live
+// tasks and recorded operations.
+func (a *App) taskListLines(l taskLayout, entries []taskEntry) []taskLine {
+	sel := a.selectedTaskEntryIndex(entries)
+	out := make([]taskLine, 0, len(entries)*2)
+	for i := range entries {
+		e := entries[i]
+		switch e.kind {
+		case taskEntryHeading:
+			out = append(out, taskLine{a.taskHeadingLine(e.title, l.innerW, e.current), i})
+		case taskEntryEmpty:
+			out = append(out, taskLine{a.theme.Empty.Render(fitWidth("  "+e.title, l.innerW)), i})
+		case taskEntryLive:
+			if e.task == nil {
+				continue
+			}
+			for _, line := range a.taskRowLines(l, e.task, i == sel) {
+				out = append(out, taskLine{line, i})
+			}
+		case taskEntryRecord:
+			for _, line := range a.recordRowLines(l, e, i == sel) {
+				out = append(out, taskLine{line, i})
+			}
+		}
+	}
+	return out
+}
+
+// taskListWindow renders the list and scrolls it so the selected entry is
+// fully visible. Rendering and mouse hit-testing share it, so a click always
+// lands on the row the user sees.
+func (a *App) taskListWindow(l taskLayout, entries []taskEntry) (lines []taskLine, offset, rows int) {
+	lines = a.taskListLines(l, entries)
+	rows = max(0, l.listRows)
+	if rows == 0 {
+		return lines, 0, 0
+	}
+	offset = a.tasks.listOffset
+	if sel := a.selectedTaskEntryIndex(entries); sel >= 0 {
+		first, last := -1, -1
+		for i := range lines {
+			if lines[i].entry != sel {
+				continue
+			}
+			if first < 0 {
+				first = i
+			}
+			last = i
+		}
+		if first >= 0 {
+			if first < offset {
+				offset = first
+			}
+			if last >= offset+rows {
+				offset = last - rows + 1
+			}
+		}
+	}
+	offset = max(0, min(offset, max(0, len(lines)-rows)))
+	a.tasks.listOffset = offset
+	return lines, offset, rows
+}
+
+// taskThumb marks the body rows of the scroll indicator on the list border.
+func taskThumb(total, rows, offset, bodyRows int, header bool) []bool {
+	start, size, ok := scrollbar.Thumb(total, rows, offset, rows)
+	if !ok || bodyRows <= 0 {
+		return nil
+	}
+	thumb := make([]bool, bodyRows)
+	for i := start; i < start+size; i++ {
+		row := i
+		if header {
+			row++
+		}
+		if row >= 0 && row < bodyRows {
+			thumb[row] = true
+		}
+	}
+	return thumb
 }
 
 func (a *App) taskHeaderRow(l taskLayout) string {
@@ -716,8 +903,7 @@ func (a *App) taskHeaderRow(l taskLayout) string {
 }
 
 // taskRowLines renders one task: a table row, or two lines in compact mode.
-func (a *App) taskRowLines(l taskLayout, s *opSession) []string {
-	selected := s.id == a.tasks.selected
+func (a *App) taskRowLines(l taskLayout, s *opSession, selected bool) []string {
 	marker, glyph := "  ", taskStateGlyph(s)
 	if selected {
 		marker = a.theme.HelpTitle.Render("▸") + " "
@@ -789,34 +975,64 @@ func taskCompactDetail(s *opSession, w int) string {
 }
 
 func (a *App) taskDetailsBox(l taskLayout) []string {
-	s := a.tasks.selectedTask()
+	e, ok := a.selectedTaskEntry()
 	th := a.theme
-	right := ""
-	if s != nil {
-		right = fmt.Sprintf("#%d · %s", s.id, taskStateWord(s))
-		if frac, known := taskFraction(s); known && s.active() {
-			right += fmt.Sprintf(" · %.0f%%", frac*100)
-		}
-	}
 	rows := max(0, l.detailsH-2)
-	details := a.taskDetailsRows(s, max(1, l.innerW))
+	var details []string
+	right := ""
+	if ok {
+		right, details = a.taskDetailsHeading(e), a.taskDetailsForEntry(e, max(1, l.innerW))
+	}
 	if a.tasks.detailOffset > max(0, len(details)-rows) {
 		a.tasks.detailOffset = max(0, len(details)-rows)
 	}
 	body := make([]string, 0, rows)
-	details = details[min(a.tasks.detailOffset, len(details)):]
-	for _, line := range details {
+	visible := details[min(a.tasks.detailOffset, len(details)):]
+	for _, line := range visible {
 		if len(body) == rows {
 			break
 		}
 		body = append(body, line)
 	}
 	var thumb []bool
-	if len(details) > rows && rows > 0 {
+	if len(visible) > rows && rows > 0 {
 		thumb = make([]bool, rows)
-		thumb[max(0, min(rows-1, a.tasks.detailOffset*rows/max(1, len(details)+a.tasks.detailOffset)))] = true
+		thumb[max(0, min(rows-1, a.tasks.detailOffset*rows/max(1, len(visible)+a.tasks.detailOffset)))] = true
 	}
 	return sectionBox(th, "Details", right, body, a.width, l.detailsH, false, thumb)
+}
+
+// taskDetailsHeading is the label on the Details box's right border.
+func (a *App) taskDetailsHeading(e taskEntry) string {
+	switch e.kind {
+	case taskEntryLive:
+		if e.task == nil {
+			return ""
+		}
+		right := fmt.Sprintf("#%d · %s", e.task.id, taskStateWord(e.task))
+		if frac, known := taskFraction(e.task); known && e.task.active() {
+			right += fmt.Sprintf(" · %.0f%%", frac*100)
+		}
+		return right
+	case taskEntryRecord:
+		if e.rec == nil {
+			return ""
+		}
+		return fmt.Sprintf("%s · %s", fsys.SanitizeName(e.rec.Op), e.rec.Status.Label())
+	}
+	return ""
+}
+
+// taskDetailsForEntry renders the details of whichever kind of row is
+// selected: a live task (with its progress) or a recorded operation.
+func (a *App) taskDetailsForEntry(e taskEntry, width int) []string {
+	switch e.kind {
+	case taskEntryLive:
+		return a.taskDetailsRows(e.task, width)
+	case taskEntryRecord:
+		return a.recordDetailRows(e, width)
+	}
+	return nil
 }
 
 // taskDetailsRows is the label/value table of one task: a tidy two-column
@@ -918,25 +1134,53 @@ func (a *App) taskDetailsRows(s *opSession, width int) []string {
 }
 
 // taskFooterHints returns the actions available while the task list is open.
+// They follow the selected row: a recorded operation offers no actions of its
+// own, and only a running task can be watched or cancelled.
 func (a *App) taskFooterHints() []barItem {
-	if a.tasks.histShowing {
-		return a.historyFooterHints()
-	}
 	out := []barItem{
 		item("t/Esc", "close", "esc"),
 		item("↑↓", "select", ""),
-		// The history view hangs off this view, so its key is advertised
-		// before the action chips that a narrow bar drops first.
-		item("h", "past runs", "h"),
 	}
-	if s := a.tasks.selectedTask(); s != nil && s.active() {
+	if a.taskWatchable() {
 		out = append(out, item("⏎/w", "watch live", "enter"))
 	}
-	return append(out,
-		item("c", "cancel selected", "c"),
-		item("PgUp/Dn", "details", ""),
-		item("x", "clear finished", "x"),
-	)
+	switch e, ok := a.selectedTaskEntry(); {
+	case ok && e.kind == taskEntryRecord:
+		// read-only row: no cancel, no watch, no clear
+	case ok && e.task != nil && e.task.active():
+		out = append(out, item("c", "cancel selected", "c"))
+	case ok:
+		out = append(out, item("x", "clear finished", "x"))
+	}
+	if len(a.taskSectionsWithRows()) > 1 {
+		out = append(out, item("[ ]", "run", ""))
+	}
+	if a.hasRecordedOps() {
+		out = append(out, item("+/-", "keep more/fewer", ""))
+	}
+	return append(out, item("PgUp/Dn", "details", ""))
+}
+
+// taskSectionsWithRows lists the run sections that have at least one row.
+func (a *App) taskSectionsWithRows() []int {
+	var out []int
+	for i, e := range a.taskEntries() {
+		if e.kind == taskEntryHeading {
+			out = append(out, i)
+		}
+	}
+	return out
+}
+
+// hasRecordedOps reports whether anything from an earlier run is listed.
+func (a *App) hasRecordedOps() bool {
+	cur := a.currentSessionIndex(a.historySessions())
+	for _, e := range a.taskEntries() {
+		if e.kind == taskEntryRecord && e.sess != cur {
+			return true
+		}
+	}
+	return false
 }
 
 // taskCountText is used in the ordinary status line without obscuring more

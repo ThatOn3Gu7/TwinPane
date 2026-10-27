@@ -35,7 +35,8 @@ search/analysis chrome, rclone previews). Everything below ran in this sandbox
   - `dialog.go`: both new dialog kinds and master's key-column layout with the
     branch's `plainRows`/header cases.
   - `hints.go`/`keys.go`: master's focus/settings/Ctrl+A hints plus `n` = new
-    file/folder; the help screen gained `h = operation history`.
+    file/folder; the help screen gained `h = operation history` (later
+    replaced by the single Tasks & history list — see the end of this file).
   - Docs: master's Unreleased entries plus the branch's New file, scroll and
     history entries; the user guide keeps master's task-screen and
     notification text and the branch's history section.
@@ -65,8 +66,9 @@ search/analysis chrome, rclone previews). Everything below ran in this sandbox
   (2.4 s / 1.0 s / 2.1 s).
 - New integration tests: `TestSettingsScreenEditsHistoryRetention` (row value,
   `←` lower, whole-file persistence, unrelated save keeps the limit, floor,
-  `r` + `y` reset) and `TestHistoryViewSwallowsTaskActions` (`x`/`c` inert in
-  the history view, `h` returns to the tasks).
+  `r` + `y` reset) and, then, `TestHistoryViewSwallowsTaskActions` (`x`/`c`
+  inert in the history view, `h` returns to the tasks) — superseded by the
+  read-only-row tests of the merged list.
 
 ## What the new tests cover
 - `internal/history`: config-directory path, record/reload round trip with
@@ -124,7 +126,10 @@ search/analysis chrome, rclone previews). Everything below ran in this sandbox
   `status`, `started`, `finished`, `sources`, `dest`, `items`, `summary`,
   `files`/`bytes` and (for failures) `errors`.
 
-## Merged UI on a raw pty (`scripts/ptyterm.py`, 100x30)
+## Merged UI on a raw pty (`scripts/ptyterm.py`, 100x30) — superseded
+
+(The `h` view described below was replaced by the single Tasks & history list;
+see "Operation history merged into the Tasks screen" at the end of this file.)
 - `t` renders master's task screen (`Background tasks … idle`, hint bar
   `t/Esc close ↑↓ select h past runs …`); `h` switches to
   `Operation history · N runs · M operations · keeping 20`, `h`/`Esc` back.
@@ -146,3 +151,66 @@ search/analysis chrome, rclone previews). Everything below ran in this sandbox
   of a live rclone run; the recording code path is the same.
 - Retention was not exercised with more than a handful of real runs on the
   pty; pruning itself is covered by the unit tests (limit 1–3 with six runs).
+
+## Operation history merged into the Tasks screen (2026-10-27T07:45Z, go1.27.3)
+
+The history stopped being a second view: `h` and `internal/ui/historyview`'s
+run list are gone, and `t` now shows one continuous, vertically navigable list
+(active tasks with live progress, this run's finished tasks, then earlier runs
+under their own headings). `internal/history` and the Tasks screen chrome are
+reused unchanged; `ui/historyview.go` now only builds the merged entries,
+headings, selection and details.
+
+## Summary
+- `gofmt -l .`: clean; `go vet ./...`: ok; `go build ./...`: ok.
+- `go test -count=1 ./...`: ok, every package; `internal/ui` 133.8 s.
+- `go test -race -count=1 ./internal/ui ./internal/history`: ok
+  (139.0 s / 2.1 s).
+- `internal/history`: `Store.Revision()` added (`rev` bumped by every
+  `persistLocked` and `load`), so the merged list rebuilds only when the file
+  or the live task list changed.
+
+## What the changed and new tests cover
+- `TestTasksScreenListsThisRunAndEarlierRuns`: one finished task in this run
+  plus two seeded earlier runs — the "This run" heading first, the live task
+  as its first row, then the earlier runs newest first with newest operation
+  first inside each; `]`/`[` move between run sections and select their first
+  row.
+- `TestTaskActionsOnlyApplyToLiveRows`: from a recorded row, `x`, `c`, `⏎` and
+  `w` all refuse with "read-only" and change nothing (no task cleared or
+  cancelled, no live screen opened, record count unchanged); one row up the
+  live task takes the actions again and its footer offers `x clear finished`.
+  Clearing keeps the record out of this run's list while it stays on disk.
+- `TestTasksScreenListsForegroundOperations`: rename/new-file records appear as
+  this run's recorded rows; `TestTasksScreenWorksOnANarrowTerminal`: a narrow,
+  short terminal stays inside its width and height.
+- `TestClickSelectsHistoricalRowFromTheList`: a click on a recorded row selects
+  it and the details panel follows (`selKind == selRecord`).
+- Updated master tests for the merged UI: help (`x`/`[ ]` in the Tasks &
+  history section), the hint bar (`clear finished` only on a finished live
+  row), the task view title (`Tasks & history` instead of `Background tasks`)
+  and the read-only note in the box label.
+
+## Real binary on a raw pty (`scripts/ptyterm.py`, 100x30 and 46x18)
+- Real copies between panels, then `t`: box title
+  `Tasks & history …… 1 finished · 2 recorded · keeping 20`; headings
+  `── This run · 07:09 · 1 finished ──` and
+  `── Today 07:08 · 1 operation · 1 failed ──`; the live row keeps its bar,
+  item counts, size and elapsed time, recorded rows show `HH:MM:SS → target`
+  in place of progress; the pinned column header stays at the top.
+- `↓` onto an earlier run's row followed by `x`: the status line reads
+  `Recorded operations are read-only — x only clears this run's finished
+  tasks`, nothing is cleared, and the footer loses `x clear finished`.
+  `↑` back to the finished live row restores it.
+- `]`/`[` between runs, the wheel over the list (moves the cursor) and over
+  the details (scrolls them), and a click on a record all work; the details
+  panel follows every kind of row (`#1 · DONE` vs `Copy · FAILED`).
+- Restart with only history: `── This run · 07:15 · nothing yet ──` above the
+  earlier runs, no stray placeholder line, and the newest recorded row opens
+  selected.
+- 46x18 (phone-sized): two-line rows with `state · time → target` under the
+  operation, headings separated by full-width rules, the scrollbar on the
+  right edge, the footer reduced to `t/Esc close ↑↓ select [ ] run`, no
+  wrapping and no line wider than the terminal.
+- Read-only history file (version 99): the box title says `read-only` even
+  when the list is empty, and the file is byte-identical afterwards.

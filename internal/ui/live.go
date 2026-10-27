@@ -38,7 +38,17 @@ func (a *App) watchTask(s *opSession) {
 // task list. Finished tasks have nothing to watch: they keep their result in
 // the list.
 func (a *App) watchSelectedTask() tea.Cmd {
-	s := a.tasks.selectedTask()
+	e, ok := a.selectedTaskEntry()
+	if !ok {
+		a.setStatusLevel("No task to watch", lvlInfo)
+		return nil
+	}
+	if e.kind == taskEntryRecord {
+		// A recorded operation has no live progress to show.
+		a.setStatusLevel("Recorded operations are read-only — nothing to watch", lvlInfo)
+		return nil
+	}
+	s := e.task
 	if s == nil {
 		a.setStatusLevel("No task to watch", lvlInfo)
 		return nil

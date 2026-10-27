@@ -301,11 +301,16 @@ func TestHintBarPanelErrorAndBusy(t *testing.T) {
 		t.Fatalf("background work should keep normal error-panel hints: %q", f)
 	}
 	h.a.tasks.showing = true
-	if f := h.footer(); !strings.Contains(f, "cancel selected") || !strings.Contains(f, "clear finished") {
-		t.Fatalf("task view hints: %q", f)
+	// The hints follow the selected row: an active task can be cancelled, but
+	// there is nothing finished to clear yet.
+	if f := h.footer(); !strings.Contains(f, "cancel selected") || strings.Contains(f, "clear finished") {
+		t.Fatalf("active task hints: %q", f)
+	}
+	h.a.finishTask(task, taskCanceled, "cancelled")
+	if f := h.footer(); !strings.Contains(f, "clear finished") || strings.Contains(f, "cancel") {
+		t.Fatalf("finished task hints: %q", f)
 	}
 	h.a.tasks.showing = false
-	h.a.finishTask(task, taskCanceled, "cancelled")
 	h.a.tasks.clearFinished()
 }
 

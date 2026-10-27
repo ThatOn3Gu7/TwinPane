@@ -104,13 +104,22 @@ The [user guide](docs/USER_GUIDE.md) describes every feature in detail.
 - Properties (`P`): size, times, owner, symbolic-link target, and permission
   editing on filesystems that support it.
 
-**Background tasks**
-- Long-running file operations continue in the background. `t` opens a task
-  list with a state column (`RUNNING`, `DONE`, `FAILED`…), a progress bar, size
-  and elapsed time, plus a details table for the selected task. `⏎` or `w`
-  watches a running task on a live progress screen that `Esc` leaves in the
-  background; `c` cancels the selected task and `x` clears finished history.
-  Active tasks must finish or be cancelled before quitting.
+**Background tasks and operation history**
+- Long-running file operations continue in the background. `t` opens one
+  continuous list: active tasks with live progress, this run's finished tasks,
+  then the operations of earlier runs under their own date/time headings
+  (newest run first, newest operation first inside a run). Each row has a state
+  (`RUNNING`, `DONE`, `FAILED`, `INTERRUPTED`…), a progress bar, size and
+  elapsed time, and the details panel below follows the selection — whatever
+  kind of row it is. `↑`/`↓`, `PgUp`/`PgDn`, the wheel and a click all move the
+  selection; the list scrolls, keeps the cursor visible and shows a scrollbar
+  on its right edge.
+- `⏎` or `w` watches a running task on a live progress screen that `Esc` leaves
+  in the background; `c` cancels the selected task and `x` clears this run's
+  finished tasks. Earlier runs are read-only: their rows never offer those
+  actions, and the footer only lists what the selected row can do.
+  `[`/`]` jump to the previous/next run. Active tasks must finish or be
+  cancelled before quitting.
 - A copy, move or delete that is clearly large — about 256 MiB or 500 entries —
   asks whether to run in the background or to be watched. Sending it to the
   background shows a small, non-blocking notification with its progress.
@@ -133,13 +142,13 @@ The [user guide](docs/USER_GUIDE.md) describes every feature in detail.
 - Every file operation is also written to a persistent history: copy, move,
   delete, rename, new file/folder, compress, extract, permission changes and
   remote (rclone) work, with paths, items, times, duration, status, result and
-  errors. Press `t` then `h` to browse it; runs and operations are listed newest
-  first, and the history is still there after a restart. Unfinished work is
-  stored as **interrupted**, never as success.
+  errors. The history is part of the Tasks screen (`t`) — the same list, one
+  system, no second screen — and it is still there after a restart. Unfinished
+  work is stored as **interrupted**, never as success.
 - It lives in `history.json` in the same configuration folder as
-  `settings.json` and is written atomically after each operation. `+`/`-` in the
-  history view change how many runs are kept (1–200, default 20); the limit is
-  saved as a preference. A damaged file is kept as
+  `settings.json` and is written atomically after each operation. `+`/`-` in
+  the Tasks screen change how many runs are kept (1–200, default 20); the limit
+  is saved as a preference. A damaged file is kept as
   `history.json.corrupt-<timestamp>` and a fresh history is started.
 
 **Directory comparison**
@@ -230,8 +239,10 @@ Not included: configurable keys or themes, and editing archives in place.
   reviewable, approvable copy-only sync plan. No delete actions are generated.
 - **Folder-size analysis** (`A`) adds cancellable recursive local scans with
   largest-first results and apparent/allocated size totals.
-- **Background task view** (`t`) tracks active operations and their results;
-  cancel active tasks or clear completed history.
+- **Tasks & history view** (`t`) tracks active operations and their results
+  in one list with the persistent operation history of earlier runs; cancel
+  active tasks, clear this run's finished tasks, and browse earlier runs
+  read-only.
 - **Back and forward per panel** (`[` / `]`, `Alt+←` / `Alt+→`) revisit the
   folders a panel has seen this session — local, inside an archive or on an
   rclone remote — restoring the cursor and scroll position. Each panel has its
@@ -477,7 +488,7 @@ twinpane --version
 | `/` | find by name; `Ctrl+G` opens Advanced Search | `z` / `x` | compress / extract |
 | `s` / `S` | sort / reverse | `o` / `O` | open / open with… |
 | `h` | hidden files | `P` | properties |
-| `D` / `A` | compare folders / analyze sizes | `t` | background tasks; `h` = operation history |
+| `D` / `A` | compare folders / analyze sizes | `t` | tasks & operation history (one list) |
 | `b` / `B` | bookmarks / add | `M` | action menu |
 | `i` | storage | `?` / `F1` | help (with `/` filter) |
 | `F9` / `Ctrl+S` | settings | | |

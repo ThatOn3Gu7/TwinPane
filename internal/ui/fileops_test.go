@@ -762,7 +762,7 @@ func TestBackgroundTasksKeepUIResponsiveAndCancelSelectedTask(t *testing.T) {
 		t.Fatal("q should open the task view instead of abandoning active work")
 	}
 	v := h.view()
-	for _, want := range []string{"Background tasks", "RUNNING", "25%", "/src/big.iso", "/dst", "permission denied"} {
+	for _, want := range []string{"Tasks & history", "RUNNING", "25%", "/src/big.iso", "/dst", "permission denied"} {
 		if !strings.Contains(v, want) {
 			t.Errorf("task view lacks %q:\n%s", want, v)
 		}

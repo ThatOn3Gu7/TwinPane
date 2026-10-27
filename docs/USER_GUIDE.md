@@ -333,31 +333,46 @@ Since the search redesign it uses the same frame as the rest of the app:
   plain text. Viewer loading remains bounded to 8 MiB, 500,000 lines, and
   16 KiB per line.
 
-#### Background tasks (`t`)
+#### Tasks and operation history (`t`)
 
 Long-running file operations run as background tasks, so the panels remain
-usable while work continues. Press `t` to see active progress and the results
-retained during this run.
+usable while work continues. Press `t` for one continuous list: this run's
+active tasks with live progress, this run's finished tasks, and then the
+recorded operations of earlier runs — one list, one screen, nothing to switch
+between.
 
 The list is a table: task number, state (`RUNNING`, `WAITING`, `STOPPING`,
-`DONE`, `CANCELED`, `PARTIAL`, `FAILED`), operation, a progress bar with the
-item counts, size and elapsed time. Columns are dropped from the end as the
-terminal narrows, and below about 46 columns each task takes two lines instead.
-The details table under the list describes the selected task: operation, state,
-progress, every source, the target, the current item, the last error and the
-result. Paths are shortened from the left, where the file name is the useful
-part, and every row is cut to the width of the screen, so a phone shows the same
-information as a desktop terminal without wrapping into noise.
+`DONE`, `CANCELED`, `PARTIAL`, `FAILED`, and for earlier runs `INTERRUPTED`),
+operation, a progress bar with the item counts, size and elapsed time. Columns
+are dropped from the end as the terminal narrows, and below about 46 columns
+each row takes two lines instead. Rows of earlier runs carry no task number and
+show the operation's time and target where a live row shows progress. Every run
+has its own heading — `── This run · 14:02 · 1 active · 2 finished ──`,
+`── Today 09:31 · 4 operations · 1 failed ──` — with the current run first and
+each run's operations newest first. The list scrolls, keeps the selected row in
+view and draws a scrollbar on its right edge.
 
-- `↑`/`↓` or `j`/`k` selects a task; `PgUp`/`PgDn` (or the wheel over the
-  details) scrolls its details.
+The details table under the list follows the selection, whichever kind of row
+it is: operation, state, progress, every source, the target, the current item,
+the last error and the result for a task; the run, times, paths, items and
+errors for a recorded operation. Paths are shortened from the left, where the
+file name is the useful part, and every row is cut to the width of the screen,
+so a phone shows the same information as a desktop terminal without wrapping
+into noise.
+
+- `↑`/`↓` or `j`/`k` selects a row (a click or the wheel works too);
+  `PgUp`/`PgDn` (or the wheel over the details) scrolls its details.
+- `[` and `]` jump to the previous (older) and next (newer) run.
 - `⏎` or `w` watches a running task live: one screen with a large progress bar,
   the counts, the current item and the elapsed time. `Esc` (or `q`) closes it
   and leaves the task running in the background, `c` cancels it, `t` goes to the
   task list. A prompt that needs a decision is drawn over this screen.
-- `c` cancels the selected active task. `x` clears finished task history.
-- `t` or `Esc` closes the task view. Quitting is blocked while tasks are
-  active; `q` opens the task view, where you can wait or cancel.
+- `c` cancels the selected active task. `x` clears this run's finished tasks.
+  The actions follow the selected row: a row from an earlier run is read-only,
+  so `c`, `x`, `⏎` and `w` explain that instead of acting, and the footer only
+  lists what the row can do.
+- `t` or `Esc` closes the view. Quitting is blocked while tasks are active;
+  `q` opens the view, where you can wait or cancel.
 - Operations that need a safety or conflict decision show their prompts one at
   a time. Archive creation keeps its dedicated progress dialog visible through
   completion or failure.
@@ -430,14 +445,15 @@ corner of the panel area rather than by a line at the bottom of the screen:
   30 columns or 10 rows) nothing is drawn; the status line and the task list
   still report the result.
 
-#### Operation history (`t` then `h`)
+#### Operation history (in the Tasks screen)
 
-The Tasks screen also keeps a written record of the file operations TwinPane
-performed, and it survives restarts. Press `t` and then `h` to switch between
-this run's background tasks and the history; `h` or `Esc` returns.
+The Tasks screen also shows a written record of the file operations TwinPane
+performed, and it survives restarts. It is not a second screen: the recorded
+operations of earlier runs appear below this run's tasks in the same list, under
+their own headings.
 
 - Runs are listed newest first, and the operations inside a run newest first.
-  Each run is one launch of TwinPane, so the file is grouped by run rather than
+  Each run is one launch of TwinPane, so the list is grouped by run rather than
   by folder or by day.
 - Recorded are the file operations themselves: copy, move, delete (trash or
   permanent), rename (single, bulk and from the Properties dialog), new file,
@@ -448,8 +464,9 @@ this run's background tasks and the history; `h` or `Esc` returns.
 - Each record keeps the operation type, source and destination paths, the
   affected items, start and finish times, duration, the final status, the
   result (including rclone's exit code) and the errors. `↑`/`↓` selects an
-  operation, `PgUp`/`PgDn` scrolls its details, `[` and `]` switch to older and
-  newer runs.
+  operation, `PgUp`/`PgDn` scrolls its details, `[` and `]` jump to older and
+  newer runs. Earlier runs are read-only: nothing in the list can change or
+  clear them, and clearing this run's finished tasks never touches them.
 - Statuses are `DONE`, `PARTIAL` (some items failed or the operation was
   stopped after doing work), `FAILED`, `CANCELED` and `INTERRUPTED`. An
   operation that TwinPane never saw finish — because the program was killed,
@@ -460,8 +477,8 @@ this run's background tasks and the history; `h` or `Esc` returns.
   is saved in `settings.json` and older runs are pruned straight away; the run
   you are in is never pruned. Records are also capped per run, so the file stays
   small.
-- The history does not replace the live task list: progress, cancel (`c`),
-  clear (`x`) and notifications work exactly as before.
+- The history shares the live task list rather than replacing it: progress,
+  cancel (`c`), clear (`x`) and notifications work exactly as before.
 
 The record is stored in `history.json` in the same configuration directory as
 `settings.json` and `bookmarks.json` (`$TWINPANE_CONFIG_DIR`, otherwise
@@ -1589,7 +1606,7 @@ they have room to breathe:
 - **Operation history** — **Runs kept**: how many application runs the task
   history keeps (1–200, default 20). Lowering it prunes older runs at once;
   the current run is never pruned. The same limit is behind `+`/`-` in the
-  history view (`t`, then `h`).
+  Tasks screen (`t`).
 
 **Keys on the screen:** `↑`/`↓` (or `k`/`j`) move, `←`/`→` (or `h`/`l`,
 `Space`, `Enter`) change a value — the text rows open a one-line input —
@@ -1654,7 +1671,7 @@ disables tips whatever the screen says.
 | `Ctrl+G` (while `/` is open) | open Advanced Search |
 | `Ctrl+T` (in Advanced Search) | switch between filename and content search |
 | `Ctrl+A` (in Advanced Search) | actions for the selected result: open, jump, edit, open with, copy, move, rename, copy path, delete |
-| `t` | view background task progress and results; `h` inside shows the persistent operation history |
+| `t` | tasks and operation history: active progress, this run's results and earlier runs in one list (`↑`/`↓`, `[`/`]`, `c`, `x`, `⏎`/`w`) |
 | `h` / `H` / `.` | show / hide hidden files in **both** panels |
 | `s` | cycle sort: name → size → time → type |
 | `S` | reverse the sort order (↑/↓) |

@@ -682,19 +682,32 @@ Four new packages with no UI dependency. The TUI code lives in four
   Foreground work (rename, bulk rename, Properties rename/permissions, New
   file, New folder) calls `recordRename`, `recordBulkRename` or
   `recordNewItem`. Progress updates are never recorded.
-- UI: the Tasks screen (`t`) has a second view (`h`)
-  `ui/historyview.go`: run rows, the selected run's operation rows and the
-  selected operation's details, with `↑↓`/`[`/`]`/`PgUp`/`PgDn` and `+`/`-`
-  for the retention limit. The view is drawn through the same `sectionBox`
-  chrome as the live task list and receives the same body height
-  (`taskViewRender`), and while it is on screen it owns every key, so the
-  live-task actions (`c` cancel, `x` clear) cannot fire from it. Widths are
-  truncated to the terminal and the layout shrinks to a header-only body on
-  very short screens. `Options.HistoryPath` overrides the file (tests) and
-  empty keeps the records in memory only.
+- UI: the history is not a screen of its own. The Tasks screen (`t`) shows one
+  continuous list, built by `buildTaskEntries` (`ui/historyview.go`): a
+  "This run" section (active tasks pinned first, then finished tasks and
+  unlinked records newest first) followed by one section per earlier run,
+  newest first, each under a heading that names the run's date/time and counts.
+  A run with no rows is skipped and the "nothing yet" line is drawn only when
+  the whole list is empty. Entries are cached on the store's `Revision()` plus
+  `taskManager.liveRev`, so live progress repaints never rebuild the list and
+  the rows read the running `opSession`s directly.
+- Selection is one cursor over both kinds — a task id or a
+  `(run, operation)` pair (`selectTaskEntry`, `moveTaskSelection`,
+  `ensureTaskSelection`, `jumpTaskRun`) — so the details panel follows a live
+  task or a recorded operation without switching views. Rows are rendered by
+  `taskRowLines` and `recordRowLines` through the same `sectionBox` chrome,
+  with the same body height, the same right-edge scrollbar and a list window
+  that keeps the cursor visible; below ~46 columns both collapse to two-line
+  rows. Recorded rows are read-only: `cancelSelectedEntry` and
+  `clearFinishedEntries` refuse them with a status line, `watchSelectedTask`
+  opens nothing, and `taskFooterHints` lists only what the selected row can do.
+  `x` clears this run's finished tasks and remembers their record IDs in
+  `taskManager.cleared`, so the record of a cleared task does not come back as
+  a row; earlier runs are never touched. `Options.HistoryPath` overrides the
+  file (tests) and empty keeps the records in memory only.
 - The retention limit is one field of `settings.Preferences`
   (`HistorySessions`), seeded into the store at startup, edited either by
-  `+`/`-` in the history view or by the **Operation history → Runs kept** row
+  `+`/`-` in the Tasks screen or by the **Operation history → Runs kept** row
   of the Settings screen, and written with the rest of the preferences
   (`App.currentPrefs`) — never as a settings file of its own. `r` on the
   Settings screen also brings the store's limit back to the default.
@@ -1252,9 +1265,11 @@ their scroll row, short dialogs without an indicator, long bookmark lists).
   - `ui/history_test.go`: background recording (copy, move, delete), failures,
     cancellations and interruptions, foreground rename/new file/new folder,
     archive and permission records, rclone exit codes, persistence across
-    restarts, retention from settings and the `+`/`-` keys, browsing and
-    details, a 40×12 terminal, damaged and newer files, and that progress
-    updates create no records.
+    restarts, retention from settings and the `+`/`-` keys, the merged Tasks
+    list (this run plus earlier runs, headings and order, one cursor over live
+    and recorded rows, read-only records, `x` never touching earlier runs,
+    clicks selecting a historical row), a 40×12 and a narrow terminal,
+    damaged and newer files, and that progress updates create no records.
   - `ui/phase6_test.go`: the compress dialog (selectors, extension swap,
     remembered format, structure, single-file refusal, wrong extension,
     unavailable 7Z, overwrite confirmation, awkward names, cancel leaves

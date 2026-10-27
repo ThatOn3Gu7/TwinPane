@@ -225,6 +225,8 @@ func (a *App) finishTask(s *opSession, state taskState, summary string, details 
 		s.cancel = nil
 	}
 	a.historyComplete(s)
+	// The row moved from the running group to the finished one.
+	a.tasks.liveRev++
 }
 
 func taskOutcome(canceled bool, fatal error, errors int, partial bool) taskState {

@@ -430,10 +430,18 @@ func TestHistorySurvivesRestartAndListsSessionsNewestFirst(t *testing.T) {
 	if got := sessions[2].Operations()[0].Items[0]; got != "one" {
 		t.Fatalf("oldest run lost its record: %q", got)
 	}
-	// The Tasks screen shows past runs.
-	press(third, "t", "h")
-	if v := third.View(); !strings.Contains(v, "Operation history") {
-		t.Fatalf("history view missing:\n%s", v)
+	// The Tasks screen lists the earlier runs as sections of its one list.
+	press(third, "t")
+	v := third.View()
+	if !strings.Contains(v, "Tasks & history") {
+		t.Fatalf("the tasks screen is missing:\n%s", v)
+	}
+	if !strings.Contains(v, "This run") || !strings.Contains(v, "New folder") {
+		t.Fatalf("the earlier runs are not listed:\n%s", v)
+	}
+	// Both earlier runs are there: two headings with one operation each.
+	if n := strings.Count(v, "1 operation"); n < 2 {
+		t.Fatalf("expected a heading per earlier run, found %d:\n%s", n, v)
 	}
 }
 
@@ -472,7 +480,7 @@ func TestRetentionKeyChangesLimitAndKeepsCurrentRun(t *testing.T) {
 	a.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
 	a.recordOperation(history.Record{Op: "Copy", Status: history.StatusSuccess})
 	cur := a.History().CurrentID()
-	press(a, "t", "h")
+	press(a, "t")
 	for i := 0; i < 10; i++ { // 5 -> 1 is the floor
 		press(a, "-")
 	}
@@ -582,7 +590,8 @@ func TestSettingsScreenEditsHistoryRetention(t *testing.T) {
 
 func seedHistory(t *testing.T, path string, sessions int, opsPer int) {
 	t.Helper()
-	clock := time.Date(2026, 10, 27, 9, 0, 0, 0, time.UTC)
+	// In the past, so the seeded runs always sort behind this run's work.
+	clock := time.Now().Add(-26 * time.Hour).Truncate(time.Second)
 	for s := 0; s < sessions; s++ {
 		st, err := history.Open(path, history.Options{
 			MaxSessions: sessions + 2,
@@ -608,147 +617,291 @@ func seedHistory(t *testing.T, path string, sessions int, opsPer int) {
 	}
 }
 
-// TestHistoryViewSwallowsTaskActions: the keys of the live task actions (x
-// clears finished tasks, c cancels one) must not fire while the history view
-// is on screen — the user is reading past runs, not driving this run.
-func TestHistoryViewSwallowsTaskActions(t *testing.T) {
+// TestTasksScreenListsThisRunAndEarlierRuns: one list holds this run's tasks
+// and the recorded operations of earlier runs, grouped by run with a heading
+// each, newest run first and newest operation first inside a run.
+func TestTasksScreenListsThisRunAndEarlierRuns(t *testing.T) {
 	root := t.TempDir()
 	settingsPath, historyPath := configPaths(root)
 	os.MkdirAll(filepath.Dir(historyPath), 0o700)
-	seedHistory(t, historyPath, 2, 1)
+	seedHistory(t, historyPath, 2, 3)
 	a := New(Options{Version: "test", StartDir: root, SettingsPath: settingsPath, HistoryPath: historyPath})
 	drain(a, a.Init())
 	a.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
 
-	// A finished task in this run's list, so "x" would have something to clear.
+	// This run: one finished task, so the "This run" section has a row.
 	press(a, "t")
 	task, _ := a.newSession("Copying", 0, nil)
 	a.finishTask(task, taskCompleted, "Copied 1 file")
-	before := len(a.tasks.order)
-	if before == 0 {
-		t.Fatal("the test needs a finished task in the list")
-	}
+	a.tasks.liveRev++
 
-	press(a, "h") // into the history view
-	if !a.tasks.histShowing {
-		t.Fatal("h must switch to the history view")
+	entries := a.taskEntries()
+	if entries[0].kind != taskEntryHeading || !entries[0].current {
+		t.Fatalf("the list must start with this run's heading: %+v", entries[0])
 	}
-	press(a, "x")
-	if got := len(a.tasks.order); got != before {
-		t.Fatalf("x cleared tasks from the history view: %d -> %d", before, got)
+	if !strings.Contains(entries[0].title, "This run") {
+		t.Fatalf("first heading = %q", entries[0].title)
 	}
-	press(a, "c")
-	if !a.tasks.showing || !strings.Contains(a.View(), "Operation history") {
-		t.Fatal("c must not act on the task list from the history view")
+	// The live task is the first row, then the older runs' headings.
+	if entries[1].kind != taskEntryLive || entries[1].task != task {
+		t.Fatalf("the live task is not the first row: %+v", entries[1])
 	}
-	press(a, "h") // back to the tasks
-	if a.tasks.histShowing {
-		t.Fatal("h must return to the task list")
-	}
-	press(a, "t")
-}
-
-func TestHistoryViewBrowseAndDetails(t *testing.T) {
-	root := t.TempDir()
-	settingsPath, historyPath := configPaths(root)
-	os.MkdirAll(filepath.Dir(historyPath), 0o700)
-	seedHistory(t, historyPath, 3, 3)
-	a := New(Options{Version: "test", StartDir: root, SettingsPath: settingsPath, HistoryPath: historyPath})
-	drain(a, a.Init())
-	a.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
-	drain(a, a.Init())
-
-	press(a, "t")
-	if v := a.View(); !strings.Contains(v, "Background tasks") {
-		t.Fatalf("t must open the task list:\n%s", v)
-	}
-	press(a, "h")
-	v := a.View()
-	for _, want := range []string{"Operation history", "keeping", "seed", "DONE", "FAILED"} {
-		if !strings.Contains(v, want) {
-			t.Fatalf("history view misses %q:\n%s", want, v)
+	var heads []taskEntry
+	for _, e := range entries {
+		if e.kind == taskEntryHeading {
+			heads = append(heads, e)
 		}
 	}
-	if !strings.Contains(v, "Details ·") {
-		t.Fatalf("history view has no details block:\n%s", v)
+	if len(heads) != 3 {
+		t.Fatalf("headings = %d, want this run + 2 earlier runs", len(heads))
 	}
-	// The newest run with operations is selected first (this run has none
-	// yet), and its newest operation.
-	if a.tasks.histSession != 1 || a.tasks.histOp != 0 {
-		t.Fatalf("initial selection = run %d op %d", a.tasks.histSession, a.tasks.histOp)
+	if heads[1].sess != 1 || heads[2].sess != 2 {
+		t.Fatalf("earlier runs are not newest first: %d then %d", heads[1].sess, heads[2].sess)
 	}
-	before := a.View()
-	press(a, "down")
-	if a.tasks.histOp != 1 {
-		t.Fatalf("down did not move the operation selection: %d", a.tasks.histOp)
+	for _, h := range heads[1:] {
+		if !strings.Contains(h.title, "operations") {
+			t.Fatalf("an earlier run's heading lost its counts: %q", h.title)
+		}
 	}
-	if a.View() == before {
-		t.Fatal("the details did not change with the selection")
+	// Newest operation first inside a run: the seeded runs add 3 operations.
+	first := -1
+	for i, e := range entries {
+		if e.kind == taskEntryRecord {
+			first = i
+			break
+		}
 	}
-	press(a, "down", "down", "down") // cannot pass the last operation
-	if a.tasks.histOp != 2 {
-		t.Fatalf("selection left the run: %d", a.tasks.histOp)
+	if first < 0 || entries[first].op != 0 || entries[first].sess != 1 {
+		t.Fatalf("the first recorded row is not the newest one: %+v", entries[first])
 	}
-	// Older runs
-	press(a, "[")
-	if a.tasks.histSession != 2 || a.tasks.histOp != 0 {
-		t.Fatalf("'[' selection = run %d op %d", a.tasks.histSession, a.tasks.histOp)
+
+	v := a.View()
+	for _, want := range []string{"Tasks & history", "This run", "operations", "DONE", "FAILED"} {
+		if !strings.Contains(v, want) {
+			t.Fatalf("the unified list misses %q:\n%s", want, v)
+		}
 	}
-	press(a, "[", "[", "[")
-	if last := len(a.historySessions()) - 1; a.tasks.histSession != last {
-		t.Fatalf("selection passed the oldest run: %d", a.tasks.histSession)
+	// No separate history screen: there is nothing to switch to.
+	if strings.Contains(v, "Operation history") {
+		t.Fatalf("the old separate history view is still drawn:\n%s", v)
 	}
+
+	// Details follow the selection across both kinds of row.
+	press(a, "up") // back to the live task
+	if a.tasks.selKind != selLiveTask {
+		t.Fatalf("selection kind = %v, want the live task", a.tasks.selKind)
+	}
+	liveDetails := a.View()
+	press(a, "down") // into the first recorded row
+	if a.tasks.selKind != selRecord || a.tasks.histSession != 1 || a.tasks.histOp != 0 {
+		t.Fatalf("selection = kind %v run %d op %d", a.tasks.selKind, a.tasks.histSession, a.tasks.histOp)
+	}
+	recDetails := a.View()
+	if recDetails == liveDetails {
+		t.Fatal("the details did not follow the selection")
+	}
+	for _, want := range []string{"Details", "Operation", "State", "Session"} {
+		if !strings.Contains(recDetails, want) {
+			t.Fatalf("record details miss %q:\n%s", want, recDetails)
+		}
+	}
+	// Walking down stays inside the list and never past the oldest row.
+	for i := 0; i < 40; i++ {
+		press(a, "down")
+	}
+	if a.tasks.selKind != selRecord {
+		t.Fatalf("the cursor left the recorded rows: %v", a.tasks.selKind)
+	}
+	last := len(a.historySessions()) - 1
+	if a.tasks.histSession != last {
+		t.Fatalf("the cursor passed the oldest run: %d", a.tasks.histSession)
+	}
+
+	// "[" and "]" move between run sections; the live task is in this run.
 	press(a, "]")
-	if a.tasks.histSession != len(a.historySessions())-2 {
+	if a.tasks.histSession != last-1 {
 		t.Fatalf("']' = run %d", a.tasks.histSession)
 	}
-	// Details scroll
+	for i := 0; i < 10; i++ {
+		press(a, "]")
+	}
+	if a.tasks.selKind != selLiveTask || a.tasks.selected != task.id {
+		t.Fatal("']' must reach this run's rows")
+	}
+	press(a, "[")
+	if a.tasks.selKind != selRecord || a.tasks.histSession != 1 {
+		t.Fatalf("'[' = kind %v run %d", a.tasks.selKind, a.tasks.histSession)
+	}
+
+	// Details scrolling still works, whichever row is selected.
 	press(a, "pgdown")
-	if a.tasks.histOffset == 0 {
+	if a.tasks.detailOffset == 0 {
 		t.Fatal("PgDn did not scroll the details")
 	}
 	press(a, "pgup", "pgup")
-	if a.tasks.histOffset != 0 {
-		t.Fatalf("PgUp did not scroll back: %d", a.tasks.histOffset)
+	if a.tasks.detailOffset != 0 {
+		t.Fatalf("PgUp did not scroll back: %d", a.tasks.detailOffset)
 	}
-	// Back to the live view, then close
-	press(a, "h")
-	if v := a.View(); !strings.Contains(v, "Background tasks") {
-		t.Fatalf("h did not return to the live task list:\n%s", v)
-	}
+
 	press(a, "t")
 	if a.tasks.showing {
 		t.Fatal("t did not close the tasks screen")
 	}
 }
 
-func TestHistoryViewWorksOnANarrowTerminal(t *testing.T) {
+// TestTaskActionsOnlyApplyToLiveRows: cancel, watch and clear must never touch
+// a recorded row — the actions follow the selected row.
+func TestTaskActionsOnlyApplyToLiveRows(t *testing.T) {
+	root := t.TempDir()
+	settingsPath, historyPath := configPaths(root)
+	os.MkdirAll(filepath.Dir(historyPath), 0o700)
+	seedHistory(t, historyPath, 2, 2)
+	a := New(Options{Version: "test", StartDir: root, SettingsPath: settingsPath, HistoryPath: historyPath})
+	drain(a, a.Init())
+	a.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+
+	// One finished task in this run, so "x" would have something to clear.
+	press(a, "t")
+	task, _ := a.newSession("Copying", 0, nil)
+	a.finishTask(task, taskCompleted, "Copied 1 file")
+	a.tasks.liveRev++
+	records := 0
+	for _, sess := range a.historySessions() {
+		records += len(sess.Operations())
+	}
+
+	press(a, "down") // onto the first recorded row
+	if a.tasks.selKind != selRecord {
+		t.Fatalf("expected a recorded row, got kind %v", a.tasks.selKind)
+	}
+	// x: refused, the run's finished task stays and history is untouched.
+	press(a, "x")
+	if len(a.tasks.order) != 1 {
+		t.Fatalf("x cleared this run's tasks from a recorded row: %d left", len(a.tasks.order))
+	}
+	if !strings.Contains(a.status, "read-only") {
+		t.Fatalf("x gave no read-only explanation: %q", a.status)
+	}
+	// c: refused, nothing is cancelled and the screen stays open.
+	press(a, "c")
+	if !a.tasks.showing || task.state != taskCompleted {
+		t.Fatal("c did something from a recorded row")
+	}
+	if !strings.Contains(a.status, "read-only") {
+		t.Fatalf("c gave no read-only explanation: %q", a.status)
+	}
+	// Enter / w: refused, no live screen is opened for a record.
+	press(a, "enter")
+	if a.live != nil {
+		t.Fatal("enter opened a live screen for a recorded operation")
+	}
+	press(a, "w")
+	if a.live != nil {
+		t.Fatal("w opened a live screen for a recorded operation")
+	}
+	after := 0
+	for _, sess := range a.historySessions() {
+		after += len(sess.Operations())
+	}
+	if after != records {
+		t.Fatalf("the record count changed: %d -> %d", records, after)
+	}
+
+	// A live row offers the actions again.
+	press(a, "up")
+	if a.tasks.selKind != selLiveTask {
+		t.Fatalf("expected the live task, got kind %v", a.tasks.selKind)
+	}
+	if footer := a.footerLine(); strings.Contains(footer, "read-only") ||
+		!strings.Contains(footer, "clear finished") {
+		t.Fatalf("finished live row hints = %q", footer)
+	}
+	press(a, "x")
+	if len(a.tasks.order) != 0 {
+		t.Fatal("x did not clear this run's finished task")
+	}
+	// Clearing keeps the record out of this run's list (it is still on disk).
+	for _, e := range a.taskEntries() {
+		if e.kind == taskEntryRecord && e.sess == a.currentSessionIndex(a.historySessions()) {
+			t.Fatalf("a cleared task came back as a recorded row: %+v", e)
+		}
+	}
+	press(a, "t")
+}
+
+// TestTasksScreenListsForegroundOperations: rename, new file and permissions
+// never had a task row; this run's records still belong in its section.
+func TestTasksScreenListsForegroundOperations(t *testing.T) {
+	root := t.TempDir()
+	settingsPath, historyPath := configPaths(root)
+	os.MkdirAll(filepath.Dir(historyPath), 0o700)
+	a := New(Options{Version: "test", StartDir: root, SettingsPath: settingsPath, HistoryPath: historyPath})
+	drain(a, a.Init())
+	a.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+
+	a.recordOperation(history.Record{Op: "New file", Status: history.StatusSuccess,
+		Dest: root, Items: []string{"notes.md"}, Started: time.Now()})
+	a.recordOperation(history.Record{Op: "Rename", Status: history.StatusFailed,
+		Dest: root, Items: []string{"x"}, Errors: []string{"permission denied"}, Started: time.Now()})
+
+	press(a, "t")
+	v := a.View()
+	for _, want := range []string{"This run", "New file", "Rename", "FAILED"} {
+		if !strings.Contains(v, want) {
+			t.Fatalf("this run's foreground records are missing %q:\n%s", want, v)
+		}
+	}
+	if e, ok := a.selectedTaskEntry(); !ok || e.kind != taskEntryRecord {
+		t.Fatalf("expected the newest record to be selected: %+v", e)
+	}
+	press(a, "t")
+}
+
+// footerLine is the hint bar of the current frame.
+func (a *App) footerLine() string {
+	lines := strings.Split(ansi.Strip(a.View()), "\n")
+	return lines[len(lines)-1]
+}
+
+// TestTasksScreenWorksOnANarrowTerminal: a phone-sized terminal keeps the
+// merged list inside the screen and stays navigable.
+func TestTasksScreenWorksOnANarrowTerminal(t *testing.T) {
 	root := t.TempDir()
 	settingsPath, historyPath := configPaths(root)
 	os.MkdirAll(filepath.Dir(historyPath), 0o700)
 	seedHistory(t, historyPath, 4, 2)
 	a := New(Options{Version: "test", StartDir: root, SettingsPath: settingsPath, HistoryPath: historyPath})
 	drain(a, a.Init())
-	a.Update(tea.WindowSizeMsg{Width: 40, Height: 12})
-	drain(a, a.Init())
-	press(a, "t", "h")
-	v := a.View()
-	lines := strings.Split(v, "\n")
-	if len(lines) > 12 {
-		t.Fatalf("view is %d lines tall on a 12-line terminal", len(lines))
-	}
-	for _, line := range lines {
-		if w := ansi.StringWidth(ansi.Strip(line)); w > 40 {
-			t.Fatalf("line wider than the terminal (%d > 40): %q", w, line)
+
+	for _, size := range [][2]int{{40, 12}, {44, 18}, {100, 30}} {
+		a.Update(tea.WindowSizeMsg{Width: size[0], Height: size[1]})
+		press(a, "t")
+		if a.tasks.showing == false {
+			t.Fatal("t must open the tasks screen")
 		}
-	}
-	if !strings.Contains(v, "Operation history") {
-		t.Fatalf("narrow history view lost its header:\n%s", v)
-	}
-	// Keys still work with almost no room for the detail block.
-	press(a, "[", "down", "pgdown", "]", "h")
-	if a.tasks.histShowing {
-		t.Fatal("h did not leave the history view")
+		check := func(stage string) {
+			v := a.View()
+			lines := strings.Split(v, "\n")
+			if len(lines) > size[1] {
+				t.Fatalf("%s at %dx%d: %d lines", stage, size[0], size[1], len(lines))
+			}
+			for _, line := range lines {
+				if w := ansi.StringWidth(ansi.Strip(line)); w > size[0] {
+					t.Fatalf("%s at %dx%d: line wider than the terminal (%d): %q", stage, size[0], size[1], w, line)
+				}
+			}
+			if !strings.Contains(v, "Tasks & history") {
+				t.Fatalf("%s at %dx%d: lost the title:\n%s", stage, size[0], size[1], v)
+			}
+		}
+		check("opened")
+		for i := 0; i < 8; i++ {
+			press(a, "down")
+			check("scrolled")
+		}
+		press(a, "[", "]", "pgdown", "pgup")
+		check("keys")
+		press(a, "t")
 	}
 }
 
@@ -799,12 +952,12 @@ func TestNewerHistoryFileIsNotOverwritten(t *testing.T) {
 	drain(a, a.Init())
 	a.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
 	a.recordOperation(history.Record{Op: "Copy", Status: history.StatusSuccess})
-	press(a, "t", "h")
+	press(a, "t")
 	if a.History().ReadOnly() != true {
 		t.Fatal("a newer history file must be read-only")
 	}
 	if v := a.View(); !strings.Contains(v, "read-only") {
-		t.Fatalf("the history view does not mention read-only:\n%s", v)
+		t.Fatalf("the tasks screen does not mention read-only:\n%s", v)
 	}
 	if data, err := os.ReadFile(historyPath); err != nil || string(data) != body {
 		t.Fatalf("the newer file was changed: %q (%v)", data, err)
@@ -830,5 +983,48 @@ func TestProgressUpdatesDoNotCreateRecords(t *testing.T) {
 	}
 	if len(a.History().Sessions()) != 1 {
 		t.Fatal("progress updates created extra history entries")
+	}
+}
+
+// TestClickSelectsHistoricalRowFromTheList: a click on a recorded row of an
+// earlier run selects it, so the details panel follows the mouse too.
+func TestClickSelectsHistoricalRowFromTheList(t *testing.T) {
+	root := t.TempDir()
+	settingsPath, historyPath := configPaths(root)
+	os.MkdirAll(filepath.Dir(historyPath), 0o700)
+	seedHistory(t, historyPath, 1, 3)
+	a := New(Options{Version: "test", StartDir: root, SettingsPath: settingsPath, HistoryPath: historyPath})
+	drain(a, a.Init())
+	a.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+	press(a, "t")
+
+	entries := a.taskEntries()
+	l := a.taskLayout(a.height - 3)
+	lines, offset, rows := a.taskListWindow(l, entries)
+	want := -1
+	for i, ln := range lines {
+		if i < offset || i >= offset+rows {
+			continue
+		}
+		e := entries[ln.entry]
+		if e.kind == taskEntryRecord {
+			want = ln.entry
+			listTop := 2
+			if l.header {
+				listTop++
+			}
+			a.Update(tea.MouseMsg{Action: tea.MouseActionRelease, Button: tea.MouseButtonLeft,
+				X: 10, Y: listTop + (i - offset)})
+			break
+		}
+	}
+	if want < 0 {
+		t.Fatal("no recorded row was on screen to click")
+	}
+	if idx := a.selectedTaskEntryIndex(a.taskEntries()); idx != want {
+		t.Fatalf("click selected %d, want %d", idx, want)
+	}
+	if a.tasks.selKind != selRecord {
+		t.Fatalf("a click on a recorded row selected kind %v", a.tasks.selKind)
 	}
 }
