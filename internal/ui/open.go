@@ -91,6 +91,12 @@ func (a *App) openExternal() tea.Cmd {
 	if !ok {
 		return nil
 	}
+	return a.openExternalEntry(e)
+}
+
+// openExternalEntry opens e with the default app. It is shared by the panel
+// shortcut and by Advanced Search, which acts on a result path.
+func (a *App) openExternalEntry(e fsys.Entry) tea.Cmd {
 	plat := a.platform()
 	argv, ok := plat.DefaultArgv(e.Path)
 	if !ok {
@@ -159,6 +165,12 @@ func (a *App) openWith() tea.Cmd {
 	if !ok {
 		return nil
 	}
+	return a.openWithEntry(p, e)
+}
+
+// openWithEntry shows the Open-with list for one entry. Advanced Search uses
+// it for a result that is not under the panel cursor.
+func (a *App) openWithEntry(p *panel.Panel, e fsys.Entry) tea.Cmd {
 	plat := a.platform()
 	t := opener.Detect(e.Path)
 	browse := a.isBrowsableArchive(e.Path)

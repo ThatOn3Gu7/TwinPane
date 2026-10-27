@@ -203,6 +203,7 @@ func (a *App) beginZip() tea.Cmd {
 		}
 		req := compress.Request{Format: c.ID, Level: a.levelIndex(c.Format), Sources: sources, Output: out, Tool: c.Tool}
 		a.lastFormat = c.ID
+		a.savePrefs(false) // remember the format for the settings default
 		if fi, err := os.Lstat(out); err == nil {
 			if fi.IsDir() {
 				a.dialog.errLine = "a folder with that name exists"
@@ -267,6 +268,7 @@ func (a *App) compressLevel(st *compressState, delta int) {
 	i := a.levelIndex(f) + delta
 	i = max(0, min(i, len(f.Levels)-1))
 	a.formatLevels[f.ID] = i
+	a.savePrefs(false) // remember the level for the settings default
 }
 
 // zipOverwriteDialog asks before replacing an existing file with the new
@@ -339,20 +341,19 @@ func (a *App) finishZip(s *opSession, res compress.Result) tea.Cmd {
 		cleanupErrors = 1
 	}
 	state := taskOutcome(res.Canceled, res.Fatal, len(res.Errors)+cleanupErrors, res.Created() && (res.Files+res.Dirs+res.Links > 0))
+	level := lvlErr
 	switch {
 	case res.OK():
-		a.setStatusLevel(summary, lvlOK)
+		level = lvlOK
 		if src := a.panels[s.srcPanel]; !src.InArchive() && a.sourceSelectionUnchanged(s) {
 			src.ClearSelection()
 		}
 	case res.Canceled:
-		a.setStatusLevel(summary, lvlWarn)
+		level = lvlWarn
 	default:
-		level := lvlErr
 		if res.Created() {
 			level = lvlWarn
 		}
-		a.setStatusLevel(summary, level)
 	}
 	s.hist.files, s.hist.dirs, s.hist.links, s.hist.bytes = res.Files, res.Dirs, res.Links, res.Bytes
 	s.hist.errors = itemErrorTexts(res.Errors)
@@ -365,6 +366,16 @@ func (a *App) finishZip(s *opSession, res compress.Result) tea.Cmd {
 	if res.Output != "" {
 		s.hist.result = "wrote " + res.Output
 	}
+	body := []string{}
+	if res.Output != "" {
+		body = append(body, "→ "+fsys.SanitizeName(res.Output))
+	}
+	// Failures are named in the pop-up itself: the first two details say what
+	// went wrong, the task list keeps the rest.
+	body = append(body, detailsBody(details)...)
+	failed := res.Fatal != nil || len(res.Errors)+cleanupErrors > 0
+	a.taskResult(s, level, operationHeading("Compress", failed, res.Canceled, res.Created() && (failed || res.Canceled)), summary, body...)
+	a.setStatus("", false)
 	a.finishTask(s, state, summary, details...)
 	return cmd
 }

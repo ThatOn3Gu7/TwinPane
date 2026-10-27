@@ -243,9 +243,12 @@ type taskPrompt struct {
 	plan     ops.DeletePlan
 	transfer ops.Request
 	targets  []fsys.Entry
+	est      ops.Estimate
 }
 
 func (a *App) openTasks() {
+	// The list says everything the notification says, and more.
+	a.dismissNotice()
 	a.tasks.showing = true
 	a.tasks.histShowing = false
 	if s := a.tasks.latestActive(); s != nil {
@@ -262,9 +265,11 @@ func (a *App) closeTasks() {
 
 func (a *App) taskViewKey(msg tea.KeyMsg) tea.Cmd {
 	if a.tasks.histShowing {
-		if cmd, handled := a.historyViewKey(msg); handled {
-			return cmd
-		}
+		// The history view owns the keys: its unhandled keys must never reach
+		// the live task actions below (x would clear tasks, c would cancel
+		// one) while the user is reading past runs. "h" returns to the tasks.
+		cmd, _ := a.historyViewKey(msg)
+		return cmd
 	}
 	switch msg.String() {
 	case "h":
@@ -285,6 +290,8 @@ func (a *App) taskViewKey(msg tea.KeyMsg) tea.Cmd {
 		a.tasks.detailOffset = max(0, a.tasks.detailOffset-5)
 	case "pgdown", "ctrl+f":
 		a.tasks.detailOffset += 5
+	case "enter", "w":
+		return a.watchSelectedTask() // live.go
 	case "c", "ctrl+c":
 		if s := a.tasks.selectedTask(); s != nil && s.active() {
 			a.cancelTask(s.id)
@@ -306,41 +313,147 @@ func (a *App) taskViewMouse(ev tea.MouseEvent) tea.Cmd {
 	if a.tasks.histShowing {
 		return a.historyViewMouse(ev)
 	}
+	l := a.taskLayout(a.height - 3)
+	// The list starts on screen row 1 (the title bar is row 0) inside its
+	// border; the first row is the table header unless the rows are compact.
+	listTop := 2
+	if !l.compact && l.columns.progress {
+		listTop = 3
+	}
+	listBottom := 1 + l.listH - 1 // the list box's bottom border
 	if ev.IsWheel() {
 		delta := wheelDelta(ev)
-		listRows := taskListRows(a.height-3, len(a.tasks.order))
-		if ev.Y >= 2+listRows {
+		if ev.Y >= listBottom && l.detailsH > 0 {
 			a.tasks.detailOffset = max(0, a.tasks.detailOffset+delta)
 		} else if delta != 0 {
 			a.tasks.selectDelta(delta)
 		}
 		return nil
 	}
-	if ev.Action == tea.MouseActionRelease && ev.Button == tea.MouseButtonLeft {
-		listRows := taskListRows(a.height-3, len(a.tasks.order))
-		row := ev.Y - 2
-		if row >= 0 && row < listRows {
-			idx := a.tasks.listOffset + row
-			items := a.tasks.newest()
-			if idx < len(items) {
-				a.tasks.selected = items[idx].id
-				a.tasks.detailOffset = 0
-			}
-		}
+	if ev.Action != tea.MouseActionRelease || ev.Button != tea.MouseButtonLeft {
+		return nil
+	}
+	if ev.Y < listTop || ev.Y >= listBottom {
+		return nil
+	}
+	row := ev.Y - listTop
+	if l.compact {
+		row /= 2
+	}
+	if row < 0 || row >= l.listRows {
+		return nil
+	}
+	items := a.tasks.newest()
+	idx := a.tasks.listOffset + row
+	if idx < len(items) {
+		a.tasks.selected = items[idx].id
+		a.tasks.detailOffset = 0
 	}
 	return nil
 }
 
-func taskListRows(bodyHeight, total int) int {
-	if total <= 0 || bodyHeight <= 1 {
-		return 0
-	}
-	return min(total, max(1, (bodyHeight-1)/2))
+// ---- task table geometry ------------------------------------------------------
+
+// The task screen is two bordered sections: the task list (a table under a
+// header row) and the details of the selected task (a label/value table). Both
+// drop columns instead of overflowing, and a narrow or short terminal gets
+// two-line rows instead of a table, so a phone shows the same information as a
+// desktop terminal without wrapping into noise.
+
+const (
+	taskMarkerW = 2  // "▸ " before the selected row
+	taskIDW     = 3  // task number
+	taskStateW  = 12 // state glyph + word
+	taskSizeW   = 13 // "120 M/266 M"
+	taskTimeW   = 6  // "  0:08"
+	taskMinOpW  = 12 // narrowest operation column still worth drawing
+	taskBarW    = 8  // cells of the progress bar in a table row
+	taskLabelW  = 11 // details label column ("Operation  ")
+)
+
+// taskLayout is how the task screen splits its body at the current size.
+type taskLayout struct {
+	width    int
+	innerW   int  // width inside the list box
+	compact  bool // two lines per task: no table
+	columns  taskColumns
+	listH    int // rows of the list section (borders included)
+	detailsH int // rows of the details section (0 = not drawn)
+	listRows int // task entries that fit in the list section
 }
 
-func taskStateLabel(s *opSession) string {
+// taskColumns selects which table columns are drawn.
+type taskColumns struct {
+	stateWord bool
+	progress  bool
+	size      bool
+	elapsed   bool
+	opW       int
+	progW     int
+}
+
+func (a *App) taskLayout(height int) taskLayout {
+	l := taskLayout{width: a.width, innerW: max(1, a.width-2)}
+	fixed := taskMarkerW + taskIDW + taskStateW
+	// The details section needs a few rows to be worth its border; the list
+	// always keeps at least three (borders + header + one task).
+	switch {
+	case height < 7:
+		l.listH, l.detailsH = height, 0
+	case height < 12:
+		l.detailsH = 5
+		l.listH = height - l.detailsH
+	default:
+		l.detailsH = min(12, max(6, height/2))
+		l.listH = height - l.detailsH
+	}
+	// Columns: keep the operation and progress readable first, add the
+	// secondary columns only where the width can hold them.
+	avail := l.innerW - fixed - 3 // three separating gaps
+	l.columns.elapsed = avail >= taskMinOpW+12+taskTimeW
+	l.columns.size = avail >= taskMinOpW+16+taskTimeW+taskSizeW
+	l.columns.stateWord = l.innerW >= fixed+taskMinOpW+1
+	if l.columns.stateWord {
+		avail -= 1 // the glyph/word split needs its own space
+	} else {
+		fixed = taskMarkerW + taskIDW + 2 // only the glyph fits
+		avail = l.innerW - fixed - 2
+	}
+	if l.columns.elapsed {
+		avail -= taskTimeW
+	}
+	if l.columns.size {
+		avail -= taskSizeW
+	}
+	l.columns.progress = l.innerW >= 46
+	l.compact = !l.columns.stateWord || l.innerW < 46 || avail < taskMinOpW+10
+	if l.compact {
+		l.columns = taskColumns{}
+	}
+	l.columns.progW = 0
+	if l.columns.progress {
+		l.columns.progW = min(28, max(12, avail/2))
+		avail -= l.columns.progW
+	}
+	l.columns.opW = max(8, avail)
+	// Rows that fit: two lines each in compact mode, otherwise one.
+	rows := max(0, l.listH-2) // borders
+	if !l.compact && l.columns.progress {
+		rows-- // header row
+	}
+	if l.compact {
+		l.listRows = rows / 2
+	} else {
+		l.listRows = rows
+	}
+	return l
+}
+
+// taskStateWord is the human name of a task state (the table and the details
+// section use it; the glyph only adds colour and shape).
+func taskStateWord(s *opSession) string {
 	if s == nil {
-		return "UNKNOWN"
+		return "Unknown"
 	}
 	switch s.state {
 	case taskPlanning:
@@ -359,39 +472,41 @@ func taskStateLabel(s *opSession) string {
 		return "PARTIAL"
 	case taskFailed:
 		return "FAILED"
-	default:
-		return "UNKNOWN"
 	}
+	return "UNKNOWN"
 }
 
-func taskProgressLabel(s *opSession) string {
+// taskStateGlyph is the one-cell status indicator of a task. Shapes carry the
+// state even where colour is unavailable, and every glyph has a word next to it
+// in the table header's column (unless the terminal is too narrow).
+func taskStateGlyph(s *opSession) string {
 	if s == nil {
-		return ""
+		return "?"
 	}
-	if s.state == taskWaiting && s.waitingFor != "" {
-		return "waiting: " + s.waitingFor
+	switch s.state {
+	case taskPlanning:
+		return "…"
+	case taskRunning:
+		return "●"
+	case taskCanceling:
+		return "■"
+	case taskWaiting:
+		return "◐"
+	case taskCompleted:
+		return "✓"
+	case taskCanceled:
+		return "⊘"
+	case taskPartial:
+		return "▲"
+	case taskFailed:
+		return "✕"
 	}
-	if !s.active() && s.summary != "" {
-		return fsys.SanitizeName(s.summary)
-	}
-	p := s.prog
-	if p.TotalBytes > 0 {
-		return fmt.Sprintf("%.0f%% · %s/%s · %s/%s", p.Fraction()*100,
-			fsys.HumanSize(p.DoneBytes), fsys.HumanSize(p.TotalBytes),
-			plural(p.DoneItems, "item"), plural(p.TotalItems, "item"))
-	}
-	if p.TotalItems > 0 {
-		return fmt.Sprintf("%s · %d/%d items", p.Phase, p.DoneItems, p.TotalItems)
-	}
-	if p.Phase != "" {
-		return p.Phase + "…"
-	}
-	return "working…"
+	return "?"
 }
 
-func taskRowStyle(a *App, s *opSession, selected bool) lipgloss.Style {
-	if selected {
-		return a.theme.CursorActive
+func taskStateStyle(a *App, s *opSession) lipgloss.Style {
+	if s == nil {
+		return a.theme.TitleText
 	}
 	switch s.state {
 	case taskCompleted:
@@ -400,10 +515,130 @@ func taskRowStyle(a *App, s *opSession, selected bool) lipgloss.Style {
 		return a.theme.StatusWarn
 	case taskFailed:
 		return a.theme.StatusErr
+	case taskWaiting:
+		return a.theme.StatusWarn
 	default:
-		return a.theme.TitleText
+		return a.theme.HelpTitle
 	}
 }
+
+// taskLevel is the status-line severity that matches a task state.
+func taskLevel(s *opSession) int {
+	if s == nil {
+		return lvlInfo
+	}
+	switch s.state {
+	case taskCompleted:
+		return lvlOK
+	case taskFailed:
+		return lvlErr
+	case taskCanceled, taskPartial:
+		return lvlWarn
+	}
+	return lvlInfo
+}
+
+// taskFraction returns the completion fraction and whether it is known.
+func taskFraction(s *opSession) (float64, bool) {
+	if s == nil {
+		return 0, false
+	}
+	switch {
+	case !s.active() && s.state == taskCompleted:
+		return 1, true
+	case s.prog.TotalBytes > 0 || s.prog.TotalItems > 0:
+		return s.prog.Fraction(), true
+	}
+	return 0, false
+}
+
+// taskElapsed is the running or final duration, rendered compactly.
+func taskElapsed(a *App, s *opSession) string {
+	if s == nil || s.started.IsZero() {
+		return ""
+	}
+	d := s.finished.Sub(s.started)
+	if s.finished.IsZero() {
+		d = a.now().Sub(s.started)
+	}
+	if d < 0 {
+		d = 0
+	}
+	switch {
+	case d < time.Minute:
+		return fmt.Sprintf("%ds", int(d.Seconds()))
+	case d < time.Hour:
+		return fmt.Sprintf("%d:%02d", int(d.Minutes()), int(d.Seconds())%60)
+	default:
+		return fmt.Sprintf("%dh%02d", int(d.Hours()), int(d.Minutes())%60)
+	}
+}
+
+// taskBytesText renders "done/total" (or only the total when nothing has moved
+// yet), shortened for the size column.
+func taskBytesText(s *opSession) string {
+	p := s.prog
+	if p.TotalBytes <= 0 {
+		return ""
+	}
+	if p.DoneBytes <= 0 {
+		return fsys.HumanSize(p.TotalBytes)
+	}
+	return fsys.HumanSize(p.DoneBytes) + "/" + fsys.HumanSize(p.TotalBytes)
+}
+
+// taskProgressCell is the table's progress cell: a small bar with the
+// percentage, plus the item counts where there is room.
+func (a *App) taskProgressCell(s *opSession, w int) string {
+	if w <= 0 {
+		return ""
+	}
+	frac, known := taskFraction(s)
+	// The bar already says "how far", so the text next to it can drop a word
+	// and keep the counts that the bar cannot show.
+	short := ""
+	var parts []string
+	if known {
+		short = fmt.Sprintf("%.0f%%", frac*100)
+		parts = append(parts, short)
+	}
+	items := ""
+	if s.prog.TotalItems > 0 {
+		items = fmt.Sprintf("%d/%d items", s.prog.DoneItems, s.prog.TotalItems)
+		parts = append(parts, items)
+	} else if s.prog.Phase != "" && s.active() {
+		parts = append(parts, s.prog.Phase)
+	}
+	text := strings.Join(parts, " · ")
+	if text == "" {
+		text = taskFallbackText(s)
+	}
+	// the bar is the first thing to go when the cell is narrow
+	if known && w >= taskBarW+8 {
+		if items != "" {
+			text = short + " · " + strings.Replace(items, " items", "", 1)
+		}
+		return progressBar(a.theme, frac, taskBarW) + " " + truncRight(text, w-taskBarW-1)
+	}
+	return truncRight(text, w)
+}
+
+// taskFallbackText describes a task that has no counters yet.
+func taskFallbackText(s *opSession) string {
+	switch {
+	case s.state == taskWaiting && s.waitingFor != "":
+		return "waiting: " + s.waitingFor
+	case !s.active() && s.summary != "":
+		return s.summary
+	case s.state == taskPlanning:
+		return "scanning…"
+	case s.active():
+		return "working…"
+	}
+	return ""
+}
+
+// ---- task screen ---------------------------------------------------------------
 
 func (a *App) taskViewRender(height int) string {
 	if height <= 0 {
@@ -412,112 +647,267 @@ func (a *App) taskViewRender(height int) string {
 	if a.tasks.histShowing {
 		return a.historyViewRender(height)
 	}
-	width := a.width
+	th := a.theme
 	items := a.tasks.newest()
-	active := a.tasks.activeCount()
-	lines := []string{a.theme.HelpTitle.Render(fmt.Sprintf("Background tasks · %d active · %d retained", active, len(items)))}
-	listRows := taskListRows(height, len(items))
-	visible := a.tasks.visibleTasks(listRows)
 	if len(items) == 0 {
-		lines = append(lines, a.theme.Empty.Render(fitWidth("No background tasks yet. Start a copy, move, delete or archive operation.", width)))
-	} else {
-		for _, s := range visible {
-			marker := "  "
-			if s.id == a.tasks.selected {
-				marker = "> "
-			}
-			location := s.prog.Current
-			if location == "" && len(s.from) > 0 {
-				location = s.from[0]
-			}
-			row := fmt.Sprintf("%s#%-3d %-8s %-22s %s", marker, s.id, taskStateLabel(s), s.title, taskProgressLabel(s))
-			if location != "" {
-				row += " · " + fsys.SanitizeName(location)
-			}
-			lines = append(lines, taskRowStyle(a, s, s.id == a.tasks.selected).Render(fitWidth(row, width)))
+		body := []string{
+			"",
+			" " + th.Empty.Render("Nothing here yet."),
+			" " + th.Summary.Render("Copy, move or delete something and its progress is kept here."),
 		}
+		box := sectionBox(th, "Background tasks", "idle", body, a.width, min(height, 6), true, nil)
+		return strings.Join(fitBlock(box, height, a.width), "\n")
 	}
-
-	remaining := height - len(lines)
-	if s := a.tasks.selectedTask(); s != nil && remaining > 0 {
-		details := a.taskDetails(s, width)
-		if a.tasks.detailOffset >= len(details) {
-			a.tasks.detailOffset = max(0, len(details)-1)
-		}
-		for _, line := range details[a.tasks.detailOffset:] {
-			if remaining == 0 {
-				break
-			}
-			lines = append(lines, line)
-			remaining--
-		}
+	l := a.taskLayout(height)
+	if l.listRows == 0 {
+		// Too short for the framed list: still show the selected task.
+		lines := a.taskDetailsRows(a.tasks.selectedTask(), max(1, a.width-1))
+		return strings.Join(fitBlock(lines, height, a.width), "\n")
 	}
-	for len(lines) < height {
-		lines = append(lines, "")
+	var out []string
+	out = append(out, a.taskListBox(l, true)...)
+	if l.detailsH > 0 {
+		out = append(out, a.taskDetailsBox(l)...)
 	}
-	if len(lines) > height {
-		lines = lines[:height]
-	}
-	return strings.Join(lines, "\n")
+	return strings.Join(fitBlock(out, height, a.width), "\n")
 }
 
-func (a *App) taskDetails(s *opSession, width int) []string {
+func (a *App) taskListBox(l taskLayout, focused bool) []string {
+	th := a.theme
+	items := a.tasks.newest()
+	active := a.tasks.activeCount()
+	finished := len(items) - active
+	right := fmt.Sprintf("%d active · %d finished", active, finished)
+	body := make([]string, 0, max(0, l.listH-2))
+	if !l.compact && l.columns.progress {
+		body = append(body, th.ColumnHeader.Render(truncRight(a.taskHeaderRow(l), l.innerW)))
+	}
+	visible := a.tasks.visibleTasks(l.listRows)
+	for _, s := range visible {
+		body = append(body, a.taskRowLines(l, s)...)
+	}
+	// Empty rows keep the box tidy when the list is short.
+	for len(body) < max(0, l.listH-2) {
+		body = append(body, "")
+	}
+	return sectionBox(th, "Background tasks", right, body, a.width, l.listH, focused, nil)
+}
+
+func (a *App) taskHeaderRow(l taskLayout) string {
+	c := l.columns
+	var b strings.Builder
+	b.WriteString(strings.Repeat(" ", taskMarkerW+taskIDW))
+	if c.stateWord {
+		b.WriteString(padRight("State", taskStateW))
+	} else {
+		b.WriteString(strings.Repeat(" ", 2))
+	}
+	b.WriteString(padRight("Operation", c.opW))
+	if c.progress {
+		b.WriteString(padRight("Progress", c.progW))
+	}
+	if c.size {
+		b.WriteString(padRight("Size", taskSizeW))
+	}
+	if c.elapsed {
+		b.WriteString(strings.TrimRight(padRight("Time", taskTimeW), ""))
+	}
+	return strings.TrimRight(b.String(), " ")
+}
+
+// taskRowLines renders one task: a table row, or two lines in compact mode.
+func (a *App) taskRowLines(l taskLayout, s *opSession) []string {
+	selected := s.id == a.tasks.selected
+	marker, glyph := "  ", taskStateGlyph(s)
+	if selected {
+		marker = a.theme.HelpTitle.Render("▸") + " "
+	}
+	style := taskStateStyle(a, s)
+	if l.compact {
+		// status + operation, then the progress underneath
+		head := marker + a.theme.Summary.Render(fmt.Sprintf("%-2d ", s.id)) +
+			style.Render(glyph) + " " + a.theme.Info.Render(truncRight(capitalize(s.title), max(6, l.innerW-8)))
+		frac, known := taskFraction(s)
+		detail := "  "
+		if known {
+			detail += a.theme.Summary.Render(fmt.Sprintf("%3.0f%%", frac*100)) + " "
+		}
+		detail += a.theme.Summary.Render(taskCompactDetail(s, max(6, l.innerW-6)))
+		if selected {
+			head = a.theme.CursorActive.Render(fitWidth(ansi.Strip(head), l.innerW))
+			detail = a.theme.CursorInactive.Render(fitWidth(ansi.Strip(detail), l.innerW))
+		}
+		return []string{head, detail}
+	}
+	c := l.columns
+	var b strings.Builder
+	b.WriteString(marker)
+	b.WriteString(a.theme.Summary.Render(fmt.Sprintf("%-2d ", s.id)))
+	if c.stateWord {
+		b.WriteString(style.Render(padRight(glyph+" "+taskStateWord(s), taskStateW)))
+	} else {
+		b.WriteString(style.Render(glyph) + " ")
+	}
+	b.WriteString(a.theme.Info.Render(padRight(truncRight(capitalize(s.title), c.opW-1), c.opW)))
+	if c.progress {
+		// one cell of the progress column is the gap before the size column
+		b.WriteString(padRight(a.taskProgressCell(s, c.progW-1), c.progW))
+	}
+	if c.size {
+		b.WriteString(padRight(truncRight(taskBytesText(s), taskSizeW-1), taskSizeW))
+	}
+	if c.elapsed {
+		b.WriteString(padRight(taskElapsed(a, s), taskTimeW))
+	}
+	row := truncRight(b.String(), l.innerW)
+	if selected {
+		return []string{a.theme.CursorActive.Render(fitWidth(ansi.Strip(row), l.innerW))}
+	}
+	return []string{fitWidth(row, l.innerW)}
+}
+
+// taskCompactDetail is the second line of a compact task row.
+func taskCompactDetail(s *opSession, w int) string {
+	var parts []string
+	if s.prog.TotalItems > 0 {
+		parts = append(parts, fmt.Sprintf("%d/%d items", s.prog.DoneItems, s.prog.TotalItems))
+	}
+	if s.prog.TotalBytes > 0 {
+		parts = append(parts, taskBytesText(s))
+	}
+	if s.state == taskWaiting && s.waitingFor != "" {
+		parts = append(parts, "waiting: "+s.waitingFor)
+	} else if !s.active() && s.summary != "" {
+		parts = append(parts, fsys.SanitizeName(s.summary))
+	} else if s.prog.Current != "" && s.active() {
+		parts = append(parts, fsys.SanitizeName(s.prog.Current))
+	}
+	if len(parts) == 0 {
+		parts = append(parts, taskFallbackText(s))
+	}
+	return truncRight(strings.Join(parts, " · "), w)
+}
+
+func (a *App) taskDetailsBox(l taskLayout) []string {
+	s := a.tasks.selectedTask()
+	th := a.theme
+	right := ""
+	if s != nil {
+		right = fmt.Sprintf("#%d · %s", s.id, taskStateWord(s))
+		if frac, known := taskFraction(s); known && s.active() {
+			right += fmt.Sprintf(" · %.0f%%", frac*100)
+		}
+	}
+	rows := max(0, l.detailsH-2)
+	details := a.taskDetailsRows(s, max(1, l.innerW))
+	if a.tasks.detailOffset > max(0, len(details)-rows) {
+		a.tasks.detailOffset = max(0, len(details)-rows)
+	}
+	body := make([]string, 0, rows)
+	details = details[min(a.tasks.detailOffset, len(details)):]
+	for _, line := range details {
+		if len(body) == rows {
+			break
+		}
+		body = append(body, line)
+	}
+	var thumb []bool
+	if len(details) > rows && rows > 0 {
+		thumb = make([]bool, rows)
+		thumb[max(0, min(rows-1, a.tasks.detailOffset*rows/max(1, len(details)+a.tasks.detailOffset)))] = true
+	}
+	return sectionBox(th, "Details", right, body, a.width, l.detailsH, false, thumb)
+}
+
+// taskDetailsRows is the label/value table of one task: a tidy two-column
+// layout whose labels line up, with paths shortened on the left (the file name
+// is the useful part) and everything else on the right.
+func (a *App) taskDetailsRows(s *opSession, width int) []string {
 	if s == nil {
 		return nil
 	}
-	label := func(k, v string) []string {
-		if v == "" {
-			return nil
+	th := a.theme
+	valueW := max(8, width-taskLabelW-1)
+	var lines []string
+	add := func(label, value string) {
+		if value == "" {
+			return
 		}
-		parts := wrapText(k+v, max(1, width))
-		for i := range parts {
-			parts[i] = a.theme.DialogText.Render(parts[i])
+		wrapped := wrapText(fsys.SanitizeName(value), valueW)
+		for i, part := range wrapped {
+			if i == 0 {
+				lines = append(lines, th.PropLabel.Render(padRight(label, taskLabelW))+th.DialogText.Render(part))
+				continue
+			}
+			lines = append(lines, strings.Repeat(" ", taskLabelW)+th.DialogText.Render(part))
 		}
-		return parts
 	}
-	lines := []string{a.theme.HelpTitle.Render(fmt.Sprintf("Details · task #%d", s.id))}
-	lines = append(lines, label("Operation: ", fsys.SanitizeName(s.title))...)
-	lines = append(lines, label("State: ", taskStateLabel(s))...)
-	if !s.started.IsZero() {
-		lines = append(lines, label("Started: ", s.started.Format("2006-01-02 15:04:05"))...)
-		if s.finished.IsZero() {
-			lines = append(lines, label("Elapsed: ", a.now().Sub(s.started).Round(time.Second).String())...)
-		} else {
-			lines = append(lines, label("Duration: ", s.finished.Sub(s.started).Round(time.Millisecond).String())...)
+	add("Operation", capitalize(s.title))
+	state := taskStateWord(s)
+	if s.state == taskWaiting && s.waitingFor != "" {
+		state += " · " + s.waitingFor
+	}
+	add("State", state+" · "+taskElapsed(a, s)+" elapsed")
+	if frac, known := taskFraction(s); known {
+		barW := max(6, min(30, valueW-8))
+		line := progressBar(th, frac, barW) + fmt.Sprintf(" %3.0f%%", frac*100)
+		lines = append(lines, th.PropLabel.Render(padRight("Progress", taskLabelW))+line)
+		if s.prog.TotalItems > 0 || s.prog.DoneItems > 0 {
+			items := fmt.Sprintf("%d of %d items", s.prog.DoneItems, s.prog.TotalItems)
+			if s.prog.TotalBytes > 0 {
+				items += " · " + taskBytesText(s)
+			}
+			lines = append(lines, strings.Repeat(" ", taskLabelW)+th.Summary.Render(truncRight(items, valueW)))
 		}
+	} else {
+		add("Progress", taskFallbackText(s))
 	}
 	if len(s.from) > 0 {
-		const sourceCap = 20
+		const sourceCap = 6
 		for i, p := range s.from {
 			if i == sourceCap {
-				lines = append(lines, label("       ", fmt.Sprintf("… %d more source paths", len(s.from)-sourceCap))...)
+				lines = append(lines, th.PropLabel.Render(padRight("Source", taskLabelW))+
+					th.Summary.Render(fmt.Sprintf("… %d more", len(s.from)-sourceCap)))
 				break
 			}
-			prefix := "From: "
-			if i > 0 {
-				prefix = "       "
+			label := ""
+			if i == 0 {
+				label = "From:"
 			}
-			lines = append(lines, label(prefix, fsys.SanitizeName(p))...)
+			lines = append(lines, th.PropLabel.Render(padRight(label, taskLabelW))+
+				th.DialogPath.Render(truncLeft(fsys.SanitizeName(p), valueW)))
 		}
 	}
-	lines = append(lines, label("To: ", fsys.SanitizeName(s.to))...)
-	if s.waitingFor != "" && s.active() {
-		lines = append(lines, label("Waiting for: ", s.waitingFor)...)
+	if s.to != "" {
+		lines = append(lines, th.PropLabel.Render(padRight("To:", taskLabelW))+
+			th.DialogPath.Render(truncLeft(fsys.SanitizeName(s.to), valueW)))
 	}
 	if s.prog.Current != "" && s.active() {
-		lines = append(lines, label("Current: ", fsys.SanitizeName(s.prog.Current))...)
-	}
-	if s.active() {
-		lines = append(lines, label("Progress: ", taskProgressLabel(s))...)
+		lines = append(lines, th.PropLabel.Render(padRight("Current", taskLabelW))+
+			th.DialogPath.Render(truncLeft(fsys.SanitizeName(s.prog.Current), valueW)))
 	}
 	if s.summary != "" {
-		lines = append(lines, label("Result: ", fsys.SanitizeName(s.summary))...)
+		add("Result", s.summary)
 	}
 	if s.prog.LastError != "" {
-		lines = append(lines, label("Last error: ", fsys.SanitizeName(s.prog.LastError))...)
+		// Errors start with the item and end with the reason. Keeping the end
+		// ("permission denied", "no space left") matters more than the path,
+		// and one line keeps the details table short on phones.
+		lines = append(lines, th.PropLabel.Render(padRight("Last error", taskLabelW))+
+			th.Error.Render(truncLeft(fsys.SanitizeName(s.prog.LastError), valueW)))
 	}
-	for _, detail := range s.details {
-		lines = append(lines, label("• ", fsys.SanitizeName(detail))...)
+	if s.finished.IsZero() && !s.started.IsZero() {
+		add("Started", s.started.Format("15:04:05"))
+	} else if !s.finished.IsZero() {
+		add("Finished", s.finished.Format("15:04:05"))
+	}
+	for i, detail := range s.details {
+		if i == 12 {
+			lines = append(lines, th.PropLabel.Render(padRight("", taskLabelW))+
+				th.Summary.Render(fmt.Sprintf("… %d more", len(s.details)-12)))
+			break
+		}
+		add("•", detail)
 	}
 	if width > 0 {
 		for i, line := range lines {
@@ -532,14 +922,21 @@ func (a *App) taskFooterHints() []barItem {
 	if a.tasks.histShowing {
 		return a.historyFooterHints()
 	}
-	return []barItem{
-		item("t/Esc", "close tasks", "esc"),
+	out := []barItem{
+		item("t/Esc", "close", "esc"),
 		item("↑↓", "select", ""),
+		// The history view hangs off this view, so its key is advertised
+		// before the action chips that a narrow bar drops first.
+		item("h", "past runs", "h"),
+	}
+	if s := a.tasks.selectedTask(); s != nil && s.active() {
+		out = append(out, item("⏎/w", "watch live", "enter"))
+	}
+	return append(out,
 		item("c", "cancel selected", "c"),
 		item("PgUp/Dn", "details", ""),
 		item("x", "clear finished", "x"),
-		item("h", "past runs", "h"),
-	}
+	)
 }
 
 // taskCountText is used in the ordinary status line without obscuring more

@@ -9,10 +9,131 @@ The complete description of every feature is in
 
 ## [Unreleased]
 
-New file creation, one key for both new files and new folders, and a
-persistent operation history.
+New file creation, one key for both new files and new folders, a persistent
+operation history, and the Settings screen that now owns every preference.
 
 ### Added
+- **Settings screen.** `F9`, `Ctrl+S` and **Settings…** in the TwinPane
+  action menu (`M`, or a tap on the badge) open one floating window over
+  the panes — the directory behind stays visible, dimmed by the backdrop,
+  exactly like the dialogs — with a blank line between its sections and
+  every durable preference: startup folders and which panel starts focused,
+  focus-mode preview, hidden files, the default sort key/direction/
+  directories-first, the notification corner and duration (2–10 s), the
+  theme presets (`default`, `green`, `amber`), the preferred editor and
+  editor tips, mouse input, the viewer's line wrapping and line numbers,
+  and the compression default format and level. It keeps the help-style
+  interaction (keyboard and mouse, its own hint bar, scroll when the
+  window is smaller than the list, `?` help over it) and shrinks with the
+  terminal. Changes apply live wherever they can — sort, hidden files,
+  theme, viewer defaults for the next file, notification settings for the
+  next pop-up — and are written atomically to `settings.json` in the
+  configuration directory on every change, extending the existing
+  preferences file: ordinary saves still refuse to overwrite a damaged or
+  newer-version file, and the screen announces one at the top with `r`
+  (confirmed with `y`) as the intentional recovery that writes fresh
+  defaults. Startup folders, the starting panel and the mouse apply at the
+  next start; session sorts (`s`/`S`) are still never saved. All flags and
+  environment variables keep their precedence (`--no-mouse`,
+  `TWINPANE_NO_MOUSE`, `--no-editor-tips`), and `Ctrl+S` was unused before
+  (copy is `Ctrl+C`, move `Ctrl+M`), so no existing control changed.
+
+- **Notifications.** Results are now reported by a small, self-erasing pop-up in
+  the bottom-right corner instead of a single line at the bottom of the screen:
+  copy, move and delete results (including background tasks), archive
+  extraction and compression, cloud file operations, reviewed directory plans,
+  renames, folder-size scans and finished edits. Each kind has its own colour
+  and icon (`✓` success, `!` warning, `✕` error, `ℹ` information) that the
+  border and heading share, and it disappears after four seconds. The
+  countdown is drawn into the bottom border itself — a heavy line that drains
+  from right to left — so the pop-up needs no separate progress row and stays
+  small. A tap pins the notification: the countdown stops and it stays until
+  `Esc` closes it or a tap elsewhere releases it, so a long message can be read
+  at leisure; the countdown then carries on from where it stopped. A second tap
+  on a pinned notification about a background task opens that task, and the
+  pop-up never takes the keyboard: panels, dialogs, the task list and the live
+  progress screen keep working while it is shown. The heading is a short name
+  for the operation and its outcome — `Copy completed`, `Delete partially
+  completed`, `Extract cancelled`, `Scan failed`, `Copying in the background` —
+  and the result message, followed by its details, sits inside the box, where
+  it wraps over as many lines as it needs. Prompts, refusals, progress,
+  navigation notes and mode toggles stay in the status line, where they
+  describe what to do next. Only one notification is shown at a time (a newer
+  result replaces the older one, a repeated one restarts its countdown), and
+  its countdown pauses while a dialog covers it.
+
+- **Focus mode.** `Ctrl+O` (also `M` → **Focus mode** and the `^O` hint
+  chip, and reachable by tapping the TwinPane badge) shows one panel at the
+  full width of the terminal. `Ctrl+O` is a plain Ctrl-only key event, so it
+  needs no enhanced terminal keyboard protocol (it works in Termux and with
+  Gboard); `Ctrl+F` still pages down. It is a presentation switch: both panels
+  stay loaded, and the hidden one keeps its folder, cursor, scroll position,
+  selection, sort order, source and navigation history — it is never resized,
+  so leaving focus mode restores the exact two-pane view. `Tab` switches which
+  panel is shown. The extra width adds a `Type` column and a breadcrumb title
+  row with a source badge (`LOCAL`, the remote's name or the archive), and on
+  terminals of at least 100×18 a details pane beside the list (38% of the
+  width, at most 64 columns, list at least 50) with the entry's metadata and a
+  bounded preview of local text files (64 KiB / 400 lines; binary and
+  oversized files are described instead). `p` toggles the pane, the wheel
+  scrolls it, `Ctrl+G` goes to a typed local folder, `~/path` or remote
+  location, and `c`/`m` open a destination chooser — the hidden panel's folder
+  first, then the folders used earlier in the run — before the ordinary
+  validation, confirmation, conflict handling and background task.
+- **Background task experience.** The task screen (`t`) is a table now: state
+  (`RUNNING`, `WAITING`, `STOPPING`, `DONE`, `CANCELED`, `PARTIAL`, `FAILED`) as
+  a glyph plus a word, a progress bar with item counts, size and elapsed time,
+  and a label/value details table for the selected task that wraps long values,
+  shortens paths from the left and scrolls. Columns are dropped from the end on
+  narrow terminals and tasks become two-line rows below about 46 columns, so a
+  phone stays readable. `⏎` or `w` opens a new live progress screen for a
+  running task (large bar, counts, current item, elapsed time); `Esc` leaves it
+  running in the background, `c` cancels, `t` goes to the task list, and prompts
+  are drawn over it. Copy, move and delete operations estimated at 256 MiB or
+  500 entries now ask whether to run in the background or to be watched — the
+  estimate is a bounded walk (`ops.EstimateTransfer`, capped at 4000 entries)
+  and a delete reuses its plan's counts, so small operations keep starting
+  without a prompt. When a task is sent to the background a small notification
+  in the bottom-right corner shows what is running, its progress and `t` to see
+  more; it never takes the keyboard, expires after five seconds, and a tap opens
+  the task list.
+- **Back and forward through each panel's history.** `[` / `]` (also
+  `Alt+←` / `Alt+→`) step through the folders a panel has visited during this
+  run: local folders, archives (including the folder browsed inside them) and
+  rclone remotes. Each panel has its own history, the cursor and the scroll
+  position come back with the folder, and up to 100 steps are kept. History is
+  session-local and separate from the bookmarks: nothing is saved and ignoring
+  it changed nothing else. Locations are stored as typed entries (local,
+  archive, remote with its source), so returning to a remote reconnects to that
+  remote and a local folder that looks like an rclone target is never mistaken
+  for one. A location that disappeared is skipped with a note in the status
+  line; a step whose load fails is put back for a retry; a new navigation drops
+  the forward entries. The hint bar shows `[`/`]` only when a step exists and
+  the `M` menu lists Back/Forward with their step counts.
+- **Read-only preview of remote text files.** `Enter` / `v` on a text file of
+  an rclone remote now opens it in the regular viewer, with the same
+  highlighting, wrapping, `/` search and scrolling. The preview is strictly
+  read-only (editing and Open with are refused with an explanation and a hint
+  to copy the file to a local panel), bounded by the viewer's 8 MiB limit
+  (known-oversize files are refused before any transfer; unknown sizes are
+  measured and cut), and streamed into a private temporary folder (`0700`,
+  file `0600`) outside the browsed folder that is removed whether the read
+  succeeds, fails or is cancelled. `Esc` interrupts the transfer; provider
+  errors keep rclone's own message and are distinct from cancellation.
+- **Advanced Search actions.** `Ctrl+A` in Advanced Search (filename and
+  content mode) opens a menu for the selected result: inspect read-only, open
+  with the default app, **jump to location** (closes the search, shows the
+  result's folder in the panel and selects it), edit, open with, copy/move to
+  the other panel, rename, copy path and delete. Copy, move, rename and delete
+  reuse the panel workflows, including their conflict questions, trash and
+  typed confirmations, cancellation and progress, and the results stay usable
+  afterwards (moved and deleted entries are dropped, renamed ones follow the
+  new name). Content results keep their line: inspection, the jump viewer and
+  `n`/`N` start at the matched line. `Enter` on a folder result now opens that
+  folder. The menu's letters exist only inside it, so they never clash with
+  the query, the panels, `/`, the viewer, the editor or the dialogs, and no
+  existing Advanced Search key changed. Copy path uses the terminal clipboard
+  (OSC 52) and reports the path in the status line.
 - **Persistent operation history** (`t`, then `h`): every file operation —
   copy, move, delete (trash or permanent), rename (single, bulk and from the
   Properties dialog), new file, new folder, compress, extract, synchronization,
@@ -34,8 +155,9 @@ persistent operation history.
   reporting it and starting a fresh history; a file from a newer TwinPane is
   shown read-only and never overwritten.
 - **Retention**: how many runs are kept is configurable (1–200, default 20)
-  and saved in `settings.json`; `+`/`-` in the history view change it and prune
-  older runs immediately. The running session is never pruned, and the file is
+  and saved in `settings.json`; `+`/`-` in the history view and the
+  **Operation history → Runs kept** row of the Settings screen change it and
+  prune older runs immediately. The running session is never pruned, and the file is
   additionally bounded per run and by a size ceiling.
 - **New file** (`n` → *New file…*, also Menu → *New file…*): creates an empty
   file in the active local folder. The file name is typed with or without an
@@ -59,6 +181,29 @@ persistent operation history.
   view; short dialogs draw none. Text dialogs keep their `↑↓ scroll` row.
 
 ### Changed
+- **One visual language for search and analysis.** Live filename search (`/`),
+  Advanced Search and folder-size analysis (`A`) now share the same bordered
+  sections, aligned columns, selection highlight, scroll thumbs and status
+  lines, and reflow instead of breaking on narrow or short terminals.
+- **Advanced Search:** the query and progress live in their own bordered
+  section; results (`Results · N`) and the preview (`Preview · name`) are
+  separate panels that stack when space is tight. Previews are syntax
+  highlighted with Chroma and paint content matches in the match colour, so
+  they no longer blend into strings and comments.
+- **Live filename search:** a `Find files by name` section shows the search
+  root and the `Type a filename or path…` placeholder above a separate
+  `Results · N` list; counts and hidden-file information no longer share a
+  line with the keyboard hints.
+- **Advanced Search previews scroll:** the mouse wheel (or a swipe) over the
+  preview scrolls the file or the matching lines instead of the result list,
+  and the preview's border carries a scroll indicator that can be tapped or
+  dragged. The result list keeps its own wheel scrolling; selecting another
+  result resets the preview to the top.
+- **Folder-size analysis:** a compact bordered summary (target, path,
+  apparent/allocated size, counts), a `Largest items` table with aligned
+  `NAME`/`TYPE`/`SIZE`/`SHARE` columns and proportional bars, a details panel
+  for the selection when it fits, and a separate status line for progress,
+  issues and sorting.
 - `n` opens a small New file / New folder menu instead of jumping into the
   folder prompt. `F7` still opens the new-folder prompt directly, and the
   folder flow itself — including cloud remotes — is unchanged. The hint bar,

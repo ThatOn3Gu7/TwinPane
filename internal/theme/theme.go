@@ -65,6 +65,14 @@ type Theme struct {
 	ProgressFill      lipgloss.Style
 	ProgressEmpty     lipgloss.Style
 
+	// Notifications (phase 12): the border and heading of the small pop-up that
+	// reports a result. One style per kind, so success, warnings, errors and
+	// plain information are distinguishable by colour and by their icon.
+	NoticeOK   lipgloss.Style
+	NoticeWarn lipgloss.Style
+	NoticeErr  lipgloss.Style
+	NoticeInfo lipgloss.Style
+
 	// Scroll indicators (phase 4): the thumb drawn on a panel's right border
 	// or in the right padding column of the search / bulk-rename lists.
 	ScrollThumb    lipgloss.Style // active panel, search, bulk list
@@ -89,10 +97,57 @@ type Theme struct {
 // background, so "Esc" appears as a coloured "  Esc  " block.
 const FooterKeyPad = 2
 
+// preset palette: the colours that differ between presets. Everything else
+// in a Theme is derived from these or stays semantic (green/yellow/red for
+// outcomes, greys for structure), so a preset restyles the identity —
+// accent, cursor, directory colour, badges, borders — without touching how
+// results read.
+type palette struct {
+	accent lipgloss.Color // borders, badge, directories, progress, focus cursor text partner
+	cursor lipgloss.Color // active cursor / scroll-thumb background
+}
+
+// presets are the theme names offered by the settings screen, in the order
+// they cycle. "default" is the historic blue look and must stay first.
+var presets = []struct {
+	name string
+	pal  palette
+}{
+	{"default", palette{accent: "75", cursor: "153"}},
+	{"green", palette{accent: "78", cursor: "114"}},
+	{"amber", palette{accent: "179", cursor: "214"}},
+}
+
+// PresetNames lists the available theme presets in cycle order.
+func PresetNames() []string {
+	out := make([]string, len(presets))
+	for i, p := range presets {
+		out[i] = p.name
+	}
+	return out
+}
+
+// Preset returns the named theme preset. ok is false for unknown names; the
+// caller is expected to fall back to Default().
+func Preset(name string) (Theme, bool) {
+	for _, p := range presets {
+		if p.name == name {
+			return build(p.pal), true
+		}
+	}
+	return Theme{}, false
+}
+
 // Default returns the built-in dark-friendly theme using ANSI-256 colours,
-// which degrade gracefully on 16-colour terminals.
+// which degrade gracefully on 16-colour terminals. It is the "default"
+// preset.
 func Default() Theme {
-	accent := lipgloss.Color("75")
+	return build(presets[0].pal)
+}
+
+func build(p palette) Theme {
+	accent := p.accent
+	cursor := p.cursor
 	muted := lipgloss.Color("244")
 	return Theme{
 		Accent:    accent,
@@ -117,7 +172,7 @@ func Default() Theme {
 		Hidden:   lipgloss.NewStyle().Foreground(lipgloss.Color("243")),
 		Selected: lipgloss.NewStyle().Background(lipgloss.Color("240")),
 
-		CursorActive:   lipgloss.NewStyle().Foreground(lipgloss.Color("16")).Background(lipgloss.Color("153")).Bold(true),
+		CursorActive:   lipgloss.NewStyle().Foreground(lipgloss.Color("16")).Background(cursor).Bold(true),
 		CursorInactive: lipgloss.NewStyle().Foreground(lipgloss.Color("252")).Background(lipgloss.Color("237")),
 
 		TitleBadge: lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("16")).Background(accent).Padding(0, 1),
@@ -147,7 +202,11 @@ func Default() Theme {
 		InputCursor:       lipgloss.NewStyle().Foreground(lipgloss.Color("16")).Background(lipgloss.Color("252")),
 		ProgressFill:      lipgloss.NewStyle().Foreground(accent),
 		ProgressEmpty:     lipgloss.NewStyle().Foreground(lipgloss.Color("238")),
-		ScrollThumb:       lipgloss.NewStyle().Foreground(lipgloss.Color("153")).Bold(true),
+		NoticeOK:          lipgloss.NewStyle().Foreground(lipgloss.Color("114")),
+		NoticeWarn:        lipgloss.NewStyle().Foreground(lipgloss.Color("221")),
+		NoticeErr:         lipgloss.NewStyle().Foreground(lipgloss.Color("203")),
+		NoticeInfo:        lipgloss.NewStyle().Foreground(accent),
+		ScrollThumb:       lipgloss.NewStyle().Foreground(cursor).Bold(true),
 		ScrollThumbOff:    lipgloss.NewStyle().Foreground(lipgloss.Color("247")),
 
 		ArchiveBadge: lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("16")).Background(lipgloss.Color("179")).Padding(0, 1),

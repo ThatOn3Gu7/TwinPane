@@ -626,11 +626,29 @@ Four new packages with no UI dependency. The TUI code lives in four
 
 ### User preferences (`internal/settings`)
 - `settings.json` shares the bookmarks configuration directory and is written
-  atomically with mode 0600. The versioned preferences currently persist the
-  global hidden-files flag. The UI loads it before the panels' initial listing
-  and saves each `h`/`H`/`.` change; an unreadable or newer settings file is
-  left untouched and reported in the status line. The command passes the path
-  through `Options.SettingsPath` so tests can use an isolated file.
+  atomically with mode 0600. The versioned schema (v1) persists: the global
+  hidden-files flag, startup folders and starting panel, the default sort
+  (key, direction, directories-first), focus preview, notification
+  corner/duration, theme preset, preferred editor/tips, mouse, viewer
+  wrap/numbers, and the compression default format plus per-format levels.
+  `Save` refuses a damaged or newer-version file (checked by reloading it
+  first); `Reset` is the deliberate force-rewrite used by the recovery path.
+- The UI loads the file in `New` before the panels' first listing;
+  `applyPreferences` installs the values, `currentPrefs`/`savePrefs` write
+  them back on every change (`toggleHidden` included), and
+  `syncPanelsWithPreferences` pushes panel-affecting values to both panels.
+  `Options.StartDir` overrides the saved startup folders (tests/embedders),
+  the effective mouse is `flag && preference` (decided in `main`, since the
+  program option is fixed at startup) and tips are `flag && preference`.
+  The Settings screen (`internal/ui/settings.go`, `F9`/`Ctrl+S`/menu) edits
+  all of it live where possible and renders the corruption banner plus the
+  `r` reset confirmation. It is not a full-screen view: `View` composites
+  the window with the same `overlay()` used for dialogs, so it floats,
+  centred and backdrop-dimmed, over the panes behind; taps map through the
+  box rectangle that `settingsView` records each frame (like
+  `renderDialog`), and `settingsBody(inner)` lays rows out at the window's
+  inner width with a blank line between sections. The command passes the path through
+  `Options.SettingsPath` so tests can use an isolated file.
 
 ### Operation history (`internal/history`, `ui/history.go`, `ui/historyview.go`)
 - `history.json` sits next to `settings.json` (same config directory) and holds
@@ -667,10 +685,19 @@ Four new packages with no UI dependency. The TUI code lives in four
 - UI: the Tasks screen (`t`) has a second view (`h`)
   `ui/historyview.go`: run rows, the selected run's operation rows and the
   selected operation's details, with `↑↓`/`[`/`]`/`PgUp`/`PgDn` and `+`/`-`
-  for the retention limit (saved to `settings.json`). Widths are truncated to
-  the terminal and the layout shrinks to a header-only body on very short
-  screens. `Options.HistoryPath` overrides the file (tests) and empty keeps
-  the records in memory only.
+  for the retention limit. The view is drawn through the same `sectionBox`
+  chrome as the live task list and receives the same body height
+  (`taskViewRender`), and while it is on screen it owns every key, so the
+  live-task actions (`c` cancel, `x` clear) cannot fire from it. Widths are
+  truncated to the terminal and the layout shrinks to a header-only body on
+  very short screens. `Options.HistoryPath` overrides the file (tests) and
+  empty keeps the records in memory only.
+- The retention limit is one field of `settings.Preferences`
+  (`HistorySessions`), seeded into the store at startup, edited either by
+  `+`/`-` in the history view or by the **Operation history → Runs kept** row
+  of the Settings screen, and written with the rest of the preferences
+  (`App.currentPrefs`) — never as a settings file of its own. `r` on the
+  Settings screen also brings the store's limit back to the default.
 
 ### Open / Open with (`internal/opener`, `ui/open.go`)
 - `filetype.go`: `ByName` (an extension table) and `Sniff` (magic bytes:

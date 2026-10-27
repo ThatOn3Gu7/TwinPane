@@ -28,12 +28,13 @@ func (b Binding) Matches(msg tea.KeyMsg) bool {
 type KeyMap struct {
 	Up, Down, PageUp, PageDown, Top, Bottom            Binding
 	Open, Parent, Home, SyncOther, Compare, FolderSize Binding
+	Back, Forward                                      Binding
 	Select, SelectAll, Unselect                        Binding
 	Switch, Hidden, Sort, Reverse, Refresh             Binding
 	Search                                             Binding
 	Copy, Move, Rename, Delete, Edit                   Binding
 	EditWith                                           Binding
-	Cancel, Tasks, Help, Quit                          Binding
+	Cancel, Tasks, Help, Quit, Settings                Binding
 
 	// Phase 5
 	Properties, View         Binding
@@ -55,14 +56,18 @@ type KeyMap struct {
 // DefaultKeys returns the default key bindings.
 func DefaultKeys() KeyMap {
 	return KeyMap{
-		Up:         Binding{[]string{"up", "k"}, "↑/k", "move up"},
-		Down:       Binding{[]string{"down", "j"}, "↓/j", "move down"},
-		PageUp:     Binding{[]string{"pgup", "ctrl+b"}, "PgUp", "page up"},
-		PageDown:   Binding{[]string{"pgdown", "ctrl+f"}, "PgDn", "page down"},
-		Top:        Binding{[]string{"home", "g"}, "Home/g", "first entry"},
-		Bottom:     Binding{[]string{"end", "G"}, "End/G", "last entry"},
-		Open:       Binding{[]string{"enter", "right", "l"}, "⏎/→/l", "open directory"},
-		Parent:     Binding{[]string{"backspace", "left"}, "⌫/←", "parent directory"},
+		Up:       Binding{[]string{"up", "k"}, "↑/k", "move up"},
+		Down:     Binding{[]string{"down", "j"}, "↓/j", "move down"},
+		PageUp:   Binding{[]string{"pgup", "ctrl+b"}, "PgUp", "page up"},
+		PageDown: Binding{[]string{"pgdown", "ctrl+f"}, "PgDn", "page down"},
+		Top:      Binding{[]string{"home", "g"}, "Home/g", "first entry"},
+		Bottom:   Binding{[]string{"end", "G"}, "End/G", "last entry"},
+		Open:     Binding{[]string{"enter", "right", "l"}, "⏎/→/l", "open directory"},
+		Parent:   Binding{[]string{"backspace", "left"}, "⌫/←", "parent directory"},
+		// One help row for both directions keeps the help screen a page;
+		// the keys themselves are separate bindings (see handleKey).
+		Back:       Binding{[]string{"alt+left", "["}, "[ / ]", "back / forward (history)"},
+		Forward:    Binding{[]string{"alt+right", "]"}, "[ / ]", "back / forward (history)"},
 		Home:       Binding{[]string{"~"}, "~", "go to home directory"},
 		SyncOther:  Binding{[]string{"="}, "=", "same dir in other panel"},
 		Compare:    Binding{[]string{"D"}, "D", "compare local directories"},
@@ -85,6 +90,7 @@ func DefaultKeys() KeyMap {
 		Cancel:     Binding{[]string{"esc"}, "Esc", "cancel dialog / operation"},
 		Tasks:      Binding{[]string{"t"}, "t", "tasks & operation history"},
 		Help:       Binding{[]string{"?", "f1"}, "?", "toggle help"},
+		Settings:   Binding{[]string{"f9", "ctrl+s"}, "F9 / ^S", "settings"},
 		Quit:       Binding{[]string{"q", "ctrl+c", "f10"}, "q", "quit"},
 
 		Properties: Binding{[]string{"P"}, "P", "properties / permissions"},
@@ -112,17 +118,22 @@ func (k KeyMap) helpSections() [2][]helpSection {
 	return [2][]helpSection{
 		{
 			{"Navigation", []Binding{k.Switch, k.Up, k.Down, k.PageUp, k.PageDown, k.Top, k.Bottom,
-				k.Open, k.Parent, k.Home, k.SyncOther}},
+				k.Open, k.Parent, k.Home, k.SyncOther, k.Back}},
 			{"Selection", []Binding{k.Select, k.SelectAll, k.Unselect}},
 			{"Archives", []Binding{
 				{Help: "⏎ on .zip", Desc: "browse (no extraction)"},
 				{Help: "⌫ / Esc", Desc: "leave the archive"},
 				k.Extract, k.ExtractAll, k.Zip}},
 			{"Open & places", []Binding{k.Menu, k.OpenExt, k.OpenWith, k.Bookmarks, k.Bookmark, k.Storage}},
+			{"Background tasks (t)", []Binding{
+				{Help: "⏎ / w", Desc: "watch live progress"},
+				{Help: "c", Desc: "cancel the selected task"},
+				{Help: "x", Desc: "clear finished tasks"},
+				{Help: "h", Desc: "operation history"}}},
 		},
 		{
 			{"File operations", []Binding{k.Copy, k.Move, k.Rename, k.Delete, k.Edit, k.EditWith, k.Properties, k.Cancel}},
-			{"View & general", []Binding{k.View, k.Search, k.Hidden, k.Sort, k.Reverse, k.Refresh, k.Tasks, k.Quit, k.Help}},
+			{"View & general", []Binding{k.View, k.Search, k.Hidden, k.Sort, k.Reverse, k.Refresh, k.Tasks, k.Quit, k.Settings, k.Help}},
 			{"Folders & cloud (rclone)", []Binding{k.New, k.Mkdir, k.Sources,
 				{Help: "c / m", Desc: "upload / download"},
 				{Help: "Esc", Desc: "stop a slow listing"}}},

@@ -520,11 +520,13 @@ func (a *App) finishSync(s *opSession, execution dircompare.Execution, plan dirc
 	state := taskCompleted
 	summary := fmt.Sprintf("Synchronization complete · %d action(s)", completed)
 	level := lvlOK
+	heading := "Sync completed"
 	var details []string
 	details = append(details, fmt.Sprintf("Completed %d of %d reviewed actions", completed, plan.Totals().Actions))
 	switch {
 	case execution.Changed != nil:
 		state, level = taskFailed, lvlErr
+		heading = operationHeading("Sync", true, false, partial)
 		if partial {
 			state = taskPartial
 		}
@@ -532,6 +534,7 @@ func (a *App) finishSync(s *opSession, execution dircompare.Execution, plan dirc
 		details = append(details, errText(execution.Changed))
 	case execution.Canceled:
 		level = lvlWarn
+		heading = operationHeading("Sync", false, true, partial)
 		if partial {
 			state, summary = taskPartial, "Synchronization stopped after cancellation"
 		} else {
@@ -539,6 +542,7 @@ func (a *App) finishSync(s *opSession, execution dircompare.Execution, plan dirc
 		}
 	case len(execution.Errors) > 0:
 		level = lvlErr
+		heading = operationHeading("Sync", true, false, partial)
 		state, summary = taskFailed, "Synchronization stopped after a failure"
 		if partial {
 			state, summary = taskPartial, "Synchronization partially completed before a failure"
@@ -560,7 +564,8 @@ func (a *App) finishSync(s *opSession, execution dircompare.Execution, plan dirc
 		s.hist.errors = append(s.hist.errors, errText(execution.Changed))
 	}
 	a.finishTask(s, state, summary, details...)
-	a.setStatusLevel(summary, level)
+	a.taskResult(s, level, heading, summary, detailsBody(details)...)
+	a.setStatus("", false)
 
 	left, right := plan.Roots()
 	var cmds []tea.Cmd

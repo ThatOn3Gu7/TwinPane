@@ -433,8 +433,9 @@ func (a *App) changeHistoryRetention(delta int) {
 		level = lvlWarn
 	}
 	if a.settingsPath != "" {
-		prefs := settings.Preferences{ShowHidden: a.showHidden, HistorySessions: want}
-		if err := settings.Save(a.settingsPath, prefs); err != nil {
+		// Save the whole preference set: the retention limit is one field of
+		// it, never a file of its own.
+		if err := settings.Save(a.settingsPath, a.currentPrefs()); err != nil {
 			msg += "; not saved as a preference: " + errText(err)
 			level = lvlWarn
 		} else {

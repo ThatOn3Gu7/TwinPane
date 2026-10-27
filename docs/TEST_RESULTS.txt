@@ -1,24 +1,72 @@
-Persistent operation history (unreleased v0.10.0): verification log
-(2026-10-27T05:20Z, go1.27.3 linux/amd64)
+Persistent operation history, New file/New folder and the merge with master:
+verification log (2026-10-27T06:25Z, go1.27.3 linux/amd64)
 
-The change adds `internal/history` (a versioned, atomic JSON store in the
-configuration directory), records every background and foreground file
-operation, adds the history view to the Tasks screen (`t` then `h`) and a
-`historySessions` preference (default 20). File operations, their progress,
-notifications and the existing Tasks screen behaviour are unchanged.
-Everything below ran in this sandbox (Linux x86_64, Debian 13).
+The branch `arena/77073234-twinpane` carries three commits on top of master's
+`9dd9ee6`: New file/New folder (`28447c1`), scrollable dialogs (`16a23d7`) and
+the persistent operation history (`3a037e5`). Meanwhile `origin/master` moved
+to `b6b7930` with 17 commits (focus mode, navigation history, the redesigned
+task screen with live progress and notifications, the Settings screen, shared
+search/analysis chrome, rclone previews). Everything below ran in this sandbox
+(Linux x86_64, Debian 13).
 
-## Summary
-- gofmt: clean (`gofmt -l .` printed nothing).
-- `go vet ./...`: ok.
-- `go test -count=1 ./...`: ok, all packages (22 with tests, 2 without);
-  `internal/ui` 109.6 s, `internal/history` 0.43 s, `internal/settings` 0.01 s.
-- `go test -race -count=1 ./internal/ui`: ok (115.0 s);
-  `-race ./internal/history ./internal/settings`: ok (2.4 s / 1.0 s).
-- New tests: `internal/history/history_test.go` (22 tests) and
-  `internal/ui/history_test.go` (18 tests), plus one settings test and updated
-  expectations in `fileops_test.go` (help text) and `cloud_test.go`
-  (unchanged behaviour, new fixture paths).
+## Branch reconciliation
+- Method: `git merge origin/master` on the feature branch — a normal merge, so
+  both histories are preserved; no rebase, reset, force-push or branch was
+  created, moved or deleted.
+- 14 files conflicted: `CHANGELOG.md`, `README.md`, `docs/USER_GUIDE.md`,
+  `internal/settings/{settings,settings_test}.go` and, in the UI,
+  `{app,archive,cloud,compress,dialog,fileops,hints,keys,tasks}.go`.
+- Resolutions kept both sides rather than picking one:
+  - `internal/settings`: master's versioned `file`/`decode`/`encode`/
+    `Normalized` structure gained `HistorySessions` (omitted when zero, so an
+    old file keeps the default) instead of the branch's smaller
+    `ShowHidden`+`HistorySessions` file; the branch's retention test and
+    master's Reset test both stayed.
+  - `internal/ui/app.go`: master's `applyPreferences`/`currentPrefs`/
+    `StartDir`/startup-pane handling plus the branch's history store,
+    `Options.HistoryPath` and notices; `uiState` keeps `settings` and the
+    filter-input flag.
+  - `internal/ui/tasks.go`: master's redesigned task screen (tables, compact
+    rows, section boxes) with the branch's `h` view as an early return in
+    `taskViewRender`/`taskViewMouse`; the history keys are advertised in the
+    hint bar before the chips a narrow bar drops.
+  - `fileops/archive/compress/cloud.go`: the branch's history bookkeeping and
+    master's `taskResult` notifications, in that order, before `finishTask`.
+  - `dialog.go`: both new dialog kinds and master's key-column layout with the
+    branch's `plainRows`/header cases.
+  - `hints.go`/`keys.go`: master's focus/settings/Ctrl+A hints plus `n` = new
+    file/folder; the help screen gained `h = operation history`.
+  - Docs: master's Unreleased entries plus the branch's New file, scroll and
+    history entries; the user guide keeps master's task-screen and
+    notification text and the branch's history section.
+- Non-Git integration found and fixed after the merge:
+  - `currentPrefs()` did not carry the retention limit, so any unrelated
+    settings save (e.g. toggling hidden files) would have written
+    `historySessions: 0` and reset the preference. It now includes
+    `HistorySessions` from the store, and the history view's `+`/`-` saves the
+    whole preference set instead of a two-field file.
+  - The Settings screen gained an **Operation history → Runs kept** row
+    (`rowHistorySessions`, 1–200 via `history.ClampLimit`, pruning at once);
+    `applyPreferences` (used by `r` reset) also resets the store's limit.
+  - The history view now owns every key while it is on screen: a stray `x`/`c`
+    can no longer clear the task list or cancel a live task from it.
+  - Two master tests assumed the old UI: `TestHistoryKeysStayOutOfDialogs`
+    opened the folder prompt with `n` (now `F7`, since `n` opens the New menu)
+    and `TestHelpMatchesBindings` expected every binding on one 80x60 screen
+    (the help is taller now), so it scrolls and collects all pages.
+
+## Summary (merged tree)
+- `gofmt -l .`: clean; `go vet ./...`: ok.
+- `go test -count=1 ./...`: ok, every package (22 with tests, 2 without);
+  `internal/ui` 133.8 s, `internal/history` 0.47 s, `internal/settings` 0.02 s,
+  `internal/panel` 0.33 s.
+- `go test -race -count=1 ./internal/ui`: ok (140.8 s);
+  `-race ./internal/history ./internal/settings ./internal/panel`: ok
+  (2.4 s / 1.0 s / 2.1 s).
+- New integration tests: `TestSettingsScreenEditsHistoryRetention` (row value,
+  `←` lower, whole-file persistence, unrelated save keeps the limit, floor,
+  `r` + `y` reset) and `TestHistoryViewSwallowsTaskActions` (`x`/`c` inert in
+  the history view, `h` returns to the tasks).
 
 ## What the new tests cover
 - `internal/history`: config-directory path, record/reload round trip with
@@ -75,6 +123,22 @@ Everything below ran in this sandbox (Linux x86_64, Debian 13).
 - `history.json` inspected directly after the runs: records carry `op`,
   `status`, `started`, `finished`, `sources`, `dest`, `items`, `summary`,
   `files`/`bytes` and (for failures) `errors`.
+
+## Merged UI on a raw pty (`scripts/ptyterm.py`, 100x30)
+- `t` renders master's task screen (`Background tasks … idle`, hint bar
+  `t/Esc close ↑↓ select h past runs …`); `h` switches to
+  `Operation history · N runs · M operations · keeping 20`, `h`/`Esc` back.
+- A real copy between panels: `✓ Copy completed / Copied 1 file / →
+  /tmp/.../dst` pop-up, the task row `▸ 1 ✓ DONE Copying ████████ 100% · 1/1`
+  with its details table, and the same operation in the history view:
+  `› 06:02:27 DONE Copy → …/dst` plus `Details · Copy` with state, duration,
+  From/To, items and summary.
+- `-` in the history view: `keeping 19` and `✓ History keeps the last 19
+  runs`; `F9` then `G` shows the Settings screen's last section
+  `Operation history / Runs kept 19 runs (1–200)`; `settings.json` still holds
+  every other preference plus `"historySessions": 19`.
+- `n` still opens the New menu (master's dialog chrome) and `Ctrl+O` opens
+  focus mode — the branch's features sit on the merged UI unchanged.
 
 ## Not verified here
 - rclone and 7-Zip are not installed, so remote operations were exercised

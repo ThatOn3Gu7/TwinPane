@@ -49,6 +49,8 @@ func (h *harness) press(keys ...string) {
 		switch k {
 		case "esc":
 			m = tea.KeyMsg{Type: tea.KeyEsc}
+		case "ctrl+a":
+			m = tea.KeyMsg{Type: tea.KeyCtrlA}
 		case "ctrl+u":
 			m = tea.KeyMsg{Type: tea.KeyCtrlU}
 		case "ctrl+k":
@@ -294,8 +296,8 @@ func TestCopyWithConflictOverwrite(t *testing.T) {
 	if got := readFile(t, filepath.Join(env.dst, "a.txt")); got != "new-a" {
 		t.Fatalf("not overwritten: %q", got)
 	}
-	if st := h.status(); st != "Copied 1 file" {
-		t.Fatalf("status %q", st)
+	if st := h.reported(); !strings.HasPrefix(st, "Copied 1 file") {
+		t.Fatalf("report %q", st)
 	}
 	if !fileExists(filepath.Join(env.src, "a.txt")) {
 		t.Fatal("copy removed source")
@@ -327,8 +329,8 @@ func TestConflictDefaultSkipAndApplyAll(t *testing.T) {
 			t.Fatalf("%s overwritten", n)
 		}
 	}
-	if st := h.status(); !strings.Contains(st, "skipped 2") {
-		t.Fatalf("status %q", st)
+	if st := h.reported(); !strings.Contains(st, "skipped 2") {
+		t.Fatalf("report %q", st)
 	}
 }
 
@@ -344,9 +346,9 @@ func TestCancelAtConflictIsNotReportedAsSuccess(t *testing.T) {
 	h.waitDialog(dlgConflict)
 	h.press("esc")
 	h.idle()
-	st := h.status()
-	if !strings.Contains(st, "cancelled") || h.a.statusLevel != lvlWarn {
-		t.Fatalf("status %q level %d", st, h.a.statusLevel)
+	st := h.reported()
+	if !strings.Contains(st, "cancelled") || h.reportedLevel() != lvlWarn {
+		t.Fatalf("report %q level %d", st, h.reportedLevel())
 	}
 	if fileExists(filepath.Join(env.dst, "b.txt")) {
 		t.Fatal("items after cancel must not be copied")
@@ -363,13 +365,13 @@ func TestCopyIntoItselfRejectedWithMessage(t *testing.T) {
 	h.focus("sub")
 	h.press("c")
 	h.idle()
-	if h.a.dialog != nil || !strings.Contains(h.status(), "into itself") || !h.a.statusErr {
-		t.Fatalf("status %q dialog %v", h.status(), h.a.dialog != nil)
+	if h.a.dialog != nil || !strings.Contains(h.reported(), "into itself") || h.reportedLevel() != lvlErr {
+		t.Fatalf("report %q dialog %v", h.reported(), h.a.dialog != nil)
 	}
 	h.press("m")
 	h.idle()
-	if h.a.dialog != nil || !strings.Contains(h.status(), "into itself") {
-		t.Fatalf("move status %q", h.status())
+	if h.a.dialog != nil || !strings.Contains(h.reported(), "into itself") {
+		t.Fatalf("move report %q", h.reported())
 	}
 }
 
@@ -393,8 +395,8 @@ func TestMoveFolderAndRefresh(t *testing.T) {
 	if e, _ := h.a.Panel(1).Current(); e.Name != "sub" {
 		t.Fatalf("destination cursor should be on moved item, got %q", e.Name)
 	}
-	if !strings.HasPrefix(h.status(), "Moved") {
-		t.Fatalf("status %q", h.status())
+	if !strings.HasPrefix(h.reported(), "Moved") {
+		t.Fatalf("report %q", h.reported())
 	}
 }
 
@@ -411,11 +413,11 @@ func TestCopyPartialFailureIsRetainedInTaskView(t *testing.T) {
 	h.waitDialog(dlgConfirm)
 	h.press("enter")
 	h.idle()
-	if h.a.dialog != nil || h.a.statusLevel != lvlErr {
-		t.Fatalf("background failure should not interrupt browsing, status %q", h.status())
+	if h.a.dialog != nil || h.reportedLevel() != lvlErr {
+		t.Fatalf("background failure should not interrupt browsing, report %q", h.reported())
 	}
-	if !strings.Contains(h.status(), "Copied 1 file, 1 error") {
-		t.Fatalf("status %q", h.status())
+	if !strings.Contains(h.reported(), "Copied 1 file, 1 error") {
+		t.Fatalf("report %q", h.reported())
 	}
 	h.press("t")
 	v := h.view()
@@ -444,8 +446,8 @@ func TestDeleteToTrashDefaultIsNo(t *testing.T) {
 		}
 	}
 	h.press("enter") // default = No
-	if h.a.dialog != nil || !fileExists(filepath.Join(env.src, "a.txt")) || !strings.Contains(h.status(), "nothing was deleted") {
-		t.Fatalf("Enter must cancel: status %q", h.status())
+	if h.a.dialog != nil || !fileExists(filepath.Join(env.src, "a.txt")) || !strings.Contains(h.reported(), "nothing was deleted") {
+		t.Fatalf("Enter must cancel: report %q", h.reported())
 	}
 	h.press("d")
 	h.waitDialog(dlgDelete)
@@ -455,8 +457,8 @@ func TestDeleteToTrashDefaultIsNo(t *testing.T) {
 	if fileExists(filepath.Join(env.src, "a.txt")) || readFile(t, filepath.Join(env.trash, "files", "a.txt")) != "new-a" {
 		t.Fatal("not moved to trash")
 	}
-	if h.status() != "Moved 1 item to the trash" || panelHas(h.a.Panel(0), "a.txt") {
-		t.Fatalf("status %q", h.status())
+	if !strings.HasPrefix(h.reported(), "Moved 1 item to the trash") || panelHas(h.a.Panel(0), "a.txt") {
+		t.Fatalf("report %q", h.reported())
 	}
 	if e, _ := h.a.Panel(0).Current(); e.Name != "b.txt" {
 		t.Fatalf("cursor should move to next entry, got %q", e.Name)
@@ -486,8 +488,8 @@ func TestPermanentRecursiveDeleteRequiresTypedConfirmation(t *testing.T) {
 	if fileExists(filepath.Join(env.src, "sub")) {
 		t.Fatal("not deleted")
 	}
-	if st := h.status(); st != "Deleted 1 item (1 file, 2 folders)" {
-		t.Fatalf("status %q", st)
+	if st := h.reported(); !strings.HasPrefix(st, "Deleted 1 item (1 file, 2 folders)") {
+		t.Fatalf("report %q", st)
 	}
 }
 
@@ -556,8 +558,8 @@ func TestDeletePartialFailureReport(t *testing.T) {
 	if h.a.dialog != nil {
 		t.Fatalf("background delete failure should not replace the UI; status %q", h.status())
 	}
-	if st := h.status(); !strings.Contains(st, "Delete incomplete: 1 of 2 items removed, 1 error") {
-		t.Fatalf("status %q", st)
+	if st := h.reported(); !strings.Contains(st, "Delete incomplete: 1 of 2 items removed, 1 error") {
+		t.Fatalf("report %q", st)
 	}
 	h.press("t")
 	v := h.view()
@@ -727,8 +729,8 @@ func TestLowSpaceDeclineIsRetainedAsCanceledTask(t *testing.T) {
 	cmd := h.a.finishTransfer(s, ops.Result{Kind: ops.Copy, Fatal: errors.New("not enough free space")})
 	h.exec(cmd)
 	h.settle()
-	if s.state != taskCanceled || !strings.Contains(s.summary, "cancelled") || h.a.statusLevel != lvlWarn {
-		t.Fatalf("declined low-space warning should be a canceled task: state=%v summary=%q level=%v", s.state, s.summary, h.a.statusLevel)
+	if s.state != taskCanceled || !strings.Contains(s.summary, "cancelled") || h.reportedLevel() != lvlWarn {
+		t.Fatalf("declined low-space warning should be a canceled task: state=%v summary=%q level=%v", s.state, s.summary, h.reportedLevel())
 	}
 	h.press("t")
 	v := h.view()
@@ -908,12 +910,12 @@ func TestRealCancelDuringLargeCopy(t *testing.T) {
 	h.send(key("enter"))                 // starts the copy
 	h.send(tea.KeyMsg{Type: tea.KeyEsc}) // cancel immediately, before it can finish
 	h.idle()
-	st := h.status()
+	st := h.reported()
 	if strings.HasPrefix(st, "Copied") && fileExists(filepath.Join(env.dst, "big", "f"+string(rune('A'+39)))) {
 		t.Skip("copy finished before cancel could take effect")
 	}
 	if !strings.Contains(st, "cancelled") {
-		t.Fatalf("status %q", st)
+		t.Fatalf("report %q", st)
 	}
 	// no partial temp files anywhere
 	filepath.Walk(env.dst, func(p string, fi os.FileInfo, err error) error {

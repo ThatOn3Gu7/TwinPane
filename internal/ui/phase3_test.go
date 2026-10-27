@@ -285,7 +285,7 @@ func TestSortUnknownMetadataLast(t *testing.T) {
 	for _, desc := range []bool{false, true} {
 		for _, key := range []fsys.SortKey{fsys.SortSize, fsys.SortTime} {
 			c := append([]fsys.Entry(nil), es...)
-			fsys.SortEntries(c, key, desc)
+			fsys.SortEntries(c, key, desc, false)
 			if c[0].Name != "dir" || c[3].Name != "broken" {
 				t.Errorf("key %v desc %v: %v", key, desc, c)
 			}
@@ -349,8 +349,8 @@ func TestBulkRenameTemplateApply(t *testing.T) {
 			t.Fatalf("%s has %q", f, got)
 		}
 	}
-	if h.status() != "Renamed 3 items" || len(h.a.ActivePanel().Selection()) != 0 {
-		t.Fatalf("status %q", h.status())
+	if !strings.HasPrefix(h.reported(), "Renamed 3 items") || len(h.a.ActivePanel().Selection()) != 0 {
+		t.Fatalf("report %q", h.reported())
 	}
 }
 

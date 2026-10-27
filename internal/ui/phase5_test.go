@@ -155,7 +155,11 @@ func TestHintChipsArePaddedAndColoured(t *testing.T) {
 				t.Fatalf("chip %q lacks two spaces each side: %q", it.key, ansi.Strip(chip))
 			}
 			if !strings.Contains(bar, chip+th.FooterDesc.Render(" "+it.desc+" ")) && !strings.Contains(bar, chip+th.FooterDesc.Render(" "+ansi.Truncate(it.desc, w, "…"))) {
-				t.Fatalf("chip %q not followed by its description", it.key)
+				// keepChip hints (the focus-mode toggle "^O") fall back to
+				// the bare padded key when the bar has no room for text.
+				if !it.keepChip {
+					t.Fatalf("chip %q not followed by its description", it.key)
+				}
 			}
 		}
 		if shown == 0 || !strings.Contains(bar, "48;5;249") || !strings.Contains(bar, "38;5;250") {
@@ -551,8 +555,8 @@ func TestArchiveExtractSelectedWithConflict(t *testing.T) {
 	if readFile(t, filepath.Join(env.src, "dir", "sub", "b.txt")) != "deep\n" || readFile(t, filepath.Join(env.src, "dir", "a.txt")) != "inside dir\n" {
 		t.Fatal("folder not extracted recursively")
 	}
-	if !strings.Contains(h.status(), "kept 1 existing") {
-		t.Fatalf("status %q", h.status())
+	if !strings.Contains(h.reported(), "kept 1 existing") {
+		t.Fatalf("report %q", h.reported())
 	}
 	// again, overwriting this time
 	h.press("u")
@@ -594,8 +598,8 @@ func TestExtractWholeArchiveFromFolderAndTraversal(t *testing.T) {
 			t.Fatalf("path traversal wrote %s", p)
 		}
 	}
-	if !strings.Contains(h.status(), "unsafe") {
-		t.Fatalf("status does not mention refused entries: %q", h.status())
+	if !strings.Contains(h.reported(), "unsafe") {
+		t.Fatalf("the report does not mention refused entries: %q", h.reported())
 	}
 	// not an archive: refused clearly, naming the supported formats
 	h.focus("a.txt")
@@ -642,8 +646,8 @@ func TestCreateZipFromSelection(t *testing.T) {
 	h.press("enter")
 	h.idle()
 	h.waitCompressionDone()
-	if !strings.Contains(h.status(), "selection.zip") {
-		t.Fatalf("status %q", h.status())
+	if !strings.Contains(h.reported(), "selection.zip") {
+		t.Fatalf("report %q", h.reported())
 	}
 	arc, err := archive.Open(want)
 	if err != nil {

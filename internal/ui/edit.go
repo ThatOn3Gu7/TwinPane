@@ -112,7 +112,7 @@ func (a *App) editPathsAsk(paths []string, choose, ask bool) tea.Cmd {
 	if choose {
 		return a.openEditorChooser(paths, binary)
 	}
-	ed, err := editor.Resolve(a.edEnv)
+	ed, err := a.resolveEditor()
 	if err != nil {
 		a.setStatus("cannot edit: "+err.Error(), true)
 		return nil
@@ -130,7 +130,7 @@ func (a *App) openEditorChooser(paths, binary []string) tea.Cmd {
 		a.setStatus("no editor found in $PATH (looked for "+strings.Join(editor.Fallbacks(a.edEnv.GOOS), ", ")+"): set $EDITOR or install one", true)
 		return nil
 	}
-	def, defErr := editor.Resolve(a.edEnv)
+	def, defErr := a.resolveEditor()
 	var items []listItem
 	var choices []editor.Editor
 	cursor := -1
@@ -236,7 +236,7 @@ func (a *App) confirmBinaryThenEdit(ed editor.Editor, paths, binary []string, as
 // list. With ask set, or when the editor's keys have not been shown yet
 // this session, the confirmation card comes first.
 func (a *App) runEditor(ed editor.Editor, paths []string, bulkFile string, ask bool) tea.Cmd {
-	if ask || (a.opts.EditorTips && !a.tipsShown[tipKey(ed)]) {
+	if ask || (a.opts.EditorTips && a.tipsPref && !a.tipsShown[tipKey(ed)]) {
 		return a.showEditTip(ed, paths, bulkFile)
 	}
 	return a.launchEditor(ed, paths, bulkFile)
@@ -395,7 +395,8 @@ func (a *App) editorDone(m editorDoneMsg) tea.Cmd {
 	case saved == 0 && len(m.before) > 0:
 		a.setStatusLevel("Finished editing "+what+result, lvlInfo)
 	default:
-		a.setStatusLevel("Finished editing "+what+result, lvlOK)
+		a.result(lvlOK, "Edit completed", "Finished editing "+fsys.SanitizeName(what)+result)
+		a.setStatus("", false)
 	}
 	// The files may have changed size/time (or been renamed/deleted by the
 	// editor): refresh both panels, keeping cursor and selection. The window
@@ -404,10 +405,18 @@ func (a *App) editorDone(m editorDoneMsg) tea.Cmd {
 	return tea.Batch(a.panels[0].Refresh(), a.panels[1].Refresh(), tea.WindowSize(), mouse)
 }
 
+// resolveEditor picks the editor for e / E / help: the preferred editor from
+// the settings first, then the historic chain ($VISUAL, $EDITOR, detected
+// editors). A broken preference is reported in Editor.Note or the error
+// instead of blocking editing.
+func (a *App) resolveEditor() (editor.Editor, error) {
+	return editor.ResolvePreferred(a.edEnv, a.editorCmd)
+}
+
 // editorHelp is the help screen's "External editor" section: the default
 // editor and how to save and quit it.
 func (a *App) editorHelp() helpSection {
-	ed, err := editor.Resolve(a.edEnv)
+	ed, err := a.resolveEditor()
 	if err != nil {
 		return helpSection{"External editor", []Binding{{Help: "none", Desc: "set $EDITOR or install one"}}}
 	}

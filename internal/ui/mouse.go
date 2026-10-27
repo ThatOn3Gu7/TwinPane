@@ -53,6 +53,7 @@ const (
 	areaViewer
 	areaFolderSize
 	areaAdvancedSearch
+	areaAdvancedPreview
 )
 
 // pressState remembers a left-button press on a hint-bar item, so that the
@@ -98,8 +99,12 @@ func (a *App) handleMouse(m tea.MouseMsg) tea.Cmd {
 		return a.dialogMouse(a.dialog, ev)
 	case a.tasks.showing:
 		return a.taskViewMouse(ev)
+	case a.live != nil:
+		return a.liveMouse(ev)
 	case a.showHelp:
 		return a.helpMouse(ev) // help.go: wheel scrolls, a tap closes
+	case a.showSettings:
+		return a.settingsMouse(ev) // settings.go: wheel scrolls, taps pick rows
 	case a.props != nil:
 		return a.propsMouse(ev)
 	case a.viewer != nil:
@@ -114,6 +119,28 @@ func (a *App) handleMouse(m tea.MouseMsg) tea.Cmd {
 		return a.folderSizeMouse(ev)
 	case a.comparison != nil:
 		return a.comparisonMouse(ev)
+	}
+	// The notification: a tap brings it into focus, so it stops counting down
+	// and stays until Esc or a tap outside. It is only drawn over the panels,
+	// so it can never take a click from a dialog or another overlay.
+	if a.noticeAt(ev.X, ev.Y) {
+		if ev.Action == tea.MouseActionRelease && ev.Button == tea.MouseButtonLeft {
+			return a.tapNotice()
+		}
+		return nil
+	}
+	// A tap anywhere else releases a focused notification: its countdown picks
+	// up where it stopped, and the tap still does its normal job below.
+	if ev.Action == tea.MouseActionRelease && ev.Button == tea.MouseButtonLeft {
+		a.unpinNotice()
+	}
+	// The focus-mode preview pane scrolls like the viewer does; taps on it
+	// do nothing (it is not a panel). Overlays above already had their turn.
+	if a.focus && a.focusPreviewAt(ev.X, ev.Y) {
+		if ev.IsWheel() {
+			a.scrollFocusPreview(wheelDelta(ev) * wheelStep)
+		}
+		return nil
 	}
 	// A tap on the TwinPane badge (title row) opens the action menu: it
 	// is visible at any width, unlike the "M menu" chip.
@@ -289,6 +316,13 @@ func (a *App) panelAt(x, y int) (int, int, int, bool) {
 	if y < 1 || y >= 1+ph || x < 0 || x >= a.width {
 		return 0, 0, 0, false
 	}
+	if a.focus {
+		// One panel fills the width; the preview pane is not a panel.
+		if a.focusPreviewAt(x, y) {
+			return 0, 0, 0, false
+		}
+		return a.active, x, y - 1, true
+	}
 	lw := a.width / 2
 	if x < lw {
 		return 0, x, y - 1, true
@@ -375,6 +409,10 @@ func (a *App) dragTo(y int) {
 		if a.viewer != nil {
 			a.viewerScrollTrack(y)
 		}
+	case areaAdvancedPreview:
+		if a.advancedSearch != nil {
+			a.advancedPreviewScrollTrack(y, a.advancedLayout(max(1, a.height-3)))
+		}
 	}
 }
 
@@ -383,7 +421,8 @@ func (a *App) dragTo(y int) {
 // searchGeom returns the screen row of the first result and the number of
 // result rows, as drawn by searchViewRender.
 func (a *App) searchGeom() (top, rows int) {
-	return 2 + len(a.searchHeader(max(10, a.width-4))), a.searchRows()
+	layout := a.searchLayout(max(1, a.height-3))
+	return layout.resultTop + 1, layout.rows
 }
 
 func (a *App) searchMouse(ev tea.MouseEvent) tea.Cmd {
@@ -399,12 +438,12 @@ func (a *App) searchMouse(ev tea.MouseEvent) tea.Cmd {
 	r := ev.Y - top
 	if r < 0 || r >= rows {
 		if ev.Y >= 1 && ev.Y < top {
-			sv.list = false // tap on the header / query: type again
+			sv.list = false // tap on the input section: type again
 		}
 		a.lastClick = clickState{}
 		return nil
 	}
-	if ev.X == a.width-2 && len(sv.matches) > rows {
+	if ev.X == a.width-1 && rows > 0 && len(sv.matches) > rows {
 		a.lastClick = clickState{}
 		a.searchScrollTrack(ev.Y)
 		a.drag = dragState{area: areaSearch, active: true}

@@ -99,6 +99,15 @@ type Panel struct {
 	spinFor    time.Duration      // how long the current load has been running, as of the last tick
 
 	width, height int
+	// wide is set by the UI while the panel fills the whole screen (focus
+	// mode): the path line becomes a breadcrumb and the listing gets room
+	// for a type column. It never changes the number of chrome rows, so
+	// cursors, scroll offsets and mouse geometry survive the switch.
+	wide bool
+
+	// hist is this panel's own session-local back/forward history (see
+	// history.go); it is never shared with the other panel or persisted.
+	hist navHistory
 }
 
 // New creates a panel. Call Load to populate it.
@@ -326,6 +335,7 @@ func (p *Panel) Load(path, focus string, mode LoadMode) tea.Cmd {
 func (p *Panel) loadLocal(path, focus string, mode LoadMode, inArc bool) tea.Cmd {
 	p.CancelLoad()
 	p.seq++
+	p.clearPendingForget()
 	p.beginLoad(path)
 	seq, id, lister, opts := p.seq, p.id, p.lister, p.opts
 	if arc := p.arc; arc != nil && inArc {
@@ -374,6 +384,7 @@ func loadArchive(id int, seq uint64, arc *archive.Archive, inner, focus string, 
 func (p *Panel) loadRemote(src *RemoteSource, loc cloud.Path, focus string, mode LoadMode) tea.Cmd {
 	p.CancelLoad()
 	p.seq++
+	p.clearPendingForget()
 	p.beginLoad(loc.Display())
 	ctx, cancel := context.WithCancel(context.Background())
 	p.loadCancel = cancel
@@ -426,7 +437,9 @@ func (p *Panel) CancelLoad() bool {
 // OpenArchive indexes a supported ZIP or TAR-family archive at path and shows
 // its root folder. On failure the panel stays where it is (Apply returns the error).
 func (p *Panel) OpenArchive(path string) tea.Cmd {
+	p.CancelLoad()
 	p.seq++
+	p.clearPendingForget()
 	p.beginLoad(path)
 	seq, id, opts := p.seq, p.id, p.opts
 	return func() tea.Msg {
@@ -458,6 +471,9 @@ func (p *Panel) Apply(msg LoadedMsg) error {
 	if msg.Seq != p.seq {
 		return nil // stale result from a superseded request
 	}
+	// Where the panel is right now: a completed navigation records it so
+	// Back can return to it (cursor and scroll included).
+	before, hadBefore := p.navState(), p.path != ""
 	p.loading = false
 	p.loadCancel = nil
 	p.pending = ""
@@ -465,6 +481,7 @@ func (p *Panel) Apply(msg LoadedMsg) error {
 	if msg.Err != nil {
 		switch msg.Mode {
 		case LoadNavigate:
+			p.settleNav(msg, false) // a failed back/forward keeps its entry
 			return msg.Err
 		default: // Force / Refresh: show the error inside the panel
 			p.arc = msg.Arc
@@ -486,6 +503,7 @@ func (p *Panel) Apply(msg LoadedMsg) error {
 			p.listing = fsys.Listing{Path: p.path}
 			p.detach()
 			p.cursor, p.offset = 0, 0
+			p.settleNav(msg, false)
 			return msg.Warn
 		}
 	}
@@ -550,6 +568,13 @@ func (p *Panel) Apply(msg LoadedMsg) error {
 		p.offset = p.cursor - prevRow
 	}
 	p.clamp()
+	// A back/forward move already put the place we left on the other stack;
+	// any other completed navigation becomes the new back entry.
+	moved := p.hist.pending != nil && p.hist.pending.seq == msg.Seq
+	p.settleNav(msg, true)
+	if !moved {
+		p.record(before, hadBefore, p.navState())
+	}
 	return msg.Warn
 }
 
@@ -628,6 +653,29 @@ func (p *Panel) ToggleHidden() tea.Cmd { return p.SetShowHidden(!p.opts.ShowHidd
 // it to apply one global setting to both panels.
 func (p *Panel) SetShowHidden(show bool) tea.Cmd {
 	p.opts.ShowHidden = show
+	if p.path == "" {
+		return nil
+	}
+	return p.Refresh()
+}
+
+// SetSort applies an explicit sort key and direction (used by the settings
+// screen) and reloads, keeping the cursor entry like CycleSort. It does
+// nothing to an uninitialized panel, so it is also safe before the first
+// Load.
+func (p *Panel) SetSort(key fsys.SortKey, desc bool) tea.Cmd {
+	p.opts.Sort = key
+	p.opts.Desc = desc
+	if p.path == "" {
+		return nil
+	}
+	return p.Refresh()
+}
+
+// SetDirsFirst groups directories before files (on) or interleaves them by
+// the sort key (off), reloading as above.
+func (p *Panel) SetDirsFirst(on bool) tea.Cmd {
+	p.opts.MixedOrder = !on
 	if p.path == "" {
 		return nil
 	}
@@ -775,6 +823,12 @@ func (p *Panel) clamp() {
 }
 
 // SetSize sets the outer dimensions (including border) of the panel.
+// SetWide switches the full-width (focus mode) rendering on or off.
+func (p *Panel) SetWide(on bool) { p.wide = on }
+
+// Wide reports whether the panel is drawn full width (focus mode).
+func (p *Panel) Wide() bool { return p.wide }
+
 func (p *Panel) SetSize(w, h int) {
 	p.width, p.height = w, h
 	p.clamp()

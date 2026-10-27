@@ -12,6 +12,7 @@ import (
 
 	"github.com/ThatOn3Gu7/TwinPane/internal/fsys"
 	"github.com/ThatOn3Gu7/TwinPane/internal/proc"
+	"github.com/ThatOn3Gu7/TwinPane/internal/scrollbar"
 	"github.com/ThatOn3Gu7/TwinPane/internal/search"
 	"github.com/ThatOn3Gu7/TwinPane/internal/textview"
 )
@@ -42,6 +43,7 @@ type advancedSearchEvent struct {
 	keepPath   string
 	path       string
 	doc        *textview.Doc
+	syntax     []string // Chroma-coloured doc lines (filename preview)
 	err        error
 }
 
@@ -89,9 +91,11 @@ type advancedSearchView struct {
 	previewLoading    bool
 	previewIsDir      bool
 	previewDoc        *textview.Doc
+	previewSyntax     []string // Chroma-coloured preview lines, nil = plain text
 	previewErr        error
 	previewGeneration int
 	previewCancel     context.CancelFunc
+	previewOffset     int // first visible preview line (filename) or match
 
 	ctx     context.Context
 	cancel  context.CancelFunc
@@ -282,7 +286,7 @@ func (a *App) advancedSearchUpdate(msg advancedSearchMsg) tea.Cmd {
 			return v.listen()
 		}
 		v.previewLoading = false
-		v.previewDoc, v.previewErr = msg.event.doc, msg.event.err
+		v.previewDoc, v.previewSyntax, v.previewErr = msg.event.doc, msg.event.syntax, msg.event.err
 	}
 	return v.listen()
 }
@@ -303,6 +307,8 @@ func (a *App) scheduleFilenameFilter(reset bool, keepPath string) {
 		v.filenameResults = nil
 		v.cursor, v.offset = 0, 0
 		v.previewPath, v.previewDoc, v.previewErr = "", nil, nil
+		v.previewSyntax = nil
+		v.previewOffset = 0
 		v.previewIsDir, v.previewLoading = false, false
 		if v.previewCancel != nil {
 			v.previewCancel()
@@ -353,7 +359,7 @@ func (a *App) startAdvancedContentSearch(query, keepPath string) {
 	generation := v.contentGeneration
 	v.contentResults = nil
 	v.contentStatus = search.ContentUpdate{}
-	v.cursor, v.offset = 0, 0
+	v.cursor, v.offset, v.previewOffset = 0, 0, 0
 	v.contentKeepPath = keepPath
 	v.contentLoading = strings.TrimSpace(query) != ""
 	if strings.TrimSpace(query) == "" {
@@ -398,6 +404,7 @@ func (a *App) toggleAdvancedSearchMode() {
 			v.previewCancel()
 		}
 		v.previewPath, v.previewDoc, v.previewErr = "", nil, nil
+		v.previewSyntax = nil
 		v.previewIsDir, v.previewLoading = false, false
 		a.startAdvancedContentSearch(query, "")
 		a.setStatus("content search · exact .git folders skipped", false)
@@ -498,6 +505,10 @@ func (a *App) advancedSearchKey(msg tea.KeyMsg) tea.Cmd {
 	case "ctrl+t":
 		a.toggleAdvancedSearchMode()
 		return nil
+	case "ctrl+a":
+		// The only action shortcut: a contextual menu, so every printable
+		// key still belongs to the query. Home still moves the field cursor.
+		return a.openAdvancedActions()
 	case "?", "f1":
 		a.openHelp()
 		return nil
@@ -540,8 +551,12 @@ func (a *App) setAdvancedCursor(index int) {
 	if v == nil {
 		return
 	}
+	previous := v.cursor
 	v.cursor = index
 	a.clampAdvancedSearch()
+	if v.cursor != previous {
+		v.previewOffset = 0 // a new result starts at the top of the preview
+	}
 	a.refreshAdvancedPreview()
 }
 
@@ -589,6 +604,8 @@ func (a *App) refreshAdvancedPreview() {
 			v.previewCancel()
 		}
 		v.previewPath, v.previewDoc, v.previewErr = "", nil, nil
+		v.previewSyntax = nil
+		v.previewOffset = 0
 		v.previewIsDir, v.previewLoading = false, false
 		return
 	}
@@ -596,12 +613,14 @@ func (a *App) refreshAdvancedPreview() {
 	if path == v.previewPath && (v.previewLoading || v.previewDoc != nil || v.previewErr != nil || v.previewIsDir) {
 		return
 	}
+	v.previewOffset = 0
 	if v.previewCancel != nil {
 		v.previewCancel()
 	}
 	v.previewGeneration++
 	generation := v.previewGeneration
 	v.previewPath, v.previewDoc, v.previewErr = path, nil, nil
+	v.previewSyntax = nil
 	v.previewIsDir, v.previewLoading = false, false
 	if path == "" {
 		return
@@ -620,8 +639,15 @@ func (a *App) refreshAdvancedPreview() {
 	v.previewLoading = true
 	go func() {
 		doc, err := textview.LoadFile(path, textview.Options{MaxBytes: 256 << 10, MaxLines: 10_000, MaxLineBytes: 8 << 10})
+		// Syntax colouring is computed off the UI goroutine with the same
+		// bounded document the preview draws, so painting a frame never
+		// tokenises a file.
+		var syntax []string
+		if err == nil && doc != nil && !doc.Binary && len(doc.Lines) > 0 {
+			syntax = syntaxHighlightLines(path, doc.Lines)
+		}
 		publishAdvancedEvent(v.ctx, workerCtx, v.events, advancedSearchEvent{
-			kind: advancedPreviewEvent, generation: generation, path: path, doc: doc, err: err,
+			kind: advancedPreviewEvent, generation: generation, path: path, doc: doc, syntax: syntax, err: err,
 		})
 	}()
 }
@@ -644,8 +670,12 @@ func (a *App) inspectAdvancedResult() tea.Cmd {
 		entry := &v.entries[index]
 		entry.Resolve()
 		if entry.IsDir {
-			a.setStatusLevel("Advanced Search inspection opens files only", lvlWarn)
-			return nil
+			// Enter on a folder enters it in the main interface, like the
+			// panels do.
+			return a.advancedEnterDirectory(advancedTarget{
+				path: entry.Path, rel: entry.Rel, name: filepath.Base(entry.Path),
+				isDir: true, isLink: entry.IsLink,
+			})
 		}
 		path = entry.Path
 	} else {
@@ -678,12 +708,27 @@ func (a *App) advancedSearchMouse(ev tea.MouseEvent) tea.Cmd {
 	if v == nil {
 		return nil
 	}
+	layout := a.advancedLayout(max(1, a.height-3))
 	if ev.IsWheel() {
 		delta := wheelDelta(ev) * wheelStep
+		if advancedPreviewAt(layout, ev.X, ev.Y) {
+			a.advancedPreviewScroll(delta)
+			return nil
+		}
 		a.moveAdvancedCursor(delta)
 		return nil
 	}
 	if ev.Action != tea.MouseActionPress || ev.Button != tea.MouseButtonLeft {
+		return nil
+	}
+	if advancedPreviewAt(layout, ev.X, ev.Y) {
+		// A tap outside the scroll indicator does not move the result
+		// selection; the preview is read-only.
+		a.lastClick = clickState{}
+		if ev.X == a.width-1 && a.advancedPreviewScrollable(layout) {
+			a.advancedPreviewScrollTrack(ev.Y, layout)
+			a.drag = dragState{area: areaAdvancedPreview, active: true}
+		}
 		return nil
 	}
 	top, rows := a.advancedSearchGeom()
@@ -703,7 +748,97 @@ func (a *App) advancedSearchMouse(ev tea.MouseEvent) tea.Cmd {
 	return nil
 }
 
-// advancedSearchGeom is implemented with the responsive layout renderer.
+// advancedPreviewAt reports whether (x, y) is inside the preview panel,
+// including its border. The panel is on the right in the wide layout and
+// below the results otherwise.
+func advancedPreviewAt(layout advancedSearchLayout, x, y int) bool {
+	if layout.compact || layout.previewH <= 0 {
+		return false
+	}
+	if y < layout.previewTop || y >= layout.previewTop+layout.previewH {
+		return false
+	}
+	if layout.wide {
+		return x > layout.resultsW
+	}
+	return true
+}
+
+// advancedPreviewWindow is the scrollable length of the preview and the
+// number of lines or matches shown at once.
+func (a *App) advancedPreviewWindow(layout advancedSearchLayout) (total, visible int) {
+	v := a.advancedSearch
+	if v == nil || layout.previewH <= 0 {
+		return 0, 0
+	}
+	visible = layout.previewH - 2
+	if visible <= 0 {
+		return 0, 0
+	}
+	if v.mode == advancedContentMode {
+		if v.cursor < 0 || v.cursor >= len(v.contentResults) {
+			return 0, 0
+		}
+		if visible > 1 {
+			visible-- // the first row summarises the file
+		}
+		return len(v.contentResults[v.cursor].Matches), visible
+	}
+	if v.previewDoc == nil || v.previewDoc.Binary {
+		return 0, 0
+	}
+	return len(v.previewDoc.Lines), visible
+}
+
+// advancedPreviewScrollable reports whether the preview has anything to
+// scroll at the current size.
+func (a *App) advancedPreviewScrollable(layout advancedSearchLayout) bool {
+	total, visible := a.advancedPreviewWindow(layout)
+	return total > visible
+}
+
+// advancedPreviewScroll moves the preview by delta lines.
+func (a *App) advancedPreviewScroll(delta int) {
+	v := a.advancedSearch
+	if v == nil || delta == 0 {
+		return
+	}
+	layout := a.advancedLayout(max(1, a.height-3))
+	total, visible := a.advancedPreviewWindow(layout)
+	v.previewOffset = max(0, min(v.previewOffset+delta, max(0, total-visible)))
+	a.clampAdvancedPreview()
+}
+
+// clampAdvancedPreview keeps the offset valid after a resize or a new file.
+func (a *App) clampAdvancedPreview() {
+	v := a.advancedSearch
+	if v == nil {
+		return
+	}
+	layout := a.advancedLayout(max(1, a.height-3))
+	total, visible := a.advancedPreviewWindow(layout)
+	v.previewOffset = max(0, min(v.previewOffset, max(0, total-visible)))
+}
+
+// advancedPreviewScrollTrack jumps to the position clicked on the preview's
+// scroll indicator.
+func (a *App) advancedPreviewScrollTrack(y int, layout advancedSearchLayout) {
+	v := a.advancedSearch
+	if v == nil {
+		return
+	}
+	total, visible := a.advancedPreviewWindow(layout)
+	if visible <= 0 || total <= visible {
+		return
+	}
+	// The first text row is one screen row below the panel's top border.
+	cell := y - (layout.previewTop + 1)
+	off := scrollbar.OffsetAt(cell, total, visible, visible)
+	v.previewOffset = max(0, min(off, total-visible))
+}
+
+// advancedSearchGeom returns the screen row of the first result and the
+// number of result rows, as drawn by the responsive layout renderer.
 func (a *App) advancedSearchGeom() (top, rows int) {
-	return a.advancedSearchResultTop(), a.advancedSearchResultRows()
+	return a.advancedSearchResultTop() + 1, a.advancedSearchResultRows()
 }

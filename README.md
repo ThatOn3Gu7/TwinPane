@@ -105,10 +105,29 @@ The [user guide](docs/USER_GUIDE.md) describes every feature in detail.
   editing on filesystems that support it.
 
 **Background tasks**
-- Long-running file operations continue in the background. Press `t` to review
-  active progress and completed results; cancel the selected active task with
-  `c`, or clear finished history with `x`. Active tasks must finish or be
-  cancelled before quitting.
+- Long-running file operations continue in the background. `t` opens a task
+  list with a state column (`RUNNING`, `DONE`, `FAILED`…), a progress bar, size
+  and elapsed time, plus a details table for the selected task. `⏎` or `w`
+  watches a running task on a live progress screen that `Esc` leaves in the
+  background; `c` cancels the selected task and `x` clears finished history.
+  Active tasks must finish or be cancelled before quitting.
+- A copy, move or delete that is clearly large — about 256 MiB or 500 entries —
+  asks whether to run in the background or to be watched. Sending it to the
+  background shows a small, non-blocking notification with its progress.
+
+**Notifications**
+- Results of file operations (copy, move, delete, extract, compress, rename,
+  sync), folder-size scans and finishing an edit appear as a small pop-up in
+  the bottom-right corner instead of a line at the bottom. Its heading names
+  what was done and how it went — `✓ Copy completed`, `✕ Delete partially
+  completed`, `! Move cancelled` — and the result itself, with any details,
+  sits inside the box (`Copied 61 files, 16 folders`, then the destination).
+  Each kind has its own colour and icon, the bottom border itself drains as the
+  time left runs out, and the pop-up goes away by itself after a few seconds.
+  Tap it to keep it on screen long enough to read (`Esc` closes it, a tap
+  elsewhere lets it carry on); normal keys keep working while it is shown.
+  Prompts, refusals, progress and navigation notes stay in the status line,
+  where they belong.
 
 **Operation history**
 - Every file operation is also written to a persistent history: copy, move,
@@ -213,6 +232,23 @@ Not included: configurable keys or themes, and editing archives in place.
   largest-first results and apparent/allocated size totals.
 - **Background task view** (`t`) tracks active operations and their results;
   cancel active tasks or clear completed history.
+- **Back and forward per panel** (`[` / `]`, `Alt+←` / `Alt+→`) revisit the
+  folders a panel has seen this session — local, inside an archive or on an
+  rclone remote — restoring the cursor and scroll position. Each panel has its
+  own history; it is never saved and stays separate from the bookmarks.
+  Missing locations are skipped with a note, and a fresh navigation drops the
+  forward steps.
+- **Read-only preview of remote text files:** `Enter` / `v` streams up to the
+  viewer's 8 MiB limit through rclone into a private temporary folder that is
+  deleted afterwards. It is strictly read-only (edit and Open with are
+  refused; copy the file to a local panel to work on it), `Esc` cancels the
+  transfer, and provider errors keep rclone's own explanation.
+- **Focus mode** (`Ctrl+O`) shows one panel at full width with a
+  breadcrumb path line, a `Type` column and a details pane that previews the
+  selected local text file, while the hidden panel keeps its folder, cursor
+  and history untouched. `Tab` switches panels, `p` toggles the pane,
+  `Ctrl+G` goes to a typed local or remote location, and `c` / `m` open a
+  destination chooser (hidden panel first, then the folders used this run).
 - **TAR browsing** lets you inspect TAR and supported compressed-TAR archives
   read-only and selectively extract entries.
 - **Hidden-file visibility** now persists across launches.
@@ -444,12 +480,16 @@ twinpane --version
 | `D` / `A` | compare folders / analyze sizes | `t` | background tasks; `h` = operation history |
 | `b` / `B` | bookmarks / add | `M` | action menu |
 | `i` | storage | `?` / `F1` | help (with `/` filter) |
+| `F9` / `Ctrl+S` | settings | | |
 | `~` | home folder | `q` / `F10` | quit when idle; active tasks must finish or be cancelled |
 | `Ctrl+R` ¹ | sources: local / cloud | `n` | new file / new folder menu |
 | `Ctrl+L` ¹ | refresh both panels | `F7` ¹ | new folder (direct) |
+| `[` / `Alt+←` ² | back in this panel's history | `]` / `Alt+→` ² | forward in this panel's history |
 
 ¹ New in v0.8.0; since the unreleased v0.10.0, `n` opens the New file / New
-folder menu and `F7` keeps creating a folder directly.
+folder menu and `F7` keeps creating a folder directly. ² New in v0.9.0: each
+panel keeps its own navigation history (cursor restored, separate from
+bookmarks), and remote text files open in the read-only viewer.
 
 The [user guide](docs/USER_GUIDE.md#keyboard-controls) lists every key,
 including those of the viewer, dialogs, search and bulk rename.
@@ -468,6 +508,15 @@ including those of the viewer, dialogs, search and bulk rename.
 `TWINPANE_NO_MOUSE=1` (same as `--no-mouse`), `TWINPANE_CONFIG_DIR` (an
 absolute path for the bookmarks and settings files; default
 `~/.config/twinpane`, on macOS `~/Library/Application Support/twinpane`).
+
+**Settings:** `F9`, `Ctrl+S` or `M` → **Settings…** open a floating
+preferences window over the panes — the directory behind stays visible —
+(startup folders and starting panel, hidden files, default sort,
+notification corner/duration, theme presets, preferred editor and tips,
+mouse, viewer wrap/line numbers, compression defaults). Preferences are
+stored atomically in `settings.json` in the configuration directory; the
+flags above and `TWINPANE_NO_MOUSE` keep overriding them for the session,
+and a damaged file is reported on the screen with `r` to reset it.
 
 ## Building from source
 

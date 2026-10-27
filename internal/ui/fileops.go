@@ -41,7 +41,11 @@ type opTransferValidatedMsg struct {
 	id      int
 	req     ops.Request
 	targets []fsys.Entry
-	err     error
+	// est is the bounded size guess that decides whether the user is offered
+	// the background / watch-progress choice (see taskmode.go). It is computed
+	// in the same goroutine as validation, so no operation waits for it.
+	est ops.Estimate
+	err error
 }
 
 type opTransferDoneMsg struct {
@@ -76,6 +80,13 @@ type opSession struct {
 	summary          string
 	details          []string
 
+	// mode is how the operation reports itself while it runs: in the task list
+	// only (the default, used by small operations without any prompt) or on
+	// the live progress screen (chosen for large ones, see taskmode.go).
+	mode opMode
+	// est is the bounded size guess shown by the mode choice.
+	est ops.Estimate
+
 	srcPanel   int
 	panelPaths [2]string // panel locations captured when the task starts
 	from       []string
@@ -86,7 +97,24 @@ type opSession struct {
 	kind       ops.Kind
 	isDelete   bool
 	plan       ops.DeletePlan
-	hist       opHistory // persistent history record (history.go)
+	// dstPanel is the destination panel of a transfer (the other panel for
+	// panel operations, chosen explicitly when the operation starts outside
+	// the panels, as in Advanced Search where srcPanel is -1). It is -1 when
+	// a focus-mode destination is not shown by any panel.
+	dstPanel int
+	// dstChosen records that the destination was chosen explicitly, so an
+	// off-screen destination (dstPanel == -1) is not mistaken for a session
+	// built without one.
+	dstChosen bool
+
+	// fromLabel replaces the "From:" folder in the transfer confirmation when
+	// the operation was not started from the panel's cursor (Advanced Search).
+	fromLabel string
+	// after runs once a transfer or delete finishes; overlays use it to keep
+	// their own lists in sync with the filesystem.
+	after func(*App)
+
+	hist opHistory // persistent history record (history.go)
 }
 
 func (s *opSession) active() bool {
@@ -107,7 +135,8 @@ func (a *App) newSession(title string, srcPanel int, targets []string) (*opSessi
 	a.opSeq++
 	s := &opSession{
 		id: a.opSeq, title: title, state: taskRunning, cancel: cancel,
-		events: make(chan tea.Msg, 32), srcPanel: srcPanel, names: map[string]bool{}, selection: map[string]bool{},
+		events: make(chan tea.Msg, 32), srcPanel: srcPanel, dstPanel: 1 - srcPanel,
+		names: map[string]bool{}, selection: map[string]bool{},
 		started: a.now(),
 	}
 	for i, p := range a.panels {
@@ -369,10 +398,11 @@ func (a *App) handleOpMsg(msg tea.Msg) (tea.Cmd, bool) {
 		if m.err != nil {
 			summary := fmt.Sprintf("cannot %s: %s", s.kind, errText(m.err))
 			a.finishTask(s, taskFailed, summary, summary)
-			a.setStatusLevel(summary, lvlErr)
+			a.taskResult(s, lvlErr, capitalize(s.kind.String())+" failed", summary, "nothing was transferred")
 			return nil, true
 		}
-		a.enqueueTaskPrompt(taskPrompt{taskID: s.id, kind: promptTransferConfirm, transfer: m.req, targets: m.targets})
+		s.est = m.est
+		a.enqueueTaskPrompt(taskPrompt{taskID: s.id, kind: promptTransferConfirm, transfer: m.req, targets: m.targets, est: m.est})
 		return nil, true
 	case opTransferDoneMsg:
 		if s := lookup(m.id); s != nil && s.active() {
@@ -423,7 +453,7 @@ func (a *App) handleOpMsg(msg tea.Msg) (tea.Cmd, bool) {
 			state := taskOutcome(false, m.err, 0, false)
 			summary := "cannot delete: " + errText(m.err)
 			a.finishTask(s, state, summary, summary)
-			a.setStatusLevel(summary, lvlErr)
+			a.taskResult(s, lvlErr, "Delete failed", summary, "nothing was deleted")
 			return nil, true
 		}
 		s.plan = m.plan
@@ -457,6 +487,9 @@ func (a *App) beginTransfer(kind ops.Kind) tea.Cmd {
 		return a.beginCloudTransfer(kind) // cloud.go
 	}
 	srcIdx := a.active
+	if a.focus {
+		return a.beginFocusTransfer(kind) // focus_dest.go
+	}
 	src, dst := a.panels[srcIdx], a.panels[1-srcIdx]
 	targets := src.Targets()
 	if len(targets) == 0 {
@@ -477,7 +510,8 @@ func (a *App) beginTransfer(kind ops.Kind) tea.Cmd {
 	targets = append([]fsys.Entry(nil), targets...)
 	go func() {
 		err := ops.Validate(req)
-		s.events <- opTransferValidatedMsg{s.id, req, targets, err}
+		est := ops.EstimateTransfer(req)
+		s.events <- opTransferValidatedMsg{s.id, req, targets, est, err}
 	}()
 	return a.startCmds(s)
 }
@@ -485,7 +519,11 @@ func (a *App) beginTransfer(kind ops.Kind) tea.Cmd {
 func (a *App) transferDialog(s *opSession, req ops.Request, targets []fsys.Entry) {
 	verb := capitalize(req.Kind.String())
 	d := &dialog{kind: dlgConfirm, title: fmt.Sprintf("%s %s?", verb, describe(targets))}
-	d.body = append(d.body, text("From:"), path(s.panelPaths[s.srcPanel]), text("To:"), path(req.DestDir), blank())
+	from := s.fromLabel
+	if from == "" && s.srcPanel >= 0 && s.srcPanel < len(s.panelPaths) {
+		from = s.panelPaths[s.srcPanel]
+	}
+	d.body = append(d.body, text("From:"), path(from), text("To:"), path(req.DestDir), blank())
 	d.body = append(d.body, nameList(targets)...)
 	if req.Kind == ops.Move {
 		d.body = append(d.body, blank(), hint("Items are removed from the source only after they have been moved (across filesystems: copied and verified first)."))
@@ -503,7 +541,7 @@ func (a *App) transferDialog(s *opSession, req ops.Request, targets []fsys.Entry
 		{label: verb + " (Enter)", run: func(a *App) tea.Cmd {
 			a.dialog = nil
 			a.finishTaskPrompt(s, true)
-			return a.startTransfer(s, req)
+			return a.confirmTaskMode(s, s.est, func() tea.Cmd { return a.startTransfer(s, req) })
 		}},
 		{label: "Cancel (Esc)", run: cancelTransfer},
 	}
@@ -519,6 +557,9 @@ func (a *App) startTransfer(s *opSession, req ops.Request) tea.Cmd {
 		s.cancel() // end the completed validation context before transferring
 	}
 	ctx, cancel := context.WithCancel(context.Background())
+	// Only a transfer that really starts becomes a destination the focus-mode
+	// picker offers again (the confirmation may still be cancelled).
+	a.noteDest(req.DestDir, "recent")
 	s.cancel, s.title, s.kind, s.to = cancel, req.Kind.Verb(), req.Kind, req.DestDir
 	a.historyTouch(s)
 	s.state, s.waitingFor = taskRunning, ""
@@ -527,7 +568,7 @@ func (a *App) startTransfer(s *opSession, req ops.Request) tea.Cmd {
 		res := ops.Run(ctx, req, h)
 		s.events <- opTransferDoneMsg{s.id, res}
 	}()
-	return a.startCmds(s)
+	return a.runStarted(s)
 }
 
 func (a *App) conflictDialog(s *opSession, m opConflictMsg) {
@@ -616,20 +657,29 @@ func (a *App) lowSpaceDialog(s *opSession, m opLowSpaceMsg) {
 }
 
 func (a *App) finishTransfer(s *opSession, res ops.Result) tea.Cmd {
-	src := a.panels[s.srcPanel]
-	if res.OK() && a.sourceSelectionUnchanged(s) {
-		src.ClearSelection()
-	}
 	var cmds []tea.Cmd
-	if s.kind == ops.Move {
-		focus := ""
-		if src.Path() == s.panelPaths[s.srcPanel] {
-			focus = src.NextFocus(s.names)
+	// A session started outside the panels (Advanced Search) has no source
+	// panel: the panel selection and cursor must stay untouched.
+	if s.srcPanel >= 0 && s.srcPanel < len(a.panels) && a.panels[s.srcPanel] != nil {
+		src := a.panels[s.srcPanel]
+		if res.OK() && a.sourceSelectionUnchanged(s) {
+			src.ClearSelection()
 		}
-		cmds = append(cmds, a.refreshPanelAt(s.srcPanel, s.panelPaths[s.srcPanel], focus))
+		if s.kind == ops.Move {
+			focus := ""
+			if src.Path() == s.panelPaths[s.srcPanel] {
+				focus = src.NextFocus(s.names)
+			}
+			cmds = append(cmds, a.refreshPanelAt(s.srcPanel, s.panelPaths[s.srcPanel], focus))
+		}
 	}
-	dstIdx := 1 - s.srcPanel
-	cmds = append(cmds, a.refreshPanelAt(dstIdx, s.panelPaths[dstIdx], s.first))
+	dstIdx := s.dstPanel
+	if dstIdx < 0 || dstIdx >= len(a.panels) || (dstIdx == s.srcPanel && !s.dstChosen) {
+		dstIdx = 1 - s.srcPanel // sessions built by hand (tests) before dstPanel existed
+	}
+	if dstIdx >= 0 && dstIdx < len(a.panels) {
+		cmds = append(cmds, a.refreshPanelAt(dstIdx, s.panelPaths[dstIdx], s.first))
+	}
 
 	summary := res.Summary()
 	details := appendTaskDetail(nil, "Stopped", res.Fatal)
@@ -657,17 +707,47 @@ func (a *App) finishTransfer(s *opSession, res ops.Result) tea.Cmd {
 		s.hist.errors = append(s.hist.errors, errText(res.Fatal))
 	}
 	a.finishTask(s, state, summary, details...)
+	if s.after != nil {
+		s.after(a)
+	}
+	// The outcome is a notification, not a line at the bottom of the screen:
+	// the heading names the operation and how it went, the message carries the
+	// counts and the destination is the context underneath.
+	op := capitalize(s.kind.String())
+	level := lvlErr
 	switch {
 	case s.lowSpaceDeclined:
-		a.setStatusLevel(summary, lvlWarn)
+		level = lvlWarn
 	case res.OK():
-		a.setStatusLevel(summary, lvlOK)
+		level = lvlOK
 	case res.Fatal == nil && len(res.Errors) == 0 && len(res.Leftovers) == 0:
-		a.setStatusLevel(summary, lvlWarn)
-	default:
-		a.setStatusLevel(summary, lvlErr)
+		level = lvlWarn
 	}
+	failed := res.Fatal != nil || len(res.Errors)+len(res.Leftovers) > 0
+	// partial above only means "some items were processed"; for the heading it
+	// has to mean "not all of them were", so a clean copy stays "completed".
+	canceled := res.Canceled || s.lowSpaceDeclined
+	incomplete := partial && (failed || canceled || res.Skipped > 0)
+	heading := operationHeading(op, failed, canceled, incomplete)
+	body := []string{}
+	if res.OK() || partial {
+		body = append(body, transferWhere(s))
+	}
+	if n := len(res.Errors) + len(res.Leftovers); n > 0 {
+		body = append(body, fmt.Sprintf("%s — details in the task list (t)", plural(n, "item")+" failed"))
+	}
+	a.taskResult(s, level, heading, summary, body...)
+	a.setStatus("", false)
 	return tea.Batch(cmds...)
+}
+
+// transferWhere describes the destination of a finished transfer for the
+// notification body (the heading carries the counts).
+func transferWhere(s *opSession) string {
+	if s.to == "" {
+		return ""
+	}
+	return "→ " + fsys.SanitizeName(s.to)
 }
 
 // ---- delete ------------------------------------------------------------------
@@ -753,7 +833,7 @@ func (a *App) deleteDialog(s *opSession, plan ops.DeletePlan) {
 	start := func(a *App) tea.Cmd {
 		a.dialog = nil
 		a.finishTaskPrompt(s, true)
-		return a.startDelete(s, plan)
+		return a.confirmTaskMode(s, ops.EstimateDelete(plan), func() tea.Cmd { return a.startDelete(s, plan) })
 	}
 	d.onEsc = cancelDel
 	if typed {
@@ -806,20 +886,25 @@ func (a *App) startDelete(s *opSession, plan ops.DeletePlan) tea.Cmd {
 		res := ops.Delete(ctx, plan, tr, h)
 		s.events <- opDeleteDoneMsg{s.id, res}
 	}()
-	return a.startCmds(s)
+	return a.runStarted(s)
 }
 
 func (a *App) finishDelete(s *opSession, res ops.DeleteResult) tea.Cmd {
-	p := a.panels[s.srcPanel]
 	n := len(s.plan.Paths)
-	if res.OK() && a.sourceSelectionUnchanged(s) {
-		p.ClearSelection()
+	dir, focus := "", ""
+	if s.srcPanel >= 0 && s.srcPanel < len(a.panels) && a.panels[s.srcPanel] != nil {
+		p := a.panels[s.srcPanel]
+		dir = s.panelPaths[s.srcPanel]
+		if res.OK() && a.sourceSelectionUnchanged(s) {
+			p.ClearSelection()
+		}
+		if p.Path() == dir {
+			focus = p.NextFocus(s.names)
+		}
+	} else {
+		dir = s.fromLabel // Advanced Search: the folder the result lives in
 	}
-	focus := ""
-	if p.Path() == s.panelPaths[s.srcPanel] {
-		focus = p.NextFocus(s.names)
-	}
-	cmd := a.refreshPanelsAt(s.panelPaths[s.srcPanel], focus)
+	cmd := a.refreshPanelsAt(dir, focus)
 
 	var summary string
 	removed := fmt.Sprintf("%d of %d items", res.Removed, n)
@@ -842,25 +927,35 @@ func (a *App) finishDelete(s *opSession, res ops.DeleteResult) tea.Cmd {
 		s.hist.result = "moved to the trash"
 	}
 	state := taskOutcome(res.Canceled, nil, len(res.Failed), partial)
+	level := lvlErr
+	body := []string{}
+	heading := "Delete completed"
 	switch {
 	case res.OK():
-		a.setStatusLevel(summary, lvlOK)
+		level = lvlOK
 	case res.Canceled && len(res.Failed) == 0:
 		msg := "Delete cancelled: " + removed + " removed; remaining items untouched"
 		if !res.UseTrash && res.Files+res.Dirs > 0 {
 			msg += fmt.Sprintf(" (%s, %s deleted — a folder in progress may be partly emptied)", plural(res.Files, "file"), plural(res.Dirs, "folder"))
 		}
-		summary = msg
-		a.setStatusLevel(msg, lvlWarn)
+		summary, level, heading = msg, lvlWarn, "Delete cancelled"
 	default:
 		msg := fmt.Sprintf("Delete incomplete: %s removed, %s", removed, plural(len(res.Failed), "error"))
 		if res.Canceled {
 			msg += ", cancelled"
 		}
 		summary = msg
-		a.setStatusLevel(msg, lvlErr)
+		heading = operationHeading("Delete", true, res.Canceled, partial)
 	}
+	if len(res.Failed) > 0 {
+		body = append(body, fmt.Sprintf("%s — details in the task list (t)", plural(len(res.Failed), "error")))
+	}
+	a.taskResult(s, level, heading, summary, body...)
+	a.setStatus("", false)
 	a.finishTask(s, state, summary, details...)
+	if s.after != nil {
+		s.after(a)
+	}
 	return cmd
 }
 
@@ -895,7 +990,7 @@ func (a *App) renameOne(e fsys.Entry) tea.Cmd {
 		}
 		a.recordRename("Rename", started, filepath.Join(dir, old), filepath.Join(dir, v), nil)
 		a.dialog = nil
-		a.setStatusLevel(fmt.Sprintf("Renamed %q to %q", old, v), lvlOK)
+		a.result(lvlOK, "Rename completed", fmt.Sprintf("Renamed %q to %q", old, v), "in "+fsys.SanitizeName(dir))
 		focus := v
 		if cur, ok := p.Current(); ok && cur.Name != old {
 			focus = cur.Name // a selected item elsewhere was renamed: keep the cursor

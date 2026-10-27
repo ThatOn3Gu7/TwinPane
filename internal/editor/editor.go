@@ -39,7 +39,7 @@ func SystemEnv() Env {
 type Editor struct {
 	Path   string   // absolute path of the executable
 	Args   []string // extra arguments placed before the file names
-	Source string   // "$VISUAL", "$EDITOR", "detected" or "chosen"
+	Source string   // "$VISUAL", "$EDITOR", "settings", "detected" or "chosen"
 	Name   string   // command as configured, for messages
 	Label  string   // human-readable name for the chooser ("Neovim")
 	Note   string   // set when $VISUAL/$EDITOR could not be used
@@ -187,6 +187,53 @@ func Detect(env Env) []Editor {
 			Name: k.Cmd, Label: k.Label, Single: k.Single})
 	}
 	return out
+}
+
+// FromCommand resolves a preferred editor command line from the settings
+// file ("code --wait" → Path code, Args --wait). It uses the same parsing
+// and $PATH lookup as an environment variable; the error says the preference
+// was at fault.
+func FromCommand(env Env, cmd string) (Editor, error) {
+	fields, err := SplitArgs(cmd)
+	if err != nil || len(fields) == 0 {
+		return Editor{}, fmt.Errorf("preferred editor %q cannot be parsed", cmd)
+	}
+	p, err := env.LookPath(fields[0])
+	if err != nil {
+		return Editor{}, fmt.Errorf("preferred editor %q was not found", fields[0])
+	}
+	p = absPath(p)
+	return Editor{
+		Path: p, Args: fields[1:], Source: "settings",
+		Name: cmd, Label: labelFor(filepath.Base(p), env.GOOS),
+	}, nil
+}
+
+// ResolvePreferred behaves like Resolve but tries the preferred editor from
+// the settings first: an explicit TwinPane preference wins over $VISUAL and
+// $EDITOR, which still apply whenever the preference is empty. An unusable
+// preference does not block editing — it is reported in Editor.Note (or in
+// the error, when nothing else is found either) and resolution continues
+// down the historic chain.
+func ResolvePreferred(env Env, preferred string) (Editor, error) {
+	if preferred == "" {
+		return Resolve(env)
+	}
+	ed, prefErr := FromCommand(env, preferred)
+	if prefErr == nil {
+		return ed, nil
+	}
+	fallback, err := Resolve(env)
+	note := prefErr.Error()
+	if err != nil {
+		return Editor{}, fmt.Errorf("%s; %w", note, err)
+	}
+	if fallback.Note != "" {
+		fallback.Note = note + "; " + fallback.Note
+	} else {
+		fallback.Note = note
+	}
+	return fallback, nil
 }
 
 // Resolve picks the editor for the e key: $VISUAL, then $EDITOR, then the

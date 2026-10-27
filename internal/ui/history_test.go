@@ -17,6 +17,7 @@ import (
 	"github.com/ThatOn3Gu7/TwinPane/internal/compress"
 	"github.com/ThatOn3Gu7/TwinPane/internal/history"
 	"github.com/ThatOn3Gu7/TwinPane/internal/ops"
+	"github.com/ThatOn3Gu7/TwinPane/internal/settings"
 )
 
 // Persistent operation history: recording, browsing and retention.
@@ -506,6 +507,77 @@ func TestRetentionKeyChangesLimitAndKeepsCurrentRun(t *testing.T) {
 	}
 }
 
+// TestSettingsScreenEditsHistoryRetention covers the Settings screen's half of
+// the retention preference: the row exists, its arrows change the limit and the
+// file, and an unrelated preference change keeps the saved limit intact (the
+// whole preference set is written, never just one field).
+func TestSettingsScreenEditsHistoryRetention(t *testing.T) {
+	root := t.TempDir()
+	settingsPath, historyPath := configPaths(root)
+	if err := os.MkdirAll(filepath.Dir(settingsPath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	a := New(Options{Version: "test", StartDir: root, SettingsPath: settingsPath, HistoryPath: historyPath})
+	drain(a, a.Init())
+	a.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+	want := settings.DefaultHistorySessions
+	if got := a.historyRetention(); got != want {
+		t.Fatalf("default retention = %d, want %d", got, want)
+	}
+
+	press(a, "f9")
+	for a.settingsScr.sel > int(rowHistorySessions) {
+		press(a, "up")
+	}
+	for a.settingsScr.sel < int(rowHistorySessions) {
+		press(a, "down")
+	}
+	if got := a.settingsRows()[rowHistorySessions].value; got != "20 runs (1–200)" {
+		t.Fatalf("row value = %q", got)
+	}
+	// ← (h) lowers the limit by one and prunes nothing yet.
+	press(a, "h")
+	if got := a.historyRetention(); got != want-1 {
+		t.Fatalf("retention after ← = %d, want %d", got, want-1)
+	}
+	if data, err := os.ReadFile(settingsPath); err != nil || !strings.Contains(string(data), `"historySessions": 19`) {
+		t.Fatalf("retention not saved: %s (%v)", data, err)
+	}
+
+	// Flipping an unrelated preference must not reset the retention.
+	for a.settingsScr.sel > int(rowShowHidden) {
+		press(a, "up")
+	}
+	press(a, "space") // show hidden files
+	prefs, err := settings.Load(settingsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !prefs.ShowHidden {
+		t.Fatal("the toggle did not reach the file")
+	}
+	if prefs.HistorySessions != want-1 {
+		t.Fatalf("saving another preference changed the retention to %d", prefs.HistorySessions)
+	}
+
+	// The floor and the ceiling hold, and r brings the default back.
+	for a.settingsScr.sel < int(rowHistorySessions) {
+		press(a, "down")
+	}
+	for i := 0; i < 40; i++ {
+		press(a, "h")
+	}
+	if got := a.historyRetention(); got != history.MinSessions {
+		t.Fatalf("retention floor = %d, want %d", got, history.MinSessions)
+	}
+	press(a, "r")
+	press(a, "y") // the reset dialog's explicit action
+	if got := a.historyRetention(); got != want {
+		t.Fatalf("retention after reset = %d, want %d", got, want)
+	}
+	press(a, "esc")
+}
+
 // ---- browsing the history in the Tasks screen ------------------------------------
 
 func seedHistory(t *testing.T, path string, sessions int, opsPer int) {
@@ -534,6 +606,46 @@ func seedHistory(t *testing.T, path string, sessions int, opsPer int) {
 			})
 		}
 	}
+}
+
+// TestHistoryViewSwallowsTaskActions: the keys of the live task actions (x
+// clears finished tasks, c cancels one) must not fire while the history view
+// is on screen — the user is reading past runs, not driving this run.
+func TestHistoryViewSwallowsTaskActions(t *testing.T) {
+	root := t.TempDir()
+	settingsPath, historyPath := configPaths(root)
+	os.MkdirAll(filepath.Dir(historyPath), 0o700)
+	seedHistory(t, historyPath, 2, 1)
+	a := New(Options{Version: "test", StartDir: root, SettingsPath: settingsPath, HistoryPath: historyPath})
+	drain(a, a.Init())
+	a.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+
+	// A finished task in this run's list, so "x" would have something to clear.
+	press(a, "t")
+	task, _ := a.newSession("Copying", 0, nil)
+	a.finishTask(task, taskCompleted, "Copied 1 file")
+	before := len(a.tasks.order)
+	if before == 0 {
+		t.Fatal("the test needs a finished task in the list")
+	}
+
+	press(a, "h") // into the history view
+	if !a.tasks.histShowing {
+		t.Fatal("h must switch to the history view")
+	}
+	press(a, "x")
+	if got := len(a.tasks.order); got != before {
+		t.Fatalf("x cleared tasks from the history view: %d -> %d", before, got)
+	}
+	press(a, "c")
+	if !a.tasks.showing || !strings.Contains(a.View(), "Operation history") {
+		t.Fatal("c must not act on the task list from the history view")
+	}
+	press(a, "h") // back to the tasks
+	if a.tasks.histShowing {
+		t.Fatal("h must return to the task list")
+	}
+	press(a, "t")
 }
 
 func TestHistoryViewBrowseAndDetails(t *testing.T) {

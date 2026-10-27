@@ -60,6 +60,7 @@ func (a *App) helpColumns() [2][]helpSection {
 	if a.folderSize != nil {
 		cols[1] = append(cols[1], helpSection{"Folder-size analysis", folderSizeHelp})
 	}
+	cols[0] = append(cols[0], helpSection{"Focus mode", focusModeHelp})
 	cols[1] = append(cols[1], helpSection{"Search workflow", searchModeHelp})
 	if a.advancedSearch != nil {
 		cols[1] = append(cols[1], helpSection{"Advanced Search", advancedSearchHelp})
@@ -83,11 +84,20 @@ var searchModeHelp = []Binding{
 	{Help: "Esc", Desc: "close; preserve both panes"},
 }
 
+var focusModeHelp = []Binding{
+	{Help: "Ctrl+O", Desc: "focus mode: one panel at full width, with a details pane"},
+	{Help: "p", Desc: "preview pane on / off (wide terminals)"},
+	{Help: "Ctrl+G", Desc: "go to a local folder or a remote location (box:photos)"},
+	{Help: "c / m", Desc: "copy / move: pick the destination (last used folders first)"},
+}
+
 var advancedSearchHelp = []Binding{
 	{Help: "type", Desc: "filter relative paths by fuzzy character sequence"},
 	{Help: "Ctrl+T", Desc: "switch between filename and content search; query is preserved"},
 	{Help: "↑ / ↓", Desc: "move through results; the preview follows the selection"},
-	{Help: "Enter", Desc: "inspect a file read-only; Esc returns to the same results"},
+	{Help: "Enter", Desc: "inspect a file read-only (or open a folder); Esc returns to the same results"},
+	{Help: "Ctrl+A", Desc: "actions: open, jump, edit, open with, copy, move, rename, copy path, delete"},
+	{Help: "Content results", Desc: "inspection and jumping open the matched line; n / N walk the matches"},
 	{Help: "CONTENT", Desc: "smart-case search; matching lines and distinct highlights are shown"},
 	{Help: ".git", Desc: "exact .git directories are skipped, including nested repositories"},
 	{Help: "LIMITS", Desc: "binary files are skipped; traversal, byte and result caps are reported"},

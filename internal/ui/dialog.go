@@ -42,6 +42,10 @@ const (
 	dlgStorage   // storage overview (i)
 	dlgRunWith   // "Run a program…" prompt
 
+	// phase 11 (focus mode)
+	dlgGoTo // Ctrl+G: type a local path or a remote location
+	dlgDest // copy/move destination chooser (focus mode)
+
 	// phase 9
 	dlgSources     // Sources picker (Ctrl+R): local files or an rclone remote
 	dlgMkdir       // new folder name prompt
@@ -51,6 +55,8 @@ const (
 	dlgNewMenu // n: small menu with New file / New folder
 	dlgNewFile // new file: name, optional format
 	dlgFormat  // searchable list of predefined file extensions
+	// phase 13
+	dlgSettings // settings text field / reset confirmation (F9 screen)
 )
 
 // dlgCompress is the compression dialog (z). It kept the kind of the
@@ -491,14 +497,17 @@ func (a *App) renderDialog(d *dialog) string {
 			}
 		}
 		for i, it := range d.list {
-			num := "   "
+			// The key column is always followed by a separating space: a
+			// three-cell key ("esc") must never run into its label
+			// ("escLeave the archive").
+			num := "    "
 			switch {
 			case it.header, d.plainRows:
-				num = "   "
+				num = "    "
 			case keyed:
-				num = runewidth.FillRight(it.key, 3)
+				num = runewidth.FillRight(it.key, 3) + " "
 			case i < 9:
-				num = string(rune('1'+i)) + "  "
+				num = string(rune('1'+i)) + "   "
 			}
 			row := num + it.label + strings.Repeat(" ", labelW-runewidth.StringWidth(it.label))
 			if it.detail != "" {

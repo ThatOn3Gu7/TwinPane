@@ -189,7 +189,7 @@ func TestSearchResultsIndicator(t *testing.T) {
 	h.searchDone()
 	h.typeText("f", false)
 	h.searchDone()
-	col := h.a.width - 2
+	col := h.a.width - 1 // the indicator is drawn on the results panel's border
 	v := h.view()
 	if len(thumbCells(v, col)) == 0 {
 		t.Fatalf("search results without indicator:\n%s", v)
@@ -315,13 +315,25 @@ func TestHelpMatchesBindings(t *testing.T) {
 	h.press("?")
 	v := h.view()
 	k := DefaultKeys()
+	// The help is taller than the screen once every section is listed, so all
+	// pages are collected: a binding that lands on the last page still counts.
+	all := v
+	for i := 0; i < 40 && h.a.helpScrollable; i++ {
+		prev := h.view()
+		h.press("pgdown")
+		next := h.view()
+		if next == prev {
+			break
+		}
+		all += "\n" + next
+	}
 	for _, b := range k.helpRows() {
-		if !strings.Contains(v, b.Help) || !strings.Contains(v, b.Desc) {
+		if !strings.Contains(all, b.Help) || !strings.Contains(all, b.Desc) {
 			t.Errorf("help lacks %q %q", b.Help, b.Desc)
 		}
 	}
 	for _, w := range []string{"Mouse & touch", "2× tap", "swipe", "External editor", "Neovim", ":wq"} {
-		if !strings.Contains(v, w) {
+		if !strings.Contains(all, w) {
 			t.Errorf("help lacks %q", w)
 		}
 	}
@@ -884,8 +896,8 @@ func TestEditorTipCard(t *testing.T) {
 	env.editFn = func(args []string) { os.WriteFile(args[len(args)-1], []byte("changed!"), 0o644) }
 	h.press("enter")
 	h.settle()
-	if len(env.execs) != 2 || !strings.HasSuffix(h.status(), "— saved") {
-		t.Fatalf("execs %d status %q", len(env.execs), h.status())
+	if len(env.execs) != 2 || !strings.Contains(h.reported(), "— saved") {
+		t.Fatalf("execs %d report %q", len(env.execs), h.reported())
 	}
 	// saved once: later launches go straight to the editor
 	h.press("e")
@@ -932,15 +944,15 @@ func TestSavedDetection(t *testing.T) {
 	env.editFn = func(args []string) { os.WriteFile(filepath.Join(env.src, "a.txt"), []byte("other content"), 0o644) }
 	h.press("e")
 	h.settle()
-	if st := h.status(); !strings.Contains(st, "Finished editing 2 files — 1 of 2 saved") {
-		t.Fatalf("status %q", st)
+	if st := h.reported(); !strings.Contains(st, "Finished editing 2 files — 1 of 2 saved") {
+		t.Fatalf("report %q", st)
 	}
 	h.press("u")
 	h.focus("b.txt")
 	env.editFn = func(args []string) { os.WriteFile(filepath.Join(env.src, "b.txt"), []byte("other content"), 0o644) }
 	h.press("e")
 	h.settle()
-	if st := h.status(); st != "Finished editing b.txt — saved" {
-		t.Fatalf("status %q", st)
+	if st := h.reported(); !strings.HasPrefix(st, "Finished editing b.txt — saved") {
+		t.Fatalf("report %q", st)
 	}
 }

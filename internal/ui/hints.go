@@ -6,6 +6,8 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
+
+	"github.com/ThatOn3Gu7/TwinPane/internal/foldersize"
 )
 
 // barItem is one item of the context hint bar at the bottom of the screen.
@@ -15,6 +17,11 @@ import (
 type barItem struct {
 	key, desc string
 	send      string // key string (tea.KeyMsg.String()) to synthesise; "" = not clickable
+	// keepChip draws the padded key alone (no description) instead of
+	// dropping the item when the bar is too full for both. The focus-mode
+	// toggle uses it: on a narrow terminal "^O" still tells you how to get
+	// back to two panes.
+	keepChip bool
 }
 
 func item(key, desc, send string) barItem { return barItem{key: key, desc: desc, send: send} }
@@ -36,8 +43,12 @@ func (a *App) hints() (items []barItem, pinned *barItem) {
 		return a.dialogHints(a.dialog), nil
 	case a.tasks.showing:
 		return a.taskFooterHints(), nil
+	case a.live != nil:
+		return a.liveHints(), nil
 	case a.showHelp:
 		return a.helpHints(), nil
+	case a.showSettings:
+		return a.settingsHints(), nil
 	case a.props != nil:
 		return a.propsHints(), nil
 	case a.viewer != nil:
@@ -55,6 +66,19 @@ func (a *App) hints() (items []barItem, pinned *barItem) {
 	}
 	help := item("?", "help", "?")
 	return a.browseHints(), &help
+}
+
+// liveHints describes the live progress screen: it is a view of one running
+// task, so the chips are about leaving it, not about browsing.
+func (a *App) liveHints() []barItem {
+	s := a.liveTaskSession()
+	out := []barItem{item("↑↓", "scroll", "")}
+	if s != nil && s.active() {
+		out = append(out, item("c", "cancel", "c"), item("Esc", "background", "esc"))
+	} else {
+		out = append(out, item("⏎", "close", "enter"), item("Esc", "close", "esc"))
+	}
+	return append(out, item("t", "tasks", "t"))
 }
 
 // browseHints adapts the normal-mode hints to the active panel: actions
@@ -81,6 +105,10 @@ func (a *App) browseHints() []barItem {
 	isBrowsable := ok && !cur.IsDir && !cur.IsParent && a.isBrowsableArchive(cur.Path)
 
 	out := []barItem{item("Tab", "switch", "tab")}
+	// the mode and history chips come right after Tab: they are contextual,
+	// and the end of the bar is what narrow terminals drop
+	out = append(out, a.focusHints()...)
+	out = append(out, a.navHints(p)...)
 	if isBrowsable && nsel == 0 {
 		out = append(out, item("⏎", "browse archive", "enter"), item("x", "extract", "x"))
 	}
@@ -102,7 +130,12 @@ func (a *App) browseHints() []barItem {
 		if len(targets) > 1 {
 			rename = "bulk rename"
 		}
-		out = append(out, item("c", "copy", "c"), item("m", "move", "m"), item("r", rename, "r"), item("d", "delete", "d"))
+		copyDesc, moveDesc := "copy", "move"
+		if a.focus {
+			// one pane: the destination is chosen first (focus_dest.go)
+			copyDesc, moveDesc = "copy to…", "move to…"
+		}
+		out = append(out, item("c", copyDesc, "c"), item("m", moveDesc, "m"), item("r", rename, "r"), item("d", "delete", "d"))
 		files := true
 		for _, e := range targets {
 			if e.IsDir {
@@ -149,7 +182,13 @@ func (a *App) browseHints() []barItem {
 	}
 	// phase 9, again after everything that was there before
 	out = append(out, item("^R", "sources", "ctrl+r"), item("n", "new file / folder", "n"))
-	return out
+	out = append(out, a.focusToggleHint()...)
+	// phase 13: the settings screen, last like the other late additions.
+	// keepChip (and the position after the focus toggle, which keeps its
+	// own keep-chip priority) means a bare "F9" still renders from the
+	// leftover cells of a crowded bar, and the full "F9 settings" chip
+	// shows once the bar has room.
+	return append(out, barItem{key: "F9", desc: "settings", send: "f9", keepChip: true})
 }
 
 // remoteHints is the hint bar of a panel showing an rclone remote: only
@@ -159,6 +198,8 @@ func (a *App) remoteHints() []barItem {
 	cur, ok := p.Current()
 	nsel := len(p.Selection())
 	out := []barItem{item("Tab", "switch", "tab"), item("t", "tasks", "t")}
+	out = append(out, a.focusHints()...)
+	out = append(out, a.navHints(p)...)
 	if ok && cur.IsDir && nsel == 0 {
 		out = append(out, item("⏎", "open", "enter"))
 	}
@@ -184,8 +225,9 @@ func (a *App) remoteHints() []barItem {
 	if a.showHidden {
 		hidden = "hide hidden"
 	}
-	out = append(out, item("h", hidden, "h"), item("s/S", "sort", "s"), item("M", "menu", "M"), item("q", "quit", "q"))
-	return out
+	out = append(out, item("h", hidden, "h"), item("s/S", "sort", "s"))
+	out = append(out, item("M", "menu", "M"), item("q", "quit", "q"))
+	return append(out, a.focusToggleHint()...)
 }
 
 // archiveHints is the hint bar of a panel browsing a ZIP or TAR archive: only
@@ -195,6 +237,8 @@ func (a *App) archiveHints() []barItem {
 	cur, ok := p.Current()
 	nsel := len(p.Selection())
 	out := []barItem{item("Tab", "switch", "tab"), item("t", "tasks", "t"), item("Esc", "leave archive", "esc")}
+	out = append(out, a.focusHints()...)
+	out = append(out, a.navHints(p)...)
 	if len(p.Targets()) > 0 {
 		out = append(out, item("x", "extract", "x"))
 	}
@@ -226,7 +270,8 @@ func (a *App) archiveHints() []barItem {
 	if a.showHidden {
 		hidden = "hide hidden"
 	}
-	return append(out, item("h", hidden, "h"), item("s/S", "sort", "s"), item("q", "quit", "q"))
+	out = append(out, item("h", hidden, "h"), item("s/S", "sort", "s"))
+	return append(append(out, item("q", "quit", "q")), a.focusToggleHint()...)
 }
 
 func (a *App) searchHints() []barItem {
@@ -387,25 +432,50 @@ func (a *App) footerView() string {
 	avail := a.width - pinW
 	var b strings.Builder
 	used := 0
+	draw := func(it barItem, s string) {
+		w := lipgloss.Width(s)
+		if it.send != "" {
+			a.footerHits = append(a.footerHits, footerHit{used, used + w, it.send})
+		}
+		b.WriteString(s)
+		used += w
+	}
+	rest := items
 	for i, it := range items {
 		s := seg(it)
 		w := lipgloss.Width(s)
 		if used+w > avail {
 			if i > 0 {
+				rest = items[i:]
 				break
 			}
 			// the first item alone is too wide: shorten its description
 			s = a.fitSegment(it, avail)
 			w = lipgloss.Width(s)
 			if w == 0 || used+w > avail {
+				rest = items[i:]
 				break
 			}
 		}
-		if it.send != "" {
-			a.footerHits = append(a.footerHits, footerHit{used, used + w, it.send})
+		draw(it, s)
+		rest = items[i+1:]
+	}
+	// Chips that must stay reachable (keepChip: the focus-mode toggle) are
+	// drawn into whatever room is left, with their description when it fits
+	// and as a bare padded key otherwise. They are the lowest priority, so
+	// nothing that fits today moves: the chip only takes leftover cells.
+	for _, it := range rest {
+		if !it.keepChip {
+			continue
 		}
-		b.WriteString(s)
-		used += w
+		s := seg(it)
+		if used+lipgloss.Width(s) > avail {
+			s = a.theme.FooterKey.Render(it.key)
+		}
+		if used+lipgloss.Width(s) > avail {
+			continue
+		}
+		draw(it, s)
 	}
 	if pinned != nil && avail >= 0 {
 		// right-align the pinned item
@@ -446,12 +516,17 @@ func (a *App) fitSegment(it barItem, w int) string {
 
 // keyFor builds the key message that a clickable hint stands for.
 func keyFor(s string) tea.KeyMsg {
+	if s == "focus" {
+		// the hint chip / menu action of the focus-mode toggle (focus.go)
+		return tea.KeyMsg{Type: keyFocusMode}
+	}
 	special := map[string]tea.KeyType{
 		"esc": tea.KeyEsc, "enter": tea.KeyEnter, "tab": tea.KeyTab, "backspace": tea.KeyBackspace,
-		"ctrl+r": tea.KeyCtrlR, "ctrl+l": tea.KeyCtrlL, "ctrl+f": tea.KeyCtrlF, "f7": tea.KeyF7,
-		"ctrl+t": tea.KeyCtrlT, "f4": tea.KeyF4, "up": tea.KeyUp, "down": tea.KeyDown,
+		"ctrl+r": tea.KeyCtrlR, "ctrl+l": tea.KeyCtrlL, "ctrl+f": tea.KeyCtrlF, "ctrl+a": tea.KeyCtrlA,
+		"f7": tea.KeyF7, "ctrl+t": tea.KeyCtrlT, "f4": tea.KeyF4, "up": tea.KeyUp, "down": tea.KeyDown,
 		"pgup": tea.KeyPgUp, "pgdown": tea.KeyPgDown, "left": tea.KeyLeft, "right": tea.KeyRight,
 		"shift+tab": tea.KeyShiftTab, "home": tea.KeyHome, "end": tea.KeyEnd,
+		"f9": tea.KeyF9, "ctrl+s": tea.KeyCtrlS,
 	}
 	if t, ok := special[s]; ok {
 		return tea.KeyMsg{Type: t}
@@ -460,4 +535,42 @@ func keyFor(s string) tea.KeyMsg {
 		return tea.KeyMsg{Type: tea.KeySpace, Runes: []rune{' '}}
 	}
 	return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(s)}
+}
+
+// advancedSearchHints is the hint bar of Advanced Search: read-only result
+// navigation, plus the mode switch and help.
+func (a *App) advancedSearchHints() []barItem {
+	return []barItem{
+		item("↑↓", "move", ""),
+		item("^A", "actions", "ctrl+a"),
+		item("Enter", "open / inspect", "enter"),
+		item("^T", "toggle files/content", "ctrl+t"),
+		item("?", "help", "?"),
+		item("Esc", "close", "esc"),
+	}
+}
+
+// folderSizeHints is the hint bar of folder-size analysis. It follows the
+// scan state: only Esc while loading, retry after a failure, and the sort /
+// navigation keys once there is a result.
+func (a *App) folderSizeHints() []barItem {
+	v := a.folderSize
+	if v == nil {
+		return nil
+	}
+	if v.loading {
+		return []barItem{item("Esc", "cancel scan", "esc")}
+	}
+	if v.result == nil || v.root == nil {
+		return []barItem{item("r", "retry scan", "r"), item("?", "keys/semantics", "?"), item("Esc", "close", "esc")}
+	}
+	out := []barItem{
+		item("Enter", "open directory", "enter"), item("←", "parent", "left"),
+		item("s", "size", "s"), item("n", "name", "n"), item("r", "refresh", "r"),
+	}
+	if foldersize.AllocatedSizeSupported() {
+		out = append(out, item("a", "allocated sort", "a"))
+	}
+	out = append(out, item("?", "keys/semantics", "?"), item("Esc", "close", "esc"))
+	return out
 }

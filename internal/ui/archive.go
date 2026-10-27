@@ -113,8 +113,9 @@ func (a *App) refuseArchiveDest(what string) bool {
 // for a double tap, the editor as in phase 4).
 func (a *App) openFile(p *panel.Panel, e fsys.Entry, tap bool) tea.Cmd {
 	if p.InRemote() {
-		a.setStatus("files on a remote cannot be opened directly — copy it to a local panel first (c)", true)
-		return nil
+		// remote files open in the read-only preview (viewer_remote.go): no
+		// local app can read them, and nothing on the remote is ever written
+		return a.openViewer(p, e)
 	}
 	if p.InArchive() {
 		return a.openViewer(p, e)
@@ -413,16 +414,15 @@ func (a *App) finishExtract(s *opSession, res archive.ExtractResult, parent, par
 		details = append(details, "Canceled; completed entries were kept, the destination folder may have been created, and the remaining entries were not extracted")
 	}
 	state := taskOutcome(res.Canceled, res.Fatal, len(res.Errors), partial)
+	level := lvlErr
 	switch {
 	case res.OK():
-		a.setStatusLevel(summary+" → "+res.Dest, lvlOK)
+		level = lvlOK
 		if a.sourceSelectionUnchanged(s) {
 			a.panels[s.srcPanel].ClearSelection()
 		}
 	case res.Canceled && res.Fatal == nil && len(res.Errors) == 0:
-		a.setStatusLevel(summary, lvlWarn)
-	default:
-		a.setStatusLevel(summary, lvlErr)
+		level = lvlWarn
 	}
 	s.hist.files, s.hist.dirs, s.hist.bytes = res.Files, res.Dirs, res.Bytes
 	s.hist.errors = itemErrorTexts(res.Errors)
@@ -432,6 +432,12 @@ func (a *App) finishExtract(s *opSession, res archive.ExtractResult, parent, par
 	if res.Unsafe > 0 {
 		s.hist.result = fmt.Sprintf("%d unsafe archive path(s) refused", res.Unsafe)
 	}
+	body := []string{"→ " + fsys.SanitizeName(res.Dest)}
+	if len(res.Errors) > 0 {
+		body = append(body, fmt.Sprintf("%s — details in the task list (t)", plural(len(res.Errors), "entry")+" failed"))
+	}
+	a.taskResult(s, level, operationHeading("Extract", res.Fatal != nil || len(res.Errors) > 0, res.Canceled, partial), summary, body...)
+	a.setStatus("", false)
 	a.finishTask(s, state, summary, details...)
 	return tea.Batch(cmds...)
 }

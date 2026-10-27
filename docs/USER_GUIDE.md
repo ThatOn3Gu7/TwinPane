@@ -116,6 +116,141 @@ cancellable folder-size analysis, and a background task view. It also adds
 read-only TAR browsing, persists the hidden-file preference, and includes
 several safety fixes.
 
+#### Back and forward through each panel's history (`[` / `]`)
+
+Each panel remembers where it has been **during this run** — local folders,
+archives and remote folders — independently of the other panel. `[` (or
+`Alt+←`) goes back one step, `]` (or `Alt+→`) goes forward one step. The
+status line names the folder you land in (`back to /home/me/proj`).
+
+- The **cursor position and the scroll position** come back with the folder,
+  so going back to a listing puts you where you were, not at the top.
+- Only the panel you are using moves. The other panel keeps its own history,
+  its own cursor and its own folder; `Tab` switches which one the keys drive.
+- History is **session-local**: it is not saved, it does not appear in the
+  bookmarks (`b`, `B`), and quitting forgets it. Bookmarks and history are
+  therefore separate features that never overwrite each other.
+- Locations are stored as typed entries, not as text paths: a local folder, an
+  archive (with the folder you were browsing inside it) or an rclone remote
+  (with the remote's name and the source behind it). Returning to a remote
+  entry therefore reconnects to that remote, and a local folder whose name
+  looks like an rclone target (`box:stuff`) is never mistaken for a remote.
+- Up to 100 steps are kept per panel; older ones are dropped.
+- A step that can no longer be loaded is skipped, with a note in the status
+  line (`skipped /home/me/gone: no longer available`), and the next available
+  step is used. If only the skipped entry existed, nothing moves. A step whose
+  load fails (a folder that disappeared between the check and the read) puts
+  that entry back, so it can be retried instead of silently vanishing.
+- Any new navigation (opening a folder, going to the parent, changing source,
+  opening an archive) drops the forward entries, as in a browser. A refresh
+  (`Ctrl+L`), sorting, or moving the cursor does not touch the history.
+- The hint bar shows `[`/`]` only while a step is available, and `M` (the
+  action menu) lists **Back** / **Forward** with the number of steps on each
+  side.
+
+#### Read-only preview of remote text files (`Enter` / `v`)
+
+`Enter` or `v`/`F3` on a text file of an rclone remote opens it in the regular
+viewer, with the same highlighting, wrapping, line numbers, `/` search and
+scrolling as local files.
+
+- **Read-only, always.** Editing (`e`), Open with (`o`/`O`) and every other
+  write path stay unavailable for remote files: `e` explains that the preview
+  is read-only and offers the way out — copy the file to a local panel with
+  `c` and work on it there. The header says `read-only remote preview` and no
+  edit hint is shown.
+- **Bounded.** At most the viewer's current limit (8 MiB) is transferred. When
+  the provider reports a size above the limit, the file is refused *before*
+  anything is downloaded, and the message says how big it is and that copying
+  it to a local panel is the way to read all of it. When the provider reports
+  no size (several backends report 0), the transfer is measured and cut at the
+  limit, and the header then says `only the first 8.0 M shown`.
+- **Private staging.** The bytes are streamed into a private temporary folder
+  (mode `0700`, file `0600`) in the operating system's temporary area — never
+  into the folder you are browsing — and both are removed as soon as the text
+  is in memory. A cancelled, failed or oversized preview leaves nothing
+  behind, and it never appears in a panel listing.
+- **Cancellation.** `Esc` while the file is loading stops the transfer
+  immediately (`Esc cancels the transfer` is shown while it runs); rclone is
+  interrupted, its partial output is discarded with the staging folder, and
+  the panel is exactly where it was.
+- **Errors are rclone's.** A provider that refuses the read (server-side
+  documents such as Google Docs, unsupported operations, an expired login) or
+  fails halfway is reported with rclone's own explanation; a read that broke
+  off says how many bytes had arrived. Cancelling and failing are different
+  statuses, so `Esc` never looks like an error.
+- Providers are not assumed to behave alike: streams, endless streams, unknown
+  sizes, refusals and mid-transfer failures are all handled and covered by
+  tests.
+
+#### Focus mode: one panel at full width (`Ctrl+O`)
+
+`Ctrl+O` (also `M` → **Focus mode**, or a tap on the TwinPane badge) turns the
+two-pane view into one panel that uses the whole terminal. It is a
+presentation switch, not a second file manager: both panels stay loaded and
+nothing about them changes.
+
+- **Nothing is lost.** The panel that is not shown keeps its folder, cursor,
+  scroll position, selection, sort order, hidden-file setting, source and
+  navigation history. It is never resized while hidden, so leaving focus mode
+  (`Ctrl+O` again, `M` → **Two panes**) restores the exact two-pane view.
+  `Tab` switches which panel is shown, as it switches which panel the keys
+  drive in two-pane mode.
+- **More columns and a path line.** The full width is used for a `Type`
+  column, and the panel title row becomes a breadcrumb with a source badge
+  (`LOCAL`, the remote's name, or the archive) and the folders leading to the
+  current one, shortened from the left when it does not fit.
+- **Details pane.** On terminals at least 100 columns wide and 18 rows high a
+  details pane sits to the right of the list (38% of the width, at most 64
+  columns, leaving the list at least 50). It shows the selected entry's name,
+  folder, size, time, mode and type, plus a preview of the first 64 KiB /
+  400 lines of a local text file. Binary and very large files are described
+  instead of shown, remote and archive entries report their location and what
+  is possible there, and the wheel or a swipe over the pane scrolls it.
+  `p` hides and shows it; on narrower terminals there is no pane and `v`
+  still opens the read-only viewer at full width.
+- **Copy and move ask where they go.** With one pane there is no obvious
+  "other panel", so `c` / `m` first show a destination chooser: the hidden
+  panel's folder (the two-pane default) comes first, followed by the
+  destinations used earlier in this run. Everything after the choice is the
+  ordinary path — validation, the confirmation with the exact destination,
+  conflict and free-space prompts, the background task and its result — and
+  `Esc` at the chooser transfers nothing. The hidden panel is refreshed when
+  the transfer finishes, as the destination panel would be.
+- **`Ctrl+G` goes to a path.** Type an absolute path, `~/notes`, a path
+  relative to the panel's folder, or a remote location such as `box:photos`.
+  A file is shown in its folder with the cursor on it; a remote location
+  reuses rclone exactly like the Sources picker (`Ctrl+R`). Mistakes are
+  reported inside the dialog, which stays open.
+- **The keys stay the same.** Opening, viewers, search, extraction, remote
+  previews, history, bookmarks, tasks and the menu all behave as before;
+  only the drawing and the two additions above (`p`, `Ctrl+G`) are new, and
+  both exist only in focus mode.
+- **A plain Ctrl-only shortcut.** `Ctrl+O` is an ordinary key event — no
+  Shift-modified key and no enhanced keyboard protocol — so it works in
+  terminals and with the on-screen keyboards of Termux and Gboard alike.
+  `Ctrl+F` still pages down everywhere and is unaffected. The hint bar shows
+  the toggle as `^O focus` (or just `^O` when there is room for the key but
+  not for the words), and the alternatives always work too: `M` → **Focus
+  mode**, that chip, and a tap on the TwinPane badge.
+
+#### Live filename search (`/`)
+
+`/` opens a live, non-recursive filename search of the active panel's folder.
+Since the search redesign it uses the same frame as the rest of the app:
+
+- A bordered **Find files by name** section holds the search root, the
+  `Name:` field (placeholder `Type a filename or path…`) and one status line
+  with the entry and match counts (`1 match of 6 entries · hidden skipped`).
+  The keyboard hints stay in the bottom bar, so the counts never compete with
+  them for room.
+- A separate bordered **Results · N** section lists matches with an aligned
+  type column (`DIR`, `FILE`, …) when the terminal is wide enough, a `▸`
+  marker plus a full-row highlight for the selection, and a scroll thumb on
+  its right border.
+- Narrow or short terminals drop the borders and truncate the root line;
+  the query, counts, results and hints always remain, down to 30×7.
+
 #### Advanced Search (`Ctrl+G` from `/`)
 - `/` remains the familiar live filename search. While that box is open,
   `Ctrl+G` opens Advanced Search and carries the current query into its
@@ -123,9 +258,33 @@ several safety fixes.
 - Advanced Search stays inside TwinPane: the left side has a query and a
   scrollable result list; the right side previews the selected file or its
   matching content lines. Type to filter, use `↑`/`↓` (or `Ctrl+P`/`Ctrl+N`)
-  to move, `Enter` to inspect a file read-only, and `Esc` to return. Closing
-  the search or inspection does not change either panel's directory, cursor,
-  or selection. `Esc` from inspection returns to the same query and result.
+  to move, `Enter` to inspect a file read-only (`Enter` on a folder opens it
+  in the panel), and `Esc` to return. Closing the search or inspection does
+  not change either panel's directory, cursor, or selection. `Esc` from
+  inspection returns to the same query and result.
+- **Actions (`Ctrl+A`).** `Ctrl+A` opens a menu for the selected result, so
+  every printable key keeps belonging to the query. Its letters are shown in
+  the menu and only work while it is open: `i` inspect read-only, `o` open
+  with the default app (`o` opens a folder on folder results), `t` jump to
+  location, `e` edit, `O` open with…, `c` copy to the other panel, `m` move to
+  the other panel, `r` rename, `y` copy path, `d` delete (last, in the danger
+  colour). `Enter` runs the highlighted row and `Esc`/`q` close only the menu.
+  Copy, move, rename and delete use the same checks, conflict questions,
+  confirmations, progress and cancellation as the panels, so a delete goes to
+  the trash unless the trash is unavailable, and destructive confirmations
+  are unchanged. The panel you searched from keeps its cursor and selection,
+  the other panel refreshes exactly as it does for the panels' own copy/move,
+  and the results stay on screen: a moved or deleted result disappears from
+  the list and a renamed one keeps its position under the new name.
+- **Jump to location (`t`)** closes the search, navigates the panel the
+  search was started from to the result's folder, selects it there, and says
+  so in the status line. A content result also opens in the regular viewer on
+  the matching line (with the matches highlighted), so `n`/`N` continue from
+  there; if the line cannot be shown the jump still lands on the file.
+- **Copy path (`y`)** places the absolute path on the terminal clipboard with
+  OSC 52 (no `xclip`/`wl-copy` needed, works over SSH and in Termux) and names
+  the path in the status line, because terminals without OSC 52 ignore the
+  sequence silently.
 - Filename mode is case-insensitive fuzzy subsequence matching over relative
   paths: `asgo` can find `src/AdvancedSearch.go`; it honors the hidden-file
   setting active in `/`. `Ctrl+T` switches in place to content mode and back
@@ -140,9 +299,36 @@ several safety fixes.
   regular files, returns 10,000 matching files, and examines at most 1 MiB per
   file and 512 MiB total by default; matching-file previews show bounded line
   excerpts.
+- The preview pane uses the same Chroma highlighting as the viewer: line
+  numbers in their own gutter, syntax colours for the code, and content
+  matches painted with the match colour (a solid background) so they stand
+  out from strings, comments and keywords. No external tool such as `bat` is
+  needed.
+- **Layout.** A bordered section at the top holds the root, the query field
+  (`Files:` or `Text:`) and one progress/result line. Below it, **Results · N**
+  and **Preview · name** are separate bordered panels; the results panel keeps
+  its right-hand count label, a `▸` marker, a full-row highlight for the
+  selected row and a scroll thumb, while the preview names the file (and its
+  match count in content mode).
+- **Preview scrolling.** Point at the preview and use the mouse wheel (or
+  swipe on Termux) to scroll through the file; the right border shows a
+  scroll indicator, which can be tapped or dragged like the other panels.
+  Scrolling always follows the pointer: over the result list it moves the
+  selection, over the preview it moves the preview. Content previews keep the
+  file summary pinned at the top and scroll the matching lines below it.
+  Choosing another result starts its preview at the top again. When the
+  terminal is too short or narrow for
+  two panes the panels stack (results
+  above the preview). Very short terminals (around 30×9) fall back to a
+  compact, unboxed list that keeps the heading, root, query, status and rows.
+  Long names are truncated rather than pushing columns out of place, and the
+  status line abbreviates its counters instead of overflowing.
 - The read-only inspection viewer preserves the content query, highlights
   every matching occurrence distinctly from syntax colours, and uses `n`/`N`
-  to navigate matching lines. Go, JSON, YAML, shell, and many other common
+  to navigate matching lines. Inspection is read-only; use `Ctrl+A` → `e` in
+  the results to hand a file to the editor, or `Ctrl+A` → `t` to jump to the
+  file and open it on the matching line in the regular viewer, where `e`
+  edits it. Go, JSON, YAML, shell, and many other common
   source/config formats receive Chroma highlighting; unknown formats stay
   plain text. Viewer loading remains bounded to 8 MiB, 500,000 lines, and
   16 KiB per line.
@@ -151,16 +337,98 @@ several safety fixes.
 
 Long-running file operations run as background tasks, so the panels remain
 usable while work continues. Press `t` to see active progress and the results
-retained during this run. The list shows each task's state, progress, current
-path and result or error.
+retained during this run.
 
-- `↑`/`↓` or `j`/`k` selects a task; `PgUp`/`PgDn` scrolls its details.
+The list is a table: task number, state (`RUNNING`, `WAITING`, `STOPPING`,
+`DONE`, `CANCELED`, `PARTIAL`, `FAILED`), operation, a progress bar with the
+item counts, size and elapsed time. Columns are dropped from the end as the
+terminal narrows, and below about 46 columns each task takes two lines instead.
+The details table under the list describes the selected task: operation, state,
+progress, every source, the target, the current item, the last error and the
+result. Paths are shortened from the left, where the file name is the useful
+part, and every row is cut to the width of the screen, so a phone shows the same
+information as a desktop terminal without wrapping into noise.
+
+- `↑`/`↓` or `j`/`k` selects a task; `PgUp`/`PgDn` (or the wheel over the
+  details) scrolls its details.
+- `⏎` or `w` watches a running task live: one screen with a large progress bar,
+  the counts, the current item and the elapsed time. `Esc` (or `q`) closes it
+  and leaves the task running in the background, `c` cancels it, `t` goes to the
+  task list. A prompt that needs a decision is drawn over this screen.
 - `c` cancels the selected active task. `x` clears finished task history.
 - `t` or `Esc` closes the task view. Quitting is blocked while tasks are
   active; `q` opens the task view, where you can wait or cancel.
 - Operations that need a safety or conflict decision show their prompts one at
   a time. Archive creation keeps its dedicated progress dialog visible through
   completion or failure.
+
+**Background or watch?** A copy, move or delete that is clearly going to take a
+while asks how it should run: *stay and watch* (the default; `Esc` picks it too)
+or *run in background* (`b`). The question appears when the operation estimates
+at least **256 MiB** of files or **500 entries**; a transfer is estimated with a
+bounded walk that stops after 4000 entries, and a delete reuses the counts its
+safety check already made. Anything smaller — the ordinary copy of a file or
+two — starts at once, with no extra dialog, exactly as before.
+
+Sending a task to the background (by answering that question, or by leaving the
+live screen with `Esc`) shows a small notification in the bottom-right corner:
+what is running, how far it is, and `t` to see the rest. See
+[Notifications](#notifications) below.
+
+#### Notifications
+
+Results of finished work are reported by a small pop-up in the bottom-right
+corner of the panel area rather than by a line at the bottom of the screen:
+
+```
+╭─ ✓ Copy completed ─────────────────────────╮
+│ Copied 61 files, 16 folders                │
+│ → /mnt/backup/photos/2024                  │
+╰━━━━━━━━━━━━━━━━━━━━━━──────────────────────╯
+```
+
+- **The heading** names the operation and its outcome, not the numbers:
+  `✓ Copy completed`, `! Move cancelled`, `✕ Delete partially completed`,
+  `✕ Extract failed`, `ℹ Copying in the background`. The border and the heading
+  carry the kind's colour, so the outcome is readable at a glance.
+- **The box** carries the result message and, under it, the context that helps
+  act on it — the destination of a transfer, the extracted folder, what went
+  wrong, or how to see the rest. A long message wraps over as many lines as it
+  needs (the task list, `t`, always has the full record), and on a narrow
+  terminal both the heading and the message are truncated or wrapped to fit.
+- **The countdown** has no row of its own: the bottom border is drawn as a
+  heavy line that shrinks towards the left as the time runs out.
+- **What becomes a notification:** copy, move and delete results (including
+  background ones), archive extraction and compression, cloud file operations,
+  reviewed directory plans, renames, folder-size scans, and an edit that
+  finished.
+- **What stays in the status line:** progress ("Checking copy paths…"),
+  prompts and refusals ("nothing to copy: put the cursor on an item or select
+  items with Space"), navigation notes, mode toggles and selection counts.
+  These describe what to do next rather than what just happened, so they
+  belong next to the panels.
+- **Colours and icons:** `✓` green for success, `!` yellow for warnings and
+  cancellations, `✕` red for failures, `ℹ` blue for information. The border and
+  the heading carry the same colour, so the kind is readable at a glance and
+  still distinguishable without colour through the icon and the heavy countdown
+  line.
+- **Reading it at your own pace:** a tap on the pop-up *pins* it. The heavy
+  line in the bottom border stops draining, the box says so (`pinned — Esc
+  closes, tap outside resumes`), and it stays until you dismiss it, however
+  long you need. `Esc` on the panel screen closes a pinned notification; a tap
+  anywhere else releases it, and the countdown carries on from where it
+  stopped rather than starting over. A second tap on a pinned notification
+  about a background task opens the task list on that task, which is what a
+  single tap used to do.
+- **Going away by itself:** an unpinned notification drains its border from
+  right to left and closes when it runs out (four seconds). While a dialog is
+  open the pop-up is not drawn and its countdown pauses, so a result cannot
+  expire unseen behind a prompt.
+- **No spam:** only one notification is shown at a time, a newer result
+  replaces an older one, and repeating the same result restarts its countdown
+  instead of flashing. On terminals too small for a legible box (under about
+  30 columns or 10 rows) nothing is drawn; the status line and the task list
+  still report the result.
 
 #### Operation history (`t` then `h`)
 
@@ -187,9 +455,10 @@ this run's background tasks and the history; `h` or `Esc` returns.
   operation that TwinPane never saw finish — because the program was killed,
   crashed or the machine lost power — is stored as **INTERRUPTED**, never as
   done: its outcome is unknown and the details say so.
-- `+` and `-` change how many runs are kept (1–200, default 20). The limit is
-  saved in `settings.json` and older runs are pruned straight away; the run you
-  are in is never pruned. Records are also capped per run, so the file stays
+- `+` and `-` change how many runs are kept (1–200, default 20), as does the
+  **Operation history → Runs kept** row of the Settings screen (`F9`). The limit
+  is saved in `settings.json` and older runs are pruned straight away; the run
+  you are in is never pruned. Records are also capped per run, so the file stays
   small.
 - The history does not replace the live task list: progress, cancel (`c`),
   clear (`x`) and notifications work exactly as before.
@@ -578,6 +847,21 @@ down. Cancelled and partial totals are lower bounds, never presented as a
 complete result. Unreadable or disappearing entries, filesystem-boundary
 skips, and depth/directory safety limits are shown as issues; root failures
 are reported as failed.
+
+The overlay is laid out like the rest of TwinPane. A bordered summary at the
+top names the target and its path, then shows apparent and allocated size,
+directory/file/link/error counts and the scan state. A separate bordered
+**Largest items** table follows, with aligned `NAME`, `TYPE`, `SIZE` and
+`SHARE` columns: directories end in `/`, files do not, the selected row has a
+`▸` marker and a full-row highlight, and `SHARE` shows a subtle proportional
+bar plus a percentage. When there is room, a **Selected** panel below the
+table shows the item's path, type, apparent/allocated size and its share of
+the folder (for directories, also their direct directory/file/link counts and
+state). The scan state, totals and errors sit in their own
+status line above the hint bar. Narrow terminals drop the details panel
+first, then the share bar (leaving the percentage), then the frame itself,
+keeping the columns that still fit and never wrapping a row. Shares below one
+percent are shown as `<1%` rather than `0%`.
 
 The results are a navigable tree of directory aggregates and direct files.
 `Enter`/`→`/`l` drills into a directory, `Backspace`/`←` returns to its
@@ -1027,7 +1311,8 @@ Limits (from Termux's terminal code; not tested on a phone):
   they are shown.
 - Since v0.9.0, the choice is saved and restored the next time you open
   TwinPane. It is stored in `settings.json` in the same configuration
-  directory as bookmarks.
+  directory as bookmarks, and the same switch appears in the Settings
+  screen under Panels (both drive one preference).
 
 **Bulk rename: how to finish**
 
@@ -1270,11 +1555,70 @@ v0.3.1; the matching rules below still apply)
   the selection is cleared, and the cursor stays on its item under the new
   name.
 
+## Settings screen
+
+`F9`, `Ctrl+S` and **Settings…** in the action menu (`M`, or a tap on the
+TwinPane badge) all open the same window. `Ctrl+S` was free — copy is
+`Ctrl+C` and move is `Ctrl+M` — so no existing control moved. The window
+floats above the panes like a dialog: the directory behind stays visible,
+dimmed by the backdrop, and the title, status and hint rows keep working
+around it. It is a single list with a blank line between the sections so
+they have room to breathe:
+
+- **Panels** — startup folder for the left and the right panel (empty means
+  home; `~` and `~/path` expand at start), which panel is focused at
+  startup, focus-mode preview, and the shared hidden-files switch (the same
+  toggle as `h`).
+- **Sorting** — the default sort key, direction and directories-first for
+  panels from now on. Pressing `s`/`S` in the panels still only changes the
+  current session and is never written to the file.
+- **Notifications** — the corner the pop-up uses (bottom-right by default)
+  and how long it stays (2–10 seconds). New notifications follow the values
+  immediately; the current one keeps its place.
+- **Appearance** — theme presets: `default`, `green`, `amber`. The choice
+  repaints the whole UI at once.
+- **Editor & viewer** — the preferred editor command (empty: `$VISUAL`,
+  `$EDITOR`, then the first detected editor; a value TwinPane cannot parse
+  or find falls back with a note), editor tips, mouse input on/off (takes
+  effect at the next start; the flags and `TWINPANE_NO_MOUSE` still
+  override), and the viewer's line wrapping and line numbers for files
+  opened from now on.
+- **Compression** — the default format (`auto` picks the first capable
+  format for the selection, ZIP in practice) and the level for the
+  remembered format.
+- **Operation history** — **Runs kept**: how many application runs the task
+  history keeps (1–200, default 20). Lowering it prunes older runs at once;
+  the current run is never pruned. The same limit is behind `+`/`-` in the
+  history view (`t`, then `h`).
+
+**Keys on the screen:** `↑`/`↓` (or `k`/`j`) move, `←`/`→` (or `h`/`l`,
+`Space`, `Enter`) change a value — the text rows open a one-line input —
+`r` resets everything to the defaults behind a `y` confirmation, `?` opens
+the help (over the window), and `Esc` / `F9` / `Ctrl+S` close it. The
+mouse works too: a tap selects a row, a second tap on the selected row
+changes it, the wheel moves through the list, and the window shrinks with
+the terminal.
+
+**Storage:** preferences live in `settings.json` next to `bookmarks.json`
+(`$TWINPANE_CONFIG_DIR`, default `~/.config/twinpane`) and are written
+atomically on every change. The file is versioned: unknown fields from
+older or newer files are ignored where possible, an unreadable or
+newer-version file is never overwritten by ordinary saves, and the window
+shows what happened as a banner with the recovery hint — `r` then `y`
+is the deliberate repair that writes fresh defaults. Startup folders, the
+starting panel and the mouse preference apply at the next start;
+everything else updates live. `--no-mouse` and `TWINPANE_NO_MOUSE` still
+switch the mouse off for the session, and `--no-editor-tips` still
+disables tips whatever the screen says.
+
 ## Keyboard controls
 
 | Key | Action |
 |---|---|
 | `Tab` / `Shift+Tab` | switch active panel |
+| `Ctrl+O` | **focus mode**: one panel at full width (see Focus mode) |
+| `p` (focus mode) | show / hide the details preview pane |
+| `Ctrl+G` (focus mode) | go to a local folder, `~/path` or a remote location (`box:photos`) |
 | `↑` `↓` / `k` `j` | move cursor |
 | `PgUp` `PgDn` / `Ctrl+B` `Ctrl+F` | page up / down |
 | `Home` `End` / `g` `G` | first / last entry |
@@ -1309,15 +1653,19 @@ v0.3.1; the matching rules below still apply)
 | `/` | **find**: live filename search box below the active panel's folder |
 | `Ctrl+G` (while `/` is open) | open Advanced Search |
 | `Ctrl+T` (in Advanced Search) | switch between filename and content search |
+| `Ctrl+A` (in Advanced Search) | actions for the selected result: open, jump, edit, open with, copy, move, rename, copy path, delete |
 | `t` | view background task progress and results; `h` inside shows the persistent operation history |
 | `h` / `H` / `.` | show / hide hidden files in **both** panels |
 | `s` | cycle sort: name → size → time → type |
 | `S` | reverse the sort order (↑/↓) |
 | `Ctrl+L` | refresh both panels (`Ctrl+R` in v0.7.0) |
+| `[` / `Alt+←` | **back** one step in this panel's history (cursor restored; new in v0.9.0) |
+| `]` / `Alt+→` | **forward** one step in this panel's history (new in v0.9.0) |
 | `Ctrl+R` | **sources**: local files or an rclone remote for the active panel (new in v0.8.0) |
 | `n` | **new file / new folder** menu (new in v0.10.0) |
 | `F7` | **new folder** directly (new in v0.8.0) |
 | `?` / `F1` | help (scroll with `↑`/`↓` `PgUp`/`PgDn` `g`/`G`; any other key closes it) |
+| `F9` / `Ctrl+S` | **settings** (same screen as `M` → **Settings…**; see Settings screen) |
 | `q` / `F10` / `Ctrl+C` | quit when idle; with active tasks, `q`/`F10` opens tasks and `Ctrl+C` cancels the latest |
 
 **Changed in v0.10.0:** `n` opens the New file / New folder menu (it created
@@ -1326,7 +1674,9 @@ a folder directly in v0.8.0–v0.9.0); `F7` still creates a folder directly.
 **Changed in v0.8.0:** refresh is `Ctrl+L` (was `Ctrl+R`);
 `Ctrl+R` opens Sources (cloud remotes); `n`/`F7` (new folder) are new. These
 keys were unused before, apart from `Ctrl+R`, whose move was decided
-deliberately and is documented here. `Ctrl+R` inside the bulk-rename dialog
+deliberately and is documented here. `[` and `]` (new in v0.9.0) were unused
+before as well; `Alt+←`/`Alt+→` join the existing `←`/`→` movement keys as
+their Alt forms, so plain `←`/`→` keep working exactly as before. `Ctrl+R` inside the bulk-rename dialog
 (regular expressions) is unchanged.
 
 **Changed in v0.3.0:** `h` now toggles hidden files (`.` still works). Parent
@@ -1436,9 +1786,10 @@ including the end-to-end test scripts, are in
   it is open; reopen it with `Esc` then `/`. Symlinked folders are not entered.
   Use Advanced Search for content search; it has separate scan limits and skips
   exact `.git` directories by default. Large trees list faster with `fd` or
-  `find` than with the built-in walker. Sort order is per panel and is not
-  saved; hidden-file visibility is shared by both panels and is saved in
-  `settings.json`.
+  `find` than with the built-in walker. The sort cycled with `s`/`S` is per
+  panel and not saved (the *default* sort for future sessions is set in the
+  Settings screen); hidden-file visibility is shared by both panels and is
+  saved in `settings.json`.
 - Termux: the android build has not been run on a real device yet (see
   the [README](../README.md#installation)). Please report the output of `twinpane --version` with
   any problem.
@@ -1471,8 +1822,10 @@ including the end-to-end test scripts, are in
   indexed from its central directory; TAR is indexed by streaming headers,
   with limits on entry count, retained path data, nesting and expanded bytes.
 - Cloud remotes: need rclone and a remote set up with
-  `rclone config`; TwinPane does not create or edit remotes. Remote files
-  can't be viewed, edited or opened in place (copy them to a local panel).
+  `rclone config`; TwinPane does not create or edit remotes. Remote text files
+  can be **previewed read-only** (`Enter`/`v`, up to the viewer's 8 MiB
+  limit); editing, Open with and every other write path stay unavailable —
+  copy the file to a local panel with `c` for that.
   Rename on a remote is one item at a time. Symbolic links are not uploaded
   (rclone does not follow them; links inside uploaded folders are skipped).
   Recursive folder-size analysis (`A`) is available only for local folders;
