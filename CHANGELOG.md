@@ -35,6 +35,26 @@ and the Settings screen that now owns every preference.
   scrollbar on its right border when the terminal is short, and wraps long paths
   after a separator. The hint bar now shows a single `Esc close` chip for a
   finished task; `⏎` still closes it too.
+- **The activity log viewer is grouped and readable.** Entries are grouped by
+  application run under a rule that names the session and its span — `This
+  session · 10:00–11:00 · 4 entries`, then `Today · 09:12 · 5 entries`,
+  `Yesterday · …`, `Wed 4 Mar · …` — newest session first and newest entry
+  first inside it. The rule is a separator, never a selectable row: `↑`/`↓`
+  skip it, `⏎` opens the selected entry only, and the details pane follows the
+  selection. The list has a themed scrollbar in the last column (a distinct
+  glyph, never confused with the selection highlight), the settings/detail
+  boxes are gone in favour of one thin rule above the details, and on a
+  terminal narrower than 64 columns each entry takes two lines — the message,
+  then time, category and event — so nothing is cut off.
+
+### Fixed
+- **Activity log viewer crash.** Selecting the last entry, opening its details
+  and pressing `↓` panicked with `index out of range`. The selection is now
+  clamped to the visible list at both ends, including an empty log and a
+  filter that matches nothing; the details pane reads the clamped selection.
+- **Activity log overlay left entries behind.** The log was reloaded before the
+  viewer recorded that it had been opened, so the viewer's own entry was
+  missing until `r` and its session grouping was off by one.
 
 ### Added
 - **Settings screen.** `F9`, `Ctrl+S` and **Settings…** in the TwinPane

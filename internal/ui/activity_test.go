@@ -26,8 +26,12 @@ func activityApp(t *testing.T, mode activity.Mode) (*harness, *opsEnv, string) {
 	h.a.activityPath = path
 	h.a.actMode = mode
 	h.a.actMaxKiB, h.a.actKeepDays = 1024, 30
+	run := ""
+	if h.a.history != nil {
+		run = h.a.history.CurrentID() // the same session ID production uses
+	}
 	store, err := activity.Open(path, activity.Options{
-		Mode: mode, Run: "run-test", Now: h.a.now, MaxBytes: 1 << 20, KeepDays: 30,
+		Mode: mode, Run: run, Now: h.a.now, MaxBytes: 1 << 20, KeepDays: 30,
 	})
 	if err != nil {
 		t.Fatalf("open activity log: %v", err)
@@ -110,7 +114,7 @@ func TestActivityLogRecordsCoverage(t *testing.T) {
 	// Every entry is timestamped and carries its run ID, so the viewer and the
 	// operation history can be read together.
 	for _, e := range entries {
-		if e.Time.IsZero() || e.V != 1 || e.Run != "run-test" {
+		if e.Time.IsZero() || e.V != 1 || e.Run == "" {
 			t.Fatalf("entry is missing its header fields: %+v", e)
 		}
 	}

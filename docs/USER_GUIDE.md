@@ -537,14 +537,35 @@ or to see why a remote folder would not open.
   most the entry being written. A line that cannot be read back is skipped and
   counted, never fatal.
 
+**The list is grouped by application run.** Each run — every start of TwinPane
+is one session — gets a thin rule that names it and the span of its entries:
+`── This session · 10:00–11:00 · 4 entries ──` for the run you are in now, then
+`Today · 09:12 · 5 entries`, `Yesterday · 18:30–19:02 · 3 entries`, and
+`Wed 4 Mar · …` for older runs. The newest session comes first and the newest
+entry comes first inside it, so the thing that just happened is always at the
+top. A rule is a separator, not an entry: the selection never stops on it,
+`Enter` only opens real entries, and `[`/`]` jump between runs.
+
+The selected entry is drawn with the theme's cursor background across the whole
+row, and the details under it — when open — follow the selection as you move.
+Nothing is boxed: one rule above the details, no border around the list. A
+themed scrollbar in the last column shows where you are in the list (a `┃`
+thumb, a `│` track, and no bar at all when everything fits); it is deliberately
+a different glyph and colour from the selection. On a terminal narrower than 64
+columns each entry takes two lines instead — the message, then `time ·
+category · event` — so neither is cut off.
+
 **Keys in the viewer:** `↑`/`↓` (or `k`/`j`) move, `PgUp`/`PgDn` page, `g`/`G`
 jump to the ends, `c` cycles the category filter (All Activity, Commands, File
 Operations, Navigation, UI Actions, Tasks, Cloud, Warnings & Errors, Settings,
 Recovery), `l` cycles the minimum level (all, info and up, warnings and up,
 errors only), `/` types a filter — `cat:cloud`, `lvl:error`, `ev:command` or
-plain text — `[`/`]` jump between application runs, `Enter` shows the selected
-entry's details, `r` reloads, `x` clears every filter and `Esc` closes. The
-wheel scrolls and a tap selects a row.
+plain text — `[`/`]` jump between application runs, `Enter` shows or hides the
+selected entry's details, `r` reloads, `x` clears every filter and `Esc` (or
+`q`, or `L` again) closes. The selection stops at the first and last entry,
+including an empty log or a filter that matches nothing, where the list says
+so instead of drawing a highlight. The wheel scrolls, a tap selects a row and a
+second tap on the selected row toggles its details.
 
 The file is `activity.jsonl` beside `settings.json` (mode 0600), honouring
 `TWINPANE_CONFIG_DIR`. `--log FILE`, `--log-mode`, `--log-size`, `--log-days`

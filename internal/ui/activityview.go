@@ -3,6 +3,7 @@ package ui
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -10,33 +11,71 @@ import (
 
 	"github.com/ThatOn3Gu7/TwinPane/internal/activity"
 	"github.com/ThatOn3Gu7/TwinPane/internal/fsys"
+	"github.com/ThatOn3Gu7/TwinPane/internal/panel"
+	"github.com/ThatOn3Gu7/TwinPane/internal/scrollbar"
 )
 
-// The activity log viewer: a full-body screen on L.
+// The activity log viewer: a full-body screen on `L`.
 //
 // One log, several filters. The header names the filter in force and the keys
 // change it (`c` cycles the nine categories, `l` the minimum level, `/` types a
 // query). The list is the log itself, newest first, so nothing is duplicated
 // and nothing is lost by switching filter: it is the same file either way.
 //
+// The list is grouped by application session — the run ID the log shares with
+// the operation history — under a dated rule, so "this session" is separated
+// from earlier ones. Headers are drawn lines, not entries: the selection only
+// ever points at a real entry, and `[`/`]` jump between the sessions.
+//
 // Rows are one line when there is room (time, category, message) and two lines
 // on a narrow terminal (message above, time/category below). The selected
-// entry's details — event name, program, exit code, duration, error text and
-// data — appear under ⏎ instead of beside the list, so a short terminal still
-// shows a usable list.
+// entry's details appear under a thin rule instead of a box, so the screen stays
+// flat and a short terminal still shows a usable list. A slim scrollbar in the
+// last column reports the position in the list and is deliberately separate
+// from the selected row's highlight.
 
 const (
 	actBoxTitle  = "Activity log"
-	actMaxRows   = 40 // entries shown at once at most (the rest scroll)
-	actDetailMax = 9  // detail lines at most
+	actDetailMax = 8 // detail lines at most (below the rule)
 	actQueryMax  = 80
+	// actNarrow is below which rows take two lines.
+	actNarrow = 64
 )
+
+// actLineKind is what one drawn line of the list is.
+type actLineKind int
+
+const (
+	actHeaderLine actLineKind = iota // a session rule (never selectable)
+	actEntryLine                     // a line of a log entry
+)
+
+// actLine is one line of the laid-out list. Entries carry the index into
+// activityView.rows they belong to, so a header can never be mistaken for an
+// entry and the selection stays an index into the entries alone.
+type actLine struct {
+	kind  actLineKind
+	row   int          // index into activityView.rows (actEntryLine only)
+	part  int          // 0 = first line of the row, 1 = its second line (narrow layout)
+	text  string       // the session label (actHeaderLine only)
+	t     time.Time    // the session's date (actHeaderLine only)
+	span  [2]time.Time // first/last visible entry of the session
+	count int          // entries in the session block
+}
 
 type activityView struct {
 	entries []activity.Entry // snapshot, newest first
 	rows    []int            // indices of entries passing the filter
-	sel     int              // index into rows
-	offset  int              // first visible row
+
+	// lines is the laid-out list: session rules interleaved with entry lines.
+	// It is rebuilt when the filter or the width changes, never per frame.
+	lines    []actLine
+	linesW   int    // width lines was laid out for
+	linesKey string // session labels depend on the run and the day
+	firstLn  []int  // row index → first line index in lines
+
+	sel int // index into rows; always inside [0, len(rows)-1] (0 when empty)
+	top int // first visible line index
 
 	filter   activity.Filter
 	catSel   activity.CatFilter
@@ -46,12 +85,10 @@ type activityView struct {
 	query    string // the committed query, for the header
 
 	detail  bool
+	listH   int // list lines available in the last frame
 	stat    activity.Stat
 	readErr string
 	rev     uint64
-
-	// geometry of the last frame, for mouse hit-testing
-	lastTop, lastRows int
 }
 
 // reload takes a snapshot of the log and re-applies the filter.
@@ -61,22 +98,22 @@ func (v *activityView) reload(a *App) {
 	if a.actErr != nil {
 		v.readErr = a.actErr.Error()
 	}
-	if path != "" && a.actLog != nil {
-		res := activity.Read(path, actMaxRows*200)
+	if path != "" {
+		res := activity.Read(path, 4000)
 		v.entries, v.stat = res.Entries, res.Stat
+	}
+	if a.actLog != nil {
 		v.rev = a.actLog.Revision()
-		if a.actLog.Err() != nil {
+		if a.actLog.Err() != nil && v.readErr == "" {
 			v.readErr = a.actLog.Err().Error()
 		}
-	} else if path != "" {
-		res := activity.Read(path, actMaxRows*200)
-		v.entries, v.stat = res.Entries, res.Stat
 	}
 	v.rebuild()
 }
 
-// rebuild recomputes the effective filter from the category and level the
-// user cycled to plus the typed query, and from the filtered rows.
+// rebuild recomputes the effective filter and the entry list, then clamps the
+// selection. It is the only place rows changes, so sel can never outlive the
+// list it indexes.
 func (v *activityView) rebuild() {
 	q := activity.Filter{}.ApplyQuery(v.query)
 	if q.Cat != activity.FilterAll {
@@ -92,44 +129,168 @@ func (v *activityView) rebuild() {
 			v.rows = append(v.rows, i)
 		}
 	}
+	v.clampSel()
+	v.lines = nil // the layout depends on rows
+}
+
+// clampSel keeps the selection inside the visible entry list. An empty list
+// has no selection (0), never -1.
+func (v *activityView) clampSel() {
+	if len(v.rows) == 0 {
+		v.sel, v.top = 0, 0
+		return
+	}
 	if v.sel >= len(v.rows) {
 		v.sel = len(v.rows) - 1
 	}
 	if v.sel < 0 {
 		v.sel = 0
 	}
-	v.clampOffset()
 }
 
-// clampOffset keeps the selection on screen.
-func (v *activityView) clampOffset() {
-	rows := v.listRows()
-	if rows < 1 {
-		v.offset = 0
+// layout builds the drawn lines for contentW columns: a session rule before
+// each run's entries, then the entries themselves, one or two lines each.
+func (v *activityView) layout(contentW int, currentRun string, now time.Time) {
+	// The grouping labels depend on which run is "now" and on the day the
+	// viewer is looking at, so a midnight or a reload invalidates them too.
+	key := currentRun + "|" + now.Format("2006-01-02")
+	if v.linesW == contentW && v.linesKey == key && v.lines != nil {
 		return
 	}
-	if v.sel < v.offset {
-		v.offset = v.sel
+	v.lines = v.lines[:0]
+	v.firstLn = v.firstLn[:0]
+	twoLines := contentW < actNarrow
+	var lastRun string
+	for i, ei := range v.rows {
+		e := v.entries[ei]
+		if i == 0 || e.Run != lastRun {
+			lastRun = e.Run
+			v.lines = append(v.lines, v.sessionLine(i, contentW, currentRun, now))
+		}
+		v.firstLn = append(v.firstLn, len(v.lines))
+		v.lines = append(v.lines, actLine{kind: actEntryLine, row: i, part: 0})
+		if twoLines {
+			v.lines = append(v.lines, actLine{kind: actEntryLine, row: i, part: 1})
+		}
 	}
-	if v.sel >= v.offset+rows {
-		v.offset = v.sel - rows + 1
+	v.linesW, v.linesKey = contentW, key
+}
+
+// sessionLine is the rule that starts a session block: its date (or "This
+// session"), the span of visible entries and how many there are.
+func (v *activityView) sessionLine(row, contentW int, currentRun string, now time.Time) actLine {
+	run := v.entries[v.rows[row]].Run
+	span := [2]time.Time{v.entries[v.rows[row]].Time, v.entries[v.rows[row]].Time}
+	count := 0
+	for i := row; i < len(v.rows); i++ {
+		e := v.entries[v.rows[i]]
+		if e.Run != run {
+			break
+		}
+		count++
+		if e.Time.Before(span[0]) {
+			span[0] = e.Time
+		}
+		if e.Time.After(span[1]) {
+			span[1] = e.Time
+		}
 	}
-	if v.offset < 0 {
-		v.offset = 0
+	return actLine{kind: actHeaderLine, row: -1, text: run, t: span[0], span: span, count: count}
+}
+
+// rowHeight is how many lines the given row occupies (one, or two when the
+// terminal is narrow).
+func (v *activityView) rowHeight(row int) int {
+	if row < 0 || row >= len(v.firstLn) {
+		return 1
 	}
-	if max := len(v.rows) - rows; v.offset > max && max >= 0 {
-		v.offset = max
+	start := v.firstLn[row]
+	h := 0
+	for i := start; i < len(v.lines); i++ {
+		if v.lines[i].kind != actEntryLine || v.lines[i].row != row {
+			break
+		}
+		h++
+	}
+	if h < 1 {
+		h = 1
+	}
+	return h
+}
+
+// ensureVisible scrolls so the selected entry is fully on screen, and keeps
+// the window inside the list.
+func (v *activityView) ensureVisible() {
+	if len(v.rows) == 0 {
+		v.top = 0
+		return
+	}
+	v.clampSel()
+	rows := max(1, v.listH)
+	if v.sel >= len(v.firstLn) {
+		v.top = 0
+		return
+	}
+	start := v.firstLn[v.sel]
+	h := v.rowHeight(v.sel)
+	if start < v.top {
+		v.top = start
+	}
+	if start+h > v.top+rows {
+		v.top = start + h - rows
+	}
+	// Cosmetic nudges, each only when it cannot push the selection off the
+	// bottom: never start the window on the second line of a two-line row, and
+	// never cut a session rule away from the block it introduces.
+	keep := start + h // first line below the selected entry
+	nudge := func() {
+		if v.top > 0 && v.top-1+rows >= keep {
+			v.top--
+		}
+	}
+	if v.top > 0 && v.top < len(v.lines) && v.lines[v.top].kind == actEntryLine && v.lines[v.top].part == 1 {
+		nudge()
+	}
+	if v.top > 0 && v.lines[v.top-1].kind == actHeaderLine {
+		nudge()
+	}
+	if maxTop := len(v.lines) - rows; v.top > maxTop {
+		v.top = maxTop
+	}
+	if v.top < 0 {
+		v.top = 0
 	}
 }
 
-// listRows is how many entries the list shows: the body height minus the
-// header, the detail box and the scroll indicator.
-func (v *activityView) listRows() int {
-	rows := v.lastRows
-	if rows < 1 {
-		rows = actMaxRows
+// normalize is called after anything that changes the selection, the filter or
+// the geometry: it re-lays the list if needed, clamps the selection and scrolls
+// it into view. Every key and mouse path ends here, which is what makes an
+// out-of-range selection impossible.
+func (a *App) activityNormalize() {
+	v := a.actView
+	if v == nil {
+		return
 	}
-	return max(1, rows)
+	contentW := a.activityContentWidth()
+	v.layout(contentW, a.activityCurrentRun(), a.now())
+	v.clampSel()
+	v.ensureVisible()
+}
+
+// activityContentWidth is the width of the list without the scrollbar column.
+func (a *App) activityContentWidth() int {
+	if a.width < 20 {
+		return max(1, a.width)
+	}
+	return max(1, a.width-1) // one column for the scrollbar
+}
+
+// activityCurrentRun is this run's session ID, as recorded in the log.
+func (a *App) activityCurrentRun() string {
+	if a.history == nil {
+		return ""
+	}
+	return a.history.CurrentID()
 }
 
 // ---- keys --------------------------------------------------------------------
@@ -142,7 +303,7 @@ func (a *App) activityKey(msg tea.KeyMsg) tea.Cmd {
 	if v.typing {
 		return a.activityTypingKey(msg)
 	}
-	page := v.listRows()
+	page := max(1, v.listH-1)
 	switch msg.String() {
 	case "esc", "L", "q":
 		return a.closeActivityView()
@@ -172,8 +333,6 @@ func (a *App) activityKey(msg tea.KeyMsg) tea.Cmd {
 		a.activityJumpRun(+1)
 	case "enter", " ":
 		v.detail = !v.detail
-		v.lastRows = 0
-		v.clampOffset()
 	case "/":
 		v.typing = true
 		v.typed = v.query
@@ -188,7 +347,7 @@ func (a *App) activityKey(msg tea.KeyMsg) tea.Cmd {
 	case "?":
 		a.openHelp()
 	}
-	v.clampOffset()
+	a.activityNormalize()
 	return nil
 }
 
@@ -205,7 +364,7 @@ func (a *App) activityTypingKey(msg tea.KeyMsg) tea.Cmd {
 		v.query = strings.ToLower(strings.TrimSpace(v.typed))
 		v.rebuild()
 		v.sel = 0
-		v.clampOffset()
+		a.activityNormalize()
 		return nil
 	case tea.KeyBackspace:
 		if v.typed != "" {
@@ -233,8 +392,8 @@ func clipQuery(s string) string {
 	return s
 }
 
-// activityJumpRun moves the selection to the previous or next application run
-// (the run ID shared with the operation history).
+// activityJumpRun moves the selection to the previous or next application
+// session (the run ID shared with the operation history).
 func (a *App) activityJumpRun(dir int) {
 	v := a.actView
 	if v == nil || len(v.rows) == 0 {
@@ -252,38 +411,41 @@ func (a *App) activityJumpRun(dir int) {
 				i++
 			}
 			v.sel = i
-			v.clampOffset()
+			a.activityNormalize()
 			return
 		}
 		i += dir
 	}
-	a.setStatus("activity: no other run in this filter", false)
+	a.setStatus("activity: no other session in this filter", false)
 }
 
 // ---- rendering ---------------------------------------------------------------
 
-// activityRender draws the whole body.
+// activityRender draws the whole body: the header, the grouped list with its
+// scrollbar, and — when asked for — the details under a thin rule.
 func (a *App) activityRender(height int) string {
 	v := a.actView
 	if v == nil || height <= 0 {
 		return ""
 	}
-	th := a.theme
 	width := a.width
+	contentW := a.activityContentWidth()
 
-	// Geometry: header (1) + list + optional detail box.
+	// Geometry: header + list + optional details (rule + lines).
 	detailRows := 0
-	if v.detail {
-		detailRows = min(actDetailMax, max(3, height/3))
+	if v.detail && len(v.rows) > 0 {
+		detailRows = min(actDetailMax, max(2, height/3)) + 1
 	}
-	v.lastRows = max(1, height-1-detailRows)
-	v.clampOffset()
+	v.listH = max(1, height-1-detailRows)
+	v.layout(contentW, a.activityCurrentRun(), a.now())
+	v.clampSel()
+	v.ensureVisible()
 
-	rows := v.lastRows
 	lines := make([]string, 0, height)
 	lines = append(lines, a.activityHeader(width, len(v.rows)))
 
 	if len(v.rows) == 0 {
+		th := a.theme
 		msg := "No entries yet."
 		switch {
 		case v.readErr != "":
@@ -298,34 +460,104 @@ func (a *App) activityRender(height int) string {
 		return strings.Join(fitBlock(lines, height, width), "\n")
 	}
 
-	// The visible slice, newest first.
-	end := min(len(v.rows), v.offset+rows)
-	for i := v.offset; i < end; i++ {
-		e := v.entries[v.rows[i]]
-		selected := i == v.sel
-		lines = append(lines, a.activityRow(e, selected, width)...)
-		if len(lines) >= height-1-detailRows+1 {
-			// two-line rows can overshoot; the detail box gets what is left
-			detailRows = max(0, height-1-(len(lines)-1))
-			break
+	// The scrollbar geometry for the whole list, in drawn lines.
+	thumbStart, thumbSize, scrolls := scrollbar.Thumb(len(v.lines), v.listH, v.top, v.listH)
+
+	end := min(len(v.lines), v.top+v.listH)
+	for i := v.top; i < end; i++ {
+		l := v.lines[i]
+		var content string
+		if l.kind == actHeaderLine {
+			content = a.activitySessionHeader(l, contentW)
+		} else {
+			content = a.activityEntryLine(l, width, contentW)
 		}
+		lines = append(lines, content+a.activityScrollCell(i-v.top, thumbStart, thumbSize, scrolls, width, contentW))
 	}
-	if v.detail {
-		for _, l := range fitBlock(a.activityDetailLines(v, width), detailRows, width) {
+	if v.detail && detailRows > 0 {
+		lines = append(lines, a.activityRule("Details", width, a.theme.Divider))
+		for _, l := range fitBlock(a.activityDetailLines(v, contentW, a.now()), detailRows-1, contentW) {
 			lines = append(lines, l)
 		}
 	}
 	return strings.Join(fitBlock(lines, height, width), "\n")
 }
 
+// activityScrollCell draws the scrollbar column of one list row: a thumb cell,
+// the dim track, or nothing when the list fits. It is a single column at the
+// right edge, so it can never be mistaken for the selected row's highlight.
+func (a *App) activityScrollCell(row, thumbStart, thumbSize int, scrolls bool, width, contentW int) string {
+	if width <= contentW {
+		return ""
+	}
+	th := a.theme
+	if !scrolls {
+		return " "
+	}
+	if row >= thumbStart && row < thumbStart+thumbSize {
+		return th.ScrollThumb.Render(panel.ScrollThumbChar)
+	}
+	return th.ScrollThumbOff.Render("│")
+}
+
+// activityRule draws a labelled horizontal rule, without a box.
+func (a *App) activityRule(label string, width int, st lipgloss.Style) string {
+	if label == "" {
+		return st.Render(fitWidth(strings.Repeat("─", max(1, width)), width))
+	}
+	head := "── " + label + " "
+	fill := max(0, width-lipgloss.Width(head))
+	return st.Render(fitWidth(head+strings.Repeat("─", fill), width))
+}
+
+// activitySessionHeader draws the rule that separates sessions.
+func (a *App) activitySessionHeader(l actLine, width int) string {
+	th := a.theme
+	name := activitySessionName(l.span, l.count, l.text == a.activityCurrentRun(), a.now())
+	head := "── " + name + " "
+	fill := max(0, width-lipgloss.Width(head))
+	return th.Divider.Render("── ") + th.ColumnHeader.Render(name) +
+		th.Divider.Render(" "+strings.Repeat("─", fill))
+}
+
+// activitySessionName is the text of a session rule: when it was, how long it
+// ran, and how many entries are visible in it.
+func activitySessionName(start [2]time.Time, count int, current bool, now time.Time) string {
+	label := activityDateLabel(start[0], now)
+	if current {
+		label = "This session"
+	}
+	times := start[0].Format("15:04")
+	if start[1].Sub(start[0]) >= time.Minute {
+		times = start[0].Format("15:04") + "–" + start[1].Format("15:04")
+	}
+	return fmt.Sprintf("%s · %s · %s", label, times, plural(count, "entry"))
+}
+
+// activityDateLabel names the day of t relative to now, with the date when it
+// is not today or yesterday.
+func activityDateLabel(t, now time.Time) string {
+	y, m, d := now.Date()
+	today := time.Date(y, m, d, 0, 0, 0, 0, now.Location())
+	day := time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, now.Location())
+	switch {
+	case day.Equal(today):
+		return "Today"
+	case day.Equal(today.AddDate(0, 0, -1)):
+		return "Yesterday"
+	case t.Year() == now.Year():
+		return t.Format("Mon 2 Jan")
+	}
+	return t.Format("Mon 2 Jan 2006")
+}
+
 // activityHeader is the title line: filter, counts, query field.
 func (a *App) activityHeader(width, shown int) string {
 	v := a.actView
 	th := a.theme
-	title := th.HelpTitle.Render(actBoxTitle)
-	left := title + th.Summary.Render(" · "+v.filter.Cat.Label())
+	left := th.HelpTitle.Render(actBoxTitle) + th.Summary.Render(" · "+v.filter.Cat.Label())
 
-	info := fmt.Sprintf("%d shown", shown)
+	info := fmt.Sprintf("%s shown", plural(shown, "entry"))
 	if len(v.entries) != shown {
 		info += fmt.Sprintf(" of %d", len(v.entries))
 	}
@@ -338,7 +570,7 @@ func (a *App) activityHeader(width, shown int) string {
 	right := th.Summary.Render(info)
 
 	if v.typing {
-		left = title + th.Summary.Render(" · filter: ")
+		left = th.HelpTitle.Render(actBoxTitle) + th.Summary.Render(" · filter: ")
 		right = th.StatusInfo.Render(" " + v.typed + "▏ ")
 	} else if v.query != "" {
 		left += th.Summary.Render(" · /" + v.query)
@@ -350,43 +582,67 @@ func (a *App) activityHeader(width, shown int) string {
 	return left + strings.Repeat(" ", gap) + right
 }
 
-// activityRow draws one entry: one line when wide, two when narrow.
-func (a *App) activityRow(e activity.Entry, selected bool, width int) []string {
+// activityEntryLine draws one line of an entry: the whole thing on a wide
+// terminal, or the message on the first line and time/level on the second one
+// when narrow. A selected line is painted with the theme's cursor colour across
+// the full content width, so the highlight is visible whatever the row says.
+func (a *App) activityEntryLine(l actLine, width, contentW int) string {
+	v := a.actView
+	if l.row < 0 || l.row >= len(v.rows) {
+		return fitWidth("", contentW) // cannot happen; keeps the frame intact
+	}
+	e := v.entries[v.rows[l.row]]
 	th := a.theme
-	level := e.LevelOf()
+	selected := l.row == v.sel
+
+	glyph, gstyle := " ", th.Summary
+	switch e.LevelOf() {
+	case activity.LevelWarn:
+		glyph, gstyle = "!", th.StatusWarn
+	case activity.LevelError:
+		glyph, gstyle = "✗", th.StatusErr
+	case activity.LevelDebug:
+		gstyle = th.Empty
+	}
 	stamp := e.Time.Format("15:04:05")
 	cat := fmt.Sprintf("%-6s", e.Cat.Short())
 	msg := fsys.SanitizeName(e.Summary())
 
-	// A level glyph makes warnings and errors findable by eye.
-	glyph := " "
-	style := th.Summary
-	switch level {
-	case activity.LevelWarn:
-		glyph, style = "!", th.StatusWarn
-	case activity.LevelError:
-		glyph, style = "✗", th.StatusErr
-	case activity.LevelDebug:
-		style = th.Empty
+	if contentW >= actNarrow {
+		head := " " + stamp + " " + glyph + " " + cat + " " + paneTag(e.Panel) + " "
+		body := ansi.Truncate(msg, max(1, contentW-lipgloss.Width(head)), "…")
+		if selected {
+			plain := " " + stamp + " " + glyph + " " + cat + " " + paneTag(e.Panel) + " " + body
+			return th.CursorActive.Render(fitWidth(plain, contentW))
+		}
+		row := th.Summary.Render(" "+stamp+" ") + gstyle.Render(glyph) + " " +
+			th.ColumnHeader.Render(cat) + " " + th.Summary.Render(paneTag(e.Panel)+" ") +
+			th.Info.Render(body)
+		// Padded to the content width, so the scrollbar column stays a column
+		// and the highlight (above) covers the whole row.
+		return fitWidth(row, contentW)
+	}
+	if l.part == 0 {
+		line := " " + msg
+		if selected {
+			return th.CursorActive.Render(fitWidth(line, contentW))
+		}
+		return gstyle.Render(fitWidth(line, contentW))
+	}
+	// The second line carries what the wide row shows around the message: when
+	// it happened, in which category, and which event — plus the level when it
+	// is not a plain info entry.
+	sub := fmt.Sprintf("   %s · %s · %s", stamp, strings.TrimSpace(e.Cat.Short()), e.Ev)
+	if lv := strings.ToLower(e.LevelOf().String()); lv != "info" {
+		sub += " · " + lv
+	}
+	if d := durText(e.DurMS); d != "" {
+		sub += " · " + d
 	}
 	if selected {
-		style = th.CursorActive
+		return th.CursorInactive.Render(fitWidth(sub, contentW))
 	}
-
-	var out []string
-	if width >= 64 {
-		head := fmt.Sprintf("%s %s %s %s ", stamp, glyph, cat, paneTag(e.Panel))
-		body := ansi.Truncate(msg, max(1, width-lipgloss.Width(head)-1), "…")
-		out = append(out, style.Render(fitWidth(head+body, width)))
-	} else {
-		out = append(out, style.Render(fitWidth(" "+fmt.Sprintf("%s %s %s", glyph, cat, msg), width)))
-		sub := fmt.Sprintf("   %s %s", stamp, strings.ToLower(level.String()))
-		if dur := durText(e.DurMS); dur != "" {
-			sub += " · " + dur
-		}
-		out = append(out, th.Empty.Render(fitWidth(sub, width)))
-	}
-	return out
+	return th.Empty.Render(fitWidth(sub, contentW))
 }
 
 // paneTag marks the panel an entry belongs to (L/R), blank for global events.
@@ -411,27 +667,29 @@ func durText(ms int64) string {
 	return fmt.Sprintf("%dm%02ds", ms/60000, (ms/1000)%60)
 }
 
-// activityDetailLines is the box under the list describing the selected entry.
-func (a *App) activityDetailLines(v *activityView, width int) []string {
-	if len(v.rows) == 0 {
+// activityDetailLines describes the selected entry, without a box: the time and
+// level, the message, the error, then the fields that exist.
+func (a *App) activityDetailLines(v *activityView, width int, now time.Time) []string {
+	// Defensive: a stale selection must never index past the list (this was a
+	// crash: select the last entry, open the details, press Down).
+	if v == nil || len(v.rows) == 0 || v.sel < 0 || v.sel >= len(v.rows) {
 		return nil
 	}
 	e := v.entries[v.rows[v.sel]]
 	th := a.theme
 	avail := max(8, width-2)
+	pad := " "
 	var out []string
-	out = append(out, th.Summary.Render(ansi.Truncate(
-		e.Time.Format("2006-01-02 15:04:05"), avail, "…"))+th.Empty.Render("  "+e.LevelOf().Label()+" · "+e.Ev))
+	out = append(out, pad+th.Summary.Render(e.Time.Format("2006-01-02 15:04:05"))+
+		th.Divider.Render(" · ")+th.ColumnHeader.Render(e.LevelOf().Label())+
+		th.Divider.Render(" · ")+th.ColumnHeader.Render(e.Ev))
 	if e.Msg != "" {
-		out = append(out, th.Info.Render(ansi.Truncate(fsys.SanitizeName(e.Msg), avail, "…")))
+		out = append(out, pad+th.Info.Render(ansi.Truncate(fsys.SanitizeName(e.Msg), avail-1, "…")))
 	}
 	if e.Err != "" && e.Err != e.Msg {
-		out = append(out, th.Error.Render(ansi.Truncate(fsys.SanitizeName(e.Err), avail, "…")))
+		out = append(out, pad+th.Error.Render(ansi.Truncate(fsys.SanitizeName(e.Err), avail-1, "…")))
 	}
 	var facts []string
-	if e.Cat != "" && e.Ev != "" {
-		facts = append(facts, e.Cat.Label())
-	}
 	if e.Kind != "" {
 		facts = append(facts, e.Kind)
 	}
@@ -451,27 +709,24 @@ func (a *App) activityDetailLines(v *activityView, width int) []string {
 		facts = append(facts, "panel "+e.Panel)
 	}
 	if e.Run != "" {
-		facts = append(facts, "run "+shortRun(e.Run))
+		when := "this session"
+		if e.Run != a.activityCurrentRun() {
+			when = activityDateLabel(e.Time, now)
+		}
+		facts = append(facts, "session "+when)
 	}
 	if len(facts) > 0 {
-		out = append(out, th.Empty.Render(ansi.Truncate(strings.Join(facts, " · "), avail, "…")))
+		out = append(out, pad+th.Summary.Render(ansi.Truncate(strings.Join(facts, " · "), avail-1, "…")))
 	}
 	// Data keys, sorted for a stable frame.
 	for _, k := range sortedKeys(e.Data) {
-		out = append(out, th.Empty.Render(ansi.Truncate(fsys.SanitizeName(k)+": "+fsys.SanitizeName(e.Data[k]), avail, "…")))
+		out = append(out, pad+th.Empty.Render(ansi.Truncate(
+			fsys.SanitizeName(k)+": "+fsys.SanitizeName(e.Data[k]), avail-1, "…")))
 	}
 	if len(out) > actDetailMax {
 		out = out[:actDetailMax]
 	}
 	return out
-}
-
-// shortRun abbreviates a run ID (20261027T101500.123456789) for display.
-func shortRun(id string) string {
-	if len(id) > 15 {
-		return id[:15]
-	}
-	return id
 }
 
 func sortedKeys(m map[string]string) []string {
@@ -500,13 +755,20 @@ func (a *App) activityHints() []barItem {
 			item("cat:/lvl:/ev:", "filters", ""),
 		}
 	}
-	out := []barItem{item("↑↓", "move", ""), item("c", "category", "c"), item("l", "level", "l")}
+	// No "↑↓ move" chip: the list is the whole screen and the arrows are
+	// obvious, while the room it frees keeps "Esc close" visible at 100
+	// columns. Everything below is in the order a narrow terminal drops it.
+	out := []barItem{item("c", "category", "c"), item("l", "level", "l")}
 	if v != nil && !v.filter.Empty() {
 		out = append(out, item("x", "clear", "x"))
 	}
-	out = append(out, item("/", "filter", "/"), item("[ ]", "run", "["),
-		item("⏎", "details", "enter"), item("r", "reload", "r"))
-	return append(out, item("Esc", "close", "esc"))
+	// Closing comes before the rarer actions so even a 60-column terminal
+	// still shows the one key that always works, and the last chips are the
+	// ones a narrow terminal drops.
+	out = append(out, item("Esc", "close", "esc"), item("/", "filter", "/"),
+		item("[ ]", "session", "["), item("⏎", "details", "enter"),
+		item("r", "reload", "r"))
+	return out
 }
 
 // activityMouse handles the wheel over the list, and a tap to select a row.
@@ -516,50 +778,40 @@ func (a *App) activityMouse(ev tea.MouseEvent) tea.Cmd {
 		return nil
 	}
 	// The wheel first: it arrives as a press, but it must scroll rather than
-	// select the row under the pointer.
+	// select the line under the pointer.
 	if ev.IsWheel() {
-		a.activityScroll(wheelDelta(ev))
+		a.activityScroll(wheelDelta(ev) * 3)
 		return nil
 	}
 	if ev.Action != tea.MouseActionPress || ev.Button != tea.MouseButtonLeft {
 		return nil
 	}
-	// A tap on a list row selects it; a second tap on the selected row opens
-	// the details.
-	const bodyTop = 2 // title line + header line (see View)
-	row := ev.Y - bodyTop
-	if row < 0 {
+	// The body starts below the title line, and its first line is the header:
+	// screen y = 1 (title) + 1 (header) + list line.
+	line := v.top + (ev.Y - 2)
+	if line < 0 || line >= len(v.lines) {
 		return nil
 	}
-	if a.width < 64 {
-		row /= 2 // two-line rows
+	l := v.lines[line]
+	if l.kind == actHeaderLine {
+		return nil // a session rule is not an entry
 	}
-	i := v.offset + row
-	if i < 0 || i >= len(v.rows) {
-		return nil
-	}
-	if i == v.sel {
+	if l.row == v.sel {
 		v.detail = !v.detail
-		v.lastRows = 0
 	} else {
-		v.sel = i
+		v.sel = l.row
 	}
-	v.clampOffset()
+	a.activityNormalize()
 	return nil
 }
 
-// activityScroll moves the list by delta rows (keyboard or wheel).
+// activityScroll moves the selection by delta entries (keyboard or wheel) and
+// keeps it in view.
 func (a *App) activityScroll(delta int) {
 	v := a.actView
 	if v == nil {
 		return
 	}
 	v.sel += delta
-	if v.sel < 0 {
-		v.sel = 0
-	}
-	if v.sel >= len(v.rows) {
-		v.sel = len(v.rows) - 1
-	}
-	v.clampOffset()
+	a.activityNormalize()
 }

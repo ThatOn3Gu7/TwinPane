@@ -622,8 +622,10 @@ func (a *App) openActivityView() tea.Cmd {
 	}
 	v := &activityView{}
 	a.actView = v
-	v.reload(a)
+	// Log first, then snapshot: the viewer's own action belongs to this
+	// session's block, so opening it does not look like an earlier run.
 	a.logf(activity.LevelInfo, activity.CatUI, "ui.view", "opened the activity log")
+	v.reload(a)
 	return nil
 }
 
