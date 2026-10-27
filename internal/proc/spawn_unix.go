@@ -7,6 +7,7 @@ import (
 	"os"
 	"sync"
 	"syscall"
+	"time"
 )
 
 // Child is a started process. Wait and Kill may be called from different
@@ -16,6 +17,9 @@ type Child struct {
 	mu     sync.Mutex // guards done/status; held while reaping
 	done   bool
 	status Status
+	// trace records the command's end for the observer installed with
+	// SetTrace (see trace.go); nil when nobody is listening.
+	trace func(Status, error)
 }
 
 // Start starts the process described by s with syscall.ForkExec (no pidfd,
@@ -34,7 +38,7 @@ func Start(s Spec) (*Child, error) {
 	if err != nil {
 		return nil, &os.PathError{Op: "fork/exec", Path: s.Path, Err: err}
 	}
-	return &Child{Pid: pid}, nil
+	return &Child{Pid: pid, trace: startTrace(s, argv, time.Now())}, nil
 }
 
 // Wait waits for the process to exit and reaps it. It may be called again
@@ -67,6 +71,9 @@ func (c *Child) Wait() (Status, error) {
 		defer c.mu.Unlock()
 	}
 	if err != nil {
+		if c.trace != nil {
+			c.trace(Status{}, err)
+		}
 		return Status{}, err
 	}
 	c.done = true
@@ -74,6 +81,9 @@ func (c *Child) Wait() (Status, error) {
 		c.status = Status{Signal: ws.Signal()}
 	} else {
 		c.status = Status{Code: ws.ExitStatus()}
+	}
+	if c.trace != nil {
+		c.trace(c.status, nil)
 	}
 	return c.status, nil
 }
