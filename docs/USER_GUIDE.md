@@ -1,6 +1,6 @@
 # TwinPane user guide
 
-The complete reference for TwinPane 0.9.0: every feature, key and safety
+The complete reference for TwinPane 0.10.0: every feature, key and safety
 rule. For installation, building and an overview, see the
 [README](../README.md); for the version history, see the
 [changelog](../CHANGELOG.md).
@@ -11,7 +11,7 @@ behaviour are noted where they apply and summarised under
 [Keyboard controls](#keyboard-controls).
 
 ```
- TwinPane  0.9.0                                   hidden: off · active: left panel
+ TwinPane  0.10.0                                  hidden: off · active: left panel
 ╭──────────────────────────────────────╮┌──────────────────────────────────────┐
 │ /home/me/L                           ││ /home/me/R                           │
 │ Name        ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓          │
@@ -30,7 +30,20 @@ behaviour are noted where they apply and summarised under
 
 ## Features
 
-### New in v0.10.0 (unreleased: New file, New menu)
+### New in v0.10.0 (settings, notifications, history, activity log, focus mode, New file)
+
+TwinPane 0.10.0 makes everything you did visible and editable in one place. The
+**Settings screen** (`F9`/`Ctrl+S`) now owns every durable preference and floats
+over the panels; results arrive as **notifications** in the corner instead of a
+line at the bottom; `t` shows **one task and operation-history list** with live
+progress, and **Stay and watch** floats over the panes like the settings window.
+A second, separate record — the **activity log** (`L`) — writes what the program
+was doing, with command timings and exit codes, for troubleshooting. `Ctrl+O`
+gives one panel the **full width**, each panel remembers where it has been
+(`[`/`]`), remote text files open in a **read-only preview**, and `n` now opens a
+**New file / New folder** menu. Existing keys, files and behaviour are
+unchanged: the operation history is still in the Tasks screen, and neither
+record is required for anything else to work.
 
 **`n` now opens a small menu** with *New file…* (`f`) and *New folder…*
 (`d`); Menu → *New file…* / *New folder…* do the same. New folder is the
@@ -108,13 +121,6 @@ On success the panel is refreshed, the cursor moves to the new file, and the
 status line reports `Created file "notes.md"`. The dialog works with the
 keyboard and the mouse (tapping the menu rows, the ◂ ▸ arrows and hint items)
 and wraps its text on narrow terminals.
-
-### New in v0.9.0 (search, operations, analysis, archives)
-
-TwinPane 0.9.0 adds native search, reviewable directory comparison,
-cancellable folder-size analysis, and a background task view. It also adds
-read-only TAR browsing, persists the hidden-file preference, and includes
-several safety fixes.
 
 #### Back and forward through each panel's history (`[` / `]`)
 
@@ -234,105 +240,6 @@ nothing about them changes.
   not for the words), and the alternatives always work too: `M` → **Focus
   mode**, that chip, and a tap on the TwinPane badge.
 
-#### Live filename search (`/`)
-
-`/` opens a live, non-recursive filename search of the active panel's folder.
-Since the search redesign it uses the same frame as the rest of the app:
-
-- A bordered **Find files by name** section holds the search root, the
-  `Name:` field (placeholder `Type a filename or path…`) and one status line
-  with the entry and match counts (`1 match of 6 entries · hidden skipped`).
-  The keyboard hints stay in the bottom bar, so the counts never compete with
-  them for room.
-- A separate bordered **Results · N** section lists matches with an aligned
-  type column (`DIR`, `FILE`, …) when the terminal is wide enough, a `▸`
-  marker plus a full-row highlight for the selection, and a scroll thumb on
-  its right border.
-- Narrow or short terminals drop the borders and truncate the root line;
-  the query, counts, results and hints always remain, down to 30×7.
-
-#### Advanced Search (`Ctrl+G` from `/`)
-- `/` remains the familiar live filename search. While that box is open,
-  `Ctrl+G` opens Advanced Search and carries the current query into its
-  recursive **filename** mode. The footer and `?` help document this route.
-- Advanced Search stays inside TwinPane: the left side has a query and a
-  scrollable result list; the right side previews the selected file or its
-  matching content lines. Type to filter, use `↑`/`↓` (or `Ctrl+P`/`Ctrl+N`)
-  to move, `Enter` to inspect a file read-only (`Enter` on a folder opens it
-  in the panel), and `Esc` to return. Closing the search or inspection does
-  not change either panel's directory, cursor, or selection. `Esc` from
-  inspection returns to the same query and result.
-- **Actions (`Ctrl+A`).** `Ctrl+A` opens a menu for the selected result, so
-  every printable key keeps belonging to the query. Its letters are shown in
-  the menu and only work while it is open: `i` inspect read-only, `o` open
-  with the default app (`o` opens a folder on folder results), `t` jump to
-  location, `e` edit, `O` open with…, `c` copy to the other panel, `m` move to
-  the other panel, `r` rename, `y` copy path, `d` delete (last, in the danger
-  colour). `Enter` runs the highlighted row and `Esc`/`q` close only the menu.
-  Copy, move, rename and delete use the same checks, conflict questions,
-  confirmations, progress and cancellation as the panels, so a delete goes to
-  the trash unless the trash is unavailable, and destructive confirmations
-  are unchanged. The panel you searched from keeps its cursor and selection,
-  the other panel refreshes exactly as it does for the panels' own copy/move,
-  and the results stay on screen: a moved or deleted result disappears from
-  the list and a renamed one keeps its position under the new name.
-- **Jump to location (`t`)** closes the search, navigates the panel the
-  search was started from to the result's folder, selects it there, and says
-  so in the status line. A content result also opens in the regular viewer on
-  the matching line (with the matches highlighted), so `n`/`N` continue from
-  there; if the line cannot be shown the jump still lands on the file.
-- **Copy path (`y`)** places the absolute path on the terminal clipboard with
-  OSC 52 (no `xclip`/`wl-copy` needed, works over SSH and in Termux) and names
-  the path in the status line, because terminals without OSC 52 ignore the
-  sequence silently.
-- Filename mode is case-insensitive fuzzy subsequence matching over relative
-  paths: `asgo` can find `src/AdvancedSearch.go`; it honors the hidden-file
-  setting active in `/`. `Ctrl+T` switches in place to content mode and back
-  without clearing the query. Content matching uses smart case (lowercase
-  queries ignore case; capitals make the query exact).
-- Content mode includes hidden files and directories except directories named
-  exactly `.git`, at any depth. `.gitignore`, `.github`, and similarly named
-  paths are searchable. Symlinks and special files are not followed/opened;
-  binary files are skipped and counted. Unreadable paths, cancellation, empty
-  results, per-file/total scan caps, and a 10,000-result cap are reported in
-  the status area. A content scan visits at most 500,000 paths, scans 200,000
-  regular files, returns 10,000 matching files, and examines at most 1 MiB per
-  file and 512 MiB total by default; matching-file previews show bounded line
-  excerpts.
-- The preview pane uses the same Chroma highlighting as the viewer: line
-  numbers in their own gutter, syntax colours for the code, and content
-  matches painted with the match colour (a solid background) so they stand
-  out from strings, comments and keywords. No external tool such as `bat` is
-  needed.
-- **Layout.** A bordered section at the top holds the root, the query field
-  (`Files:` or `Text:`) and one progress/result line. Below it, **Results · N**
-  and **Preview · name** are separate bordered panels; the results panel keeps
-  its right-hand count label, a `▸` marker, a full-row highlight for the
-  selected row and a scroll thumb, while the preview names the file (and its
-  match count in content mode).
-- **Preview scrolling.** Point at the preview and use the mouse wheel (or
-  swipe on Termux) to scroll through the file; the right border shows a
-  scroll indicator, which can be tapped or dragged like the other panels.
-  Scrolling always follows the pointer: over the result list it moves the
-  selection, over the preview it moves the preview. Content previews keep the
-  file summary pinned at the top and scroll the matching lines below it.
-  Choosing another result starts its preview at the top again. When the
-  terminal is too short or narrow for
-  two panes the panels stack (results
-  above the preview). Very short terminals (around 30×9) fall back to a
-  compact, unboxed list that keeps the heading, root, query, status and rows.
-  Long names are truncated rather than pushing columns out of place, and the
-  status line abbreviates its counters instead of overflowing.
-- The read-only inspection viewer preserves the content query, highlights
-  every matching occurrence distinctly from syntax colours, and uses `n`/`N`
-  to navigate matching lines. Inspection is read-only; use `Ctrl+A` → `e` in
-  the results to hand a file to the editor, or `Ctrl+A` → `t` to jump to the
-  file and open it on the matching line in the regular viewer, where `e`
-  edits it. Go, JSON, YAML, shell, and many other common
-  source/config formats receive Chroma highlighting; unknown formats stay
-  plain text. Viewer loading remains bounded to 8 MiB, 500,000 lines, and
-  16 KiB per line.
-
 #### Tasks and operation history (`t`)
 
 Long-running file operations run as background tasks, so the panels remain
@@ -441,7 +348,8 @@ corner of the panel area rather than by a line at the bottom of the screen:
   about a background task opens the task list on that task, which is what a
   single tap used to do.
 - **Going away by itself:** an unpinned notification drains its border from
-  right to left and closes when it runs out (four seconds). While a dialog is
+  right to left and closes when it runs out (four seconds by default; Settings →
+  *Notifications → Duration* sets 2–10 for the next pop-up). While a dialog is
   open the pop-up is not drawn and its countdown pauses, so a result cannot
   expire unseen behind a prompt.
 - **No spam:** only one notification is shown at a time, a newer result
@@ -572,6 +480,112 @@ The file is `activity.jsonl` beside `settings.json` (mode 0600), honouring
 and `--no-log` (or `TWINPANE_LOG`, `TWINPANE_LOG_MODE`, `TWINPANE_LOG_SIZE`,
 `TWINPANE_LOG_DAYS`) override the file and retention for one run. Nothing is
 sent anywhere: the log is local and only read by you.
+
+### New in v0.9.0 (search, operations, analysis, archives)
+
+TwinPane 0.9.0 adds native search, reviewable directory comparison,
+cancellable folder-size analysis, and a background task view. It also adds
+read-only TAR browsing, persists the hidden-file preference, and includes
+several safety fixes.
+
+#### Live filename search (`/`)
+
+`/` opens a live, non-recursive filename search of the active panel's folder.
+Since the search redesign it uses the same frame as the rest of the app:
+
+- A bordered **Find files by name** section holds the search root, the
+  `Name:` field (placeholder `Type a filename or path…`) and one status line
+  with the entry and match counts (`1 match of 6 entries · hidden skipped`).
+  The keyboard hints stay in the bottom bar, so the counts never compete with
+  them for room.
+- A separate bordered **Results · N** section lists matches with an aligned
+  type column (`DIR`, `FILE`, …) when the terminal is wide enough, a `▸`
+  marker plus a full-row highlight for the selection, and a scroll thumb on
+  its right border.
+- Narrow or short terminals drop the borders and truncate the root line;
+  the query, counts, results and hints always remain, down to 30×7.
+
+#### Advanced Search (`Ctrl+G` from `/`)
+- `/` remains the familiar live filename search. While that box is open,
+  `Ctrl+G` opens Advanced Search and carries the current query into its
+  recursive **filename** mode. The footer and `?` help document this route.
+- Advanced Search stays inside TwinPane: the left side has a query and a
+  scrollable result list; the right side previews the selected file or its
+  matching content lines. Type to filter, use `↑`/`↓` (or `Ctrl+P`/`Ctrl+N`)
+  to move, `Enter` to inspect a file read-only (`Enter` on a folder opens it
+  in the panel), and `Esc` to return. Closing the search or inspection does
+  not change either panel's directory, cursor, or selection. `Esc` from
+  inspection returns to the same query and result.
+- **Actions (`Ctrl+A`).** `Ctrl+A` opens a menu for the selected result, so
+  every printable key keeps belonging to the query. Its letters are shown in
+  the menu and only work while it is open: `i` inspect read-only, `o` open
+  with the default app (`o` opens a folder on folder results), `t` jump to
+  location, `e` edit, `O` open with…, `c` copy to the other panel, `m` move to
+  the other panel, `r` rename, `y` copy path, `d` delete (last, in the danger
+  colour). `Enter` runs the highlighted row and `Esc`/`q` close only the menu.
+  Copy, move, rename and delete use the same checks, conflict questions,
+  confirmations, progress and cancellation as the panels, so a delete goes to
+  the trash unless the trash is unavailable, and destructive confirmations
+  are unchanged. The panel you searched from keeps its cursor and selection,
+  the other panel refreshes exactly as it does for the panels' own copy/move,
+  and the results stay on screen: a moved or deleted result disappears from
+  the list and a renamed one keeps its position under the new name.
+- **Jump to location (`t`)** closes the search, navigates the panel the
+  search was started from to the result's folder, selects it there, and says
+  so in the status line. A content result also opens in the regular viewer on
+  the matching line (with the matches highlighted), so `n`/`N` continue from
+  there; if the line cannot be shown the jump still lands on the file.
+- **Copy path (`y`)** places the absolute path on the terminal clipboard with
+  OSC 52 (no `xclip`/`wl-copy` needed, works over SSH and in Termux) and names
+  the path in the status line, because terminals without OSC 52 ignore the
+  sequence silently.
+- Filename mode is case-insensitive fuzzy subsequence matching over relative
+  paths: `asgo` can find `src/AdvancedSearch.go`; it honors the hidden-file
+  setting active in `/`. `Ctrl+T` switches in place to content mode and back
+  without clearing the query. Content matching uses smart case (lowercase
+  queries ignore case; capitals make the query exact).
+- Content mode includes hidden files and directories except directories named
+  exactly `.git`, at any depth. `.gitignore`, `.github`, and similarly named
+  paths are searchable. Symlinks and special files are not followed/opened;
+  binary files are skipped and counted. Unreadable paths, cancellation, empty
+  results, per-file/total scan caps, and a 10,000-result cap are reported in
+  the status area. A content scan visits at most 500,000 paths, scans 200,000
+  regular files, returns 10,000 matching files, and examines at most 1 MiB per
+  file and 512 MiB total by default; matching-file previews show bounded line
+  excerpts.
+- The preview pane uses the same Chroma highlighting as the viewer: line
+  numbers in their own gutter, syntax colours for the code, and content
+  matches painted with the match colour (a solid background) so they stand
+  out from strings, comments and keywords. No external tool such as `bat` is
+  needed.
+- **Layout.** A bordered section at the top holds the root, the query field
+  (`Files:` or `Text:`) and one progress/result line. Below it, **Results · N**
+  and **Preview · name** are separate bordered panels; the results panel keeps
+  its right-hand count label, a `▸` marker, a full-row highlight for the
+  selected row and a scroll thumb, while the preview names the file (and its
+  match count in content mode).
+- **Preview scrolling.** Point at the preview and use the mouse wheel (or
+  swipe on Termux) to scroll through the file; the right border shows a
+  scroll indicator, which can be tapped or dragged like the other panels.
+  Scrolling always follows the pointer: over the result list it moves the
+  selection, over the preview it moves the preview. Content previews keep the
+  file summary pinned at the top and scroll the matching lines below it.
+  Choosing another result starts its preview at the top again. When the
+  terminal is too short or narrow for
+  two panes the panels stack (results
+  above the preview). Very short terminals (around 30×9) fall back to a
+  compact, unboxed list that keeps the heading, root, query, status and rows.
+  Long names are truncated rather than pushing columns out of place, and the
+  status line abbreviates its counters instead of overflowing.
+- The read-only inspection viewer preserves the content query, highlights
+  every matching occurrence distinctly from syntax colours, and uses `n`/`N`
+  to navigate matching lines. Inspection is read-only; use `Ctrl+A` → `e` in
+  the results to hand a file to the editor, or `Ctrl+A` → `t` to jump to the
+  file and open it on the matching line in the regular viewer, where `e`
+  edits it. Go, JSON, YAML, shell, and many other common
+  source/config formats receive Chroma highlighting; unknown formats stay
+  plain text. Viewer loading remains bounded to 8 MiB, 500,000 lines, and
+  16 KiB per line.
 
 #### Other additions and safety fixes
 
@@ -1755,14 +1769,14 @@ disables tips whatever the screen says.
 | `Ctrl+G` (while `/` is open) | open Advanced Search |
 | `Ctrl+T` (in Advanced Search) | switch between filename and content search |
 | `Ctrl+A` (in Advanced Search) | actions for the selected result: open, jump, edit, open with, copy, move, rename, copy path, delete |
-| `t` | tasks and operation history: active progress, this run's results and earlier runs in one list (`↑`/`↓`, `[`/`]`, `c`, `x`, `⏎`/`w`) |
+| `t` | tasks and operation history: active progress, this run's results and earlier runs in one list (`↑`/`↓`, `[`/`]`, `⏎`/`w`, `c`, `x`, `+`/`-`) |
 | `L` | activity log: what TwinPane did, for troubleshooting (`c` category, `l` level, `/` filter, `[`/`]` run, `⏎` details) |
 | `h` / `H` / `.` | show / hide hidden files in **both** panels |
 | `s` | cycle sort: name → size → time → type |
 | `S` | reverse the sort order (↑/↓) |
 | `Ctrl+L` | refresh both panels (`Ctrl+R` in v0.7.0) |
-| `[` / `Alt+←` | **back** one step in this panel's history (cursor restored; new in v0.9.0) |
-| `]` / `Alt+→` | **forward** one step in this panel's history (new in v0.9.0) |
+| `[` / `Alt+←` | **back** one step in this panel's history (cursor restored; new in v0.10.0) |
+| `]` / `Alt+→` | **forward** one step in this panel's history (new in v0.10.0) |
 | `Ctrl+R` | **sources**: local files or an rclone remote for the active panel (new in v0.8.0) |
 | `n` | **new file / new folder** menu (new in v0.10.0) |
 | `F7` | **new folder** directly (new in v0.8.0) |
@@ -1776,7 +1790,7 @@ a folder directly in v0.8.0–v0.9.0); `F7` still creates a folder directly.
 **Changed in v0.8.0:** refresh is `Ctrl+L` (was `Ctrl+R`);
 `Ctrl+R` opens Sources (cloud remotes); `n`/`F7` (new folder) are new. These
 keys were unused before, apart from `Ctrl+R`, whose move was decided
-deliberately and is documented here. `[` and `]` (new in v0.9.0) were unused
+deliberately and is documented here. `[` and `]` (new in v0.10.0) were unused
 before as well; `Alt+←`/`Alt+→` join the existing `←`/`→` movement keys as
 their Alt forms, so plain `←`/`→` keep working exactly as before. `Ctrl+R` inside the bulk-rename dialog
 (regular expressions) is unchanged.
@@ -1825,8 +1839,12 @@ editor, `Esc`/`q` close.
 permission grid, `Space` toggles, `Enter` applies, `Esc` closes without
 applying.
 
-**Command line:** `twinpane [--version] [--no-mouse] [--no-editor-tips]`.
-`TWINPANE_NO_MOUSE=1` works like `--no-mouse`.
+**Command line:** `twinpane [--version] [--no-mouse] [--no-editor-tips]
+[--log FILE] [--log-mode off|warnings|actions|verbose] [--log-size KiB]
+[--log-days N] [--no-log]`. `TWINPANE_NO_MOUSE=1` works like `--no-mouse`;
+`TWINPANE_LOG`, `TWINPANE_LOG_MODE`, `TWINPANE_LOG_SIZE` and
+`TWINPANE_LOG_DAYS` work like the `--log*` flags, and `TWINPANE_CONFIG_DIR`
+moves `settings.json`, `bookmarks.json`, `history.json` and `activity.jsonl`.
 
 **Search box:** type to filter, `↑`/`↓` `PgUp`/`PgDn` move, `Enter` jumps to the
 item, `F4` edits, `Tab` switches between the text field and the result list.
@@ -1842,8 +1860,12 @@ how to apply or cancel.
 
 **In dialogs:** `Enter` activates the highlighted button, `←`/`→`/`Tab` move
 between buttons, letter hotkeys are shown in brackets, `Esc` cancels, and
-`↑`/`↓` scroll long reports. Text fields support `←` `→` `Home` `End`
-`Backspace` `Delete` `Ctrl+U` `Ctrl+K` `Ctrl+W` and paste.
+`↑`/`↓` scroll long reports. A list longer than the dialog (the format
+chooser, the bookmarks list, the editor chooser) scrolls with its highlight as
+the cursor moves, including with the wheel and a tap, and draws a slim
+indicator on its right border; short lists draw none. Text fields support
+`←` `→` `Home` `End` `Backspace` `Delete` `Ctrl+U` `Ctrl+K` `Ctrl+W` and
+paste.
 
 ## Building, installing and project layout
 
@@ -1968,5 +1990,6 @@ including the end-to-end test scripts, are in
 - Storage overview (`i`): one filesystem at a time (the active panel's, plus
   the other panel's if different); it is separate from the recursive local
   folder-size analysis (`A`). There is no list of all mounts.
-- Not included: configurable keys/themes or folder-size analysis of cloud
+- Not included: configurable keys, themes of your own (Settings → *Appearance*
+  offers `default`, `green` and `amber`), or folder-size analysis of cloud
   remotes and archive contents.

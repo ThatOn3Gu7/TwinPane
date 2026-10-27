@@ -28,6 +28,10 @@ cmd/twinpane ──► internal/ui ──► internal/panel ──► internal/f
 | `proc` | v0.3.1: `LookPath` and `Start`/`Wait`/`Kill` without the system calls Android's seccomp filter forbids. All program lookups and starts go through it. | stdlib, `x/sys` |
 | `cloud` | Phase 9: rclone remotes. `Detect`, `Client.Remotes`/`List`/`Stat`/`Mkdir`/`Rename`/`Delete`/`Transfer`, the `Path` type (`remote:path` or local), and `Error` with an `ErrKind` that explains failures (not installed, login, network, missing, exists, unsupported, locked config, cancelled). Starts rclone through `proc`, never a shell. | stdlib, `proc`, `ops` (transfer types) |
 | `foldersize` | On-demand local recursive scan: apparent and allocated totals, bounded largest-entry samples, mount/volume boundaries, identity-based duplicate avoidance, cancellation and batched progress. Does not import UI or modify files. | stdlib, `storage`, platform syscalls (`x/sys/unix` on Unix) |
+| `settings` | `settings.json`: one versioned record of every durable preference (startup folders, sort, notifications, theme, editor, mouse, viewer, compression, history retention, activity log). `Save` refuses to overwrite a damaged or newer file; `Normalized` forces out-of-range values back to defaults. | stdlib, `bookmarks` (config dir) |
+| `history` | Operation history (`history.json`): one session per launch, newest-first operations, statuses including `interrupted`, retention pruning that never drops the running session, atomic replacement and `corrupt-<timestamp>` recovery. Read-only helpers feed the Tasks screen. | stdlib, `bookmarks` (config dir) |
+| `activity` | The activity log: an append-only NDJSON store (`Log`), the redactor, the rotation/age policy, entry decoding with malformed-line recovery, and the category/level/query filters the viewer reuses. | stdlib, `bookmarks` (config dir) |
+| `dircompare` | Directory comparison: the two-folder scan, entry kinds, optional SHA-256 verification of matching files, and the copy-only sync plan (never a deletion). No UI imports. | stdlib, `fsys` |
 | `ui` | Root `tea.Model`: owns two panels, routes keys to the active one, lays out the screen, and renders the title, status line, footer and help. Phase 2 adds dialogs (`dialog.go`, `input.go`), operation sessions (`fileops.go`) and editor launching (`edit.go`). | everything above |
 
 A panel never refers to the other panel. Cross-panel actions such as `=` (and
@@ -1126,6 +1130,70 @@ menu, narrow terminal) and `internal/ui/dialog_scroll_test.go` (cursor
 follows the view in the chooser, wrap-around at both ends, wheel scrolling,
 indicator position and presence, tapping a scrolled row, text dialogs with
 their scroll row, short dialogs without an indicator, long bookmark lists).
+
+## Notifications (`internal/ui/notice.go`)
+
+Results of finished work are reported by a pop-up in a corner of the panel
+area; prompts, refusals, progress and navigation notes stay in the status
+line. `notice` holds the heading kind (success, warning, error, info), the
+heading, the message lines, the details, the corner and the remaining time.
+`App.notice` is a single slot: a newer result replaces the older one, a
+repeated result restarts its countdown, and the countdown pauses while a
+dialog covers it (`View` skips the pop-up entirely then, so it cannot expire
+unseen).
+
+- The countdown is drawn into the bottom border of the box rather than a
+  separate row, so the box stays small; a tap pins it (`pinned` stops the
+  drain) and a second tap on a notification about a background task opens the
+  task list on that task.
+- The box is laid out by the same helpers as the dialogs (`overlay`,
+  `fitWidth`, wrapping) and shrinks with the terminal; below about 30 columns
+  or 10 rows nothing is drawn and the status line and task list still report
+  the result.
+- Callers only build a `taskResult`; the operation code never draws.
+
+Tests: `internal/ui/notice_test.go` (kinds, wording, wrapping, pin/resume,
+replacement, dialog pause, tiny terminals).
+
+## Focus mode and panel navigation history (`ui/focus.go`, `ui/nav.go`)
+
+`Ctrl+O` is presentation only: `App.focus` narrows the drawn screen to the
+active panel, and the hidden panel is never resized, so its listing, cursor,
+scroll offset, selection, sort and history survive untouched. The extra width
+adds the `Type` column, the breadcrumb title row and — on wide, tall terminals
+— the preview pane (`p`), which reads the selected local file through
+`textview`. `Ctrl+G` opens the go-to field, and `c`/`m` use the destination
+chooser (`focus_dest.go`) that lists the hidden panel first and then the
+folders visited this run.
+
+`nav.go` keeps a per-panel slice of locations (local path, archive inner path
+or rclone `cloud.Path`) with the cursor entry and scroll offset. `[`/`]` and
+`Alt+←`/`Alt+→` move through it, a fresh navigation truncates the forward
+steps, and a location that no longer exists is skipped with a status note. It
+lives in memory only: it is not written to `settings.json` and is separate
+from the bookmarks.
+
+Tests: `internal/ui/focus_test.go`, `nav_test.go`, `viewer_remote_test.go`
+(the streamed remote preview) and the phase tests for the focus-mode layout.
+
+## Directory comparison (`internal/dircompare`, `ui/dircompare.go`)
+
+`Compare` walks both local folders without following symlinks and returns the
+union of relative paths, each with a left and a right `Side` (a `Snapshot` or
+an error) and a `Status`: `left only`, `right only`, `same metadata`,
+`metadata differs`, `content differs`, `identical`, `same content, metadata
+differs`, `type conflict` or `read error`. `Options.IncludeGitDirectories`
+decides whether exact `.git` directories are scanned, and the optional SHA-256
+pass fills in `Snapshot.Hash` for matching regular files. A directory or entry
+that cannot be read becomes a `ScanError` instead of failing the whole
+comparison, so a partial result is still reviewable; cancellation stops it
+promptly.
+
+The sync plan is built from the selection and contains copy actions only —
+deletions are never generated — and it must be reviewed and approved before
+anything runs. Execution re-checks each planned snapshot's filesystem identity
+so a path replaced between review and run is refused, and the usual overwrite
+and conflict prompts still apply per item.
 
 ## Extension points for later phases
 - **Archive browsing:** ZIP and TAR-family archives use the virtual read-only

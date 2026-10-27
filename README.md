@@ -33,7 +33,7 @@ view with large touch targets is easier than typing long paths.
   nothing is ever overwritten without asking.
 
 ```
- TwinPane  0.9.0                                   hidden: off · active: left panel
+ TwinPane  0.10.0                                  hidden: off · active: left panel
 ╭──────────────────────────────────────╮┌──────────────────────────────────────┐
 │ /home/me/L                           ││ /home/me/R                           │
 │ Name        ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓          │
@@ -77,6 +77,13 @@ The [user guide](docs/USER_GUIDE.md) describes every feature in detail.
   panels show the same folder.
 - Bookmarks for folders (`B` adds, `b` lists). A missing folder is reported,
   never replaced by another one.
+- Back and forward through what each panel has seen this run (`[` / `]`,
+  `Alt+←` / `Alt+→`), local, inside an archive or on a remote, with the cursor
+  restored. The two panels keep separate histories; nothing is saved.
+- Focus mode (`Ctrl+O`) gives one panel the full width, with a breadcrumb
+  path line, a `Type` column and a preview pane for the selected file; the
+  hidden panel keeps its folder, cursor and history untouched. `Tab` switches
+  panels and `p` toggles the preview when the terminal is short.
 - Live filename search below the current folder (`/`), using `fd` or `find`
   when installed, otherwise a built-in walker. It searches names only; press
   `Ctrl+G` while it is open for fuzzy filename or content search in Advanced
@@ -90,6 +97,11 @@ The [user guide](docs/USER_GUIDE.md) describes every feature in detail.
   by default and reports binary files and scan limits.
 
 **File operations**
+- New file and New folder (`n` opens a small menu; `F7` goes straight to a new
+  folder). A new file is empty and takes an optional format from 238 extensions
+  in 15 categories (`Ctrl+F` searches them, any other extension can be typed);
+  the dialog shows the exact name it will create, and an existing item is never
+  replaced. Folders can be created on cloud remotes too; new files are local.
 - Copy (`c`) and move (`m`) to the other panel, with progress, cancel, and a
   Skip / Overwrite / Merge choice for every conflict. Moves across
   filesystems are verified with SHA-256 before the source is removed.
@@ -224,6 +236,10 @@ The [user guide](docs/USER_GUIDE.md) describes every feature in detail.
 - Read-only text viewer (`v`, or `Enter` on a text file) with wrapping, line
   numbers, search and syntax highlighting for common source/configuration files.
   Binary files and huge files are handled safely.
+- Remote text files open in the same viewer read-only: `Enter` / `v` streams up
+  to 8 MiB through rclone into a private temporary folder that is deleted
+  afterwards. Editing and Open with are refused there, `Esc` cancels the
+  transfer, and provider errors keep rclone's own explanation.
 - External editor (`e`): `$VISUAL`, then `$EDITOR`, then the first installed
   editor; `E` chooses among the installed editors. The terminal is handed
   over and restored cleanly, also when the editor suspends itself. There is
@@ -235,6 +251,11 @@ The [user guide](docs/USER_GUIDE.md) describes every feature in detail.
   analysis (`A`), and an action menu (`M`, or a tap on the TwinPane title).
 
 **Keyboard, touch and mouse**
+- Every preference in one place: `F9` (or `Ctrl+S`, or Menu → *Settings…*)
+  opens a floating Settings window with startup folders, starting panel, hidden
+  files, default sort, notification corner and duration, theme, editor and tips,
+  mouse, viewer wrapping and line numbers, compression defaults, how many runs
+  the operation history keeps, and the activity log's mode and retention.
 - A context-aware hint bar, a help screen (`?`) with a live filter (`/`),
   and scroll indicators on every list.
 - Tap to move the cursor, double tap to open, swipe to scroll, tap hints and
@@ -244,10 +265,58 @@ The [user guide](docs/USER_GUIDE.md) describes every feature in detail.
 - `--no-mouse` turns touch and mouse input off, so the terminal can select
   text normally.
 
-Not included: configurable keys or themes, and editing archives in place.
+Not included: configurable keys, themes of your own (there are three presets),
+and editing archives in place.
 
-### New in v0.10.0 (unreleased)
+### New in v0.10.0
 
+- **Settings screen** (`F9`, `Ctrl+S` or Menu → *Settings…*): one floating
+  window over the panes that edits every durable preference — startup folders
+  and starting panel, focus-mode preview, hidden files, default sort,
+  notification corner and duration, theme preset, preferred editor and tips,
+  mouse, viewer wrapping and line numbers, compression defaults, how many runs
+  the operation history keeps, and the activity log's mode and retention.
+  Changes apply live where they can and are written atomically to
+  `settings.json`; a damaged file is reported with a `r`-then-`y` recovery.
+- **Notifications:** results of finished work (copy, move, delete, extract,
+  compress, rename, scans, directory plans, cloud operations, a finished edit)
+  appear as a small pop-up in the corner with a heading that names the outcome,
+  its own colour and icon, a border that drains as the time runs out, and a tap
+  that pins it. Prompts, progress and refusals stay in the status line.
+- **Tasks and operation history in one list** (`t`): active tasks with live
+  progress, this run's finished tasks, and the recorded operations of earlier
+  runs under their own date/time headings — one continuous list, selection and
+  details panel included. Recorded rows are read-only and the footer only
+  offers what the selected row can do. `+`/`-` change how many runs are kept
+  (1–200, default 20), saved as a preference. It survives restarts.
+- **"Stay and watch" floats:** the live progress window is now a compact
+  floating pane sized to its content, over the dimmed panels, and it comes back
+  untouched when it closes. The same window `⏎`/`w` opens from the task list.
+- **Activity log (`L`)** — a second, separate record for troubleshooting: what
+  the program was doing, rather than what happened to the files. One
+  append-only file, one viewer, category and level filters over the same
+  entries, and every external command with its duration, exit code and result.
+  Credentials, text-field contents, queries and the clipboard are never
+  written; paths are. Modes `actions` (default), `warnings`, `verbose` and
+  `off`; rotation and an age limit; `--log*` flags and `TWINPANE_LOG*`
+  variables.
+- **Focus mode** (`Ctrl+O`) shows one panel at full width with a
+  breadcrumb path line, a `Type` column and a details pane that previews the
+  selected local text file, while the hidden panel keeps its folder, cursor
+  and history untouched. `Tab` switches panels, `p` toggles the pane,
+  `Ctrl+G` goes to a typed local or remote location, and `c` / `m` open a
+  destination chooser (hidden panel first, then the folders used this run).
+- **Back and forward per panel** (`[` / `]`, `Alt+←` / `Alt+→`) revisit the
+  folders a panel has seen this session — local, inside an archive or on an
+  rclone remote — restoring the cursor and scroll position. Each panel has its
+  own history; it is never saved and stays separate from the bookmarks.
+  Missing locations are skipped with a note, and a fresh navigation drops the
+  forward steps.
+- **Read-only preview of remote text files:** `Enter` / `v` streams up to the
+  viewer's 8 MiB limit through rclone into a private temporary folder that is
+  deleted afterwards. It is strictly read-only (edit and Open with are
+  refused; copy the file to a local panel to work on it), `Esc` cancels the
+  transfer, and provider errors keep rclone's own explanation.
 - **New file** (`n` → *New file…*, or Menu → *New file…*): creates an empty
   file in the active local folder. Type the name with or without an extension
   and, optionally, pick a format: 238 predefined extensions in 15 categories,
@@ -259,6 +328,9 @@ Not included: configurable keys or themes, and editing archives in place.
 - **`n` now opens a small New file / New folder menu.** New folder is the
   existing folder flow, and `F7` still opens it directly. Folder creation
   itself is unchanged, including on cloud remotes; New file is local-only.
+- **Long dialog lists scroll with their highlight** (the format chooser, the
+  bookmarks list, the editor chooser), and draw a slim indicator on their right
+  border; the wheel and taps work there too.
 
 ### New in v0.9.0
 
@@ -271,27 +343,8 @@ Not included: configurable keys or themes, and editing archives in place.
   reviewable, approvable copy-only sync plan. No delete actions are generated.
 - **Folder-size analysis** (`A`) adds cancellable recursive local scans with
   largest-first results and apparent/allocated size totals.
-- **Tasks & history view** (`t`) tracks active operations and their results
-  in one list with the persistent operation history of earlier runs; cancel
-  active tasks, clear this run's finished tasks, and browse earlier runs
-  read-only.
-- **Back and forward per panel** (`[` / `]`, `Alt+←` / `Alt+→`) revisit the
-  folders a panel has seen this session — local, inside an archive or on an
-  rclone remote — restoring the cursor and scroll position. Each panel has its
-  own history; it is never saved and stays separate from the bookmarks.
-  Missing locations are skipped with a note, and a fresh navigation drops the
-  forward steps.
-- **Read-only preview of remote text files:** `Enter` / `v` streams up to the
-  viewer's 8 MiB limit through rclone into a private temporary folder that is
-  deleted afterwards. It is strictly read-only (edit and Open with are
-  refused; copy the file to a local panel to work on it), `Esc` cancels the
-  transfer, and provider errors keep rclone's own explanation.
-- **Focus mode** (`Ctrl+O`) shows one panel at full width with a
-  breadcrumb path line, a `Type` column and a details pane that previews the
-  selected local text file, while the hidden panel keeps its folder, cursor
-  and history untouched. `Tab` switches panels, `p` toggles the pane,
-  `Ctrl+G` goes to a typed local or remote location, and `c` / `m` open a
-  destination chooser (hidden panel first, then the folders used this run).
+- **Background task view** (`t`) tracks long-running operations and their
+  progress or results, with cancel for active tasks.
 - **TAR browsing** lets you inspect TAR and supported compressed-TAR archives
   read-only and selectively extract entries.
 - **Hidden-file visibility** now persists across launches.
@@ -379,7 +432,7 @@ Options go after `sh -s --`:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/ThatOn3Gu7/TwinPane/master/scripts/install.sh | sh -s -- --dir "$HOME/bin"
-curl -fsSL https://raw.githubusercontent.com/ThatOn3Gu7/TwinPane/master/scripts/install.sh | sh -s -- --version v0.9.0
+curl -fsSL https://raw.githubusercontent.com/ThatOn3Gu7/TwinPane/master/scripts/install.sh | sh -s -- --version v0.10.0
 ```
 
 | Option | Meaning |
@@ -410,19 +463,19 @@ TwinPane.
 Download your platform's package and `SHA256SUMS` from the
 [Releases page](https://github.com/ThatOn3Gu7/TwinPane/releases), check the
 checksum, extract the package, and copy `twinpane` into a folder in your
-`PATH`. Replace `v0.9.0` below with the version you want.
+`PATH`. Replace `v0.10.0` below with the version you want.
 
 **Termux (Android ARM64):**
 
 ```sh
 cd ~
-curl -fLO https://github.com/ThatOn3Gu7/TwinPane/releases/download/v0.9.0/twinpane-v0.9.0-android-arm64.tar.gz
-curl -fLO https://github.com/ThatOn3Gu7/TwinPane/releases/download/v0.9.0/SHA256SUMS
-# with wget instead:  wget https://github.com/ThatOn3Gu7/TwinPane/releases/download/v0.9.0/twinpane-v0.9.0-android-arm64.tar.gz
-#                     wget https://github.com/ThatOn3Gu7/TwinPane/releases/download/v0.9.0/SHA256SUMS
-grep ' twinpane-v0.9.0-android-arm64.tar.gz$' SHA256SUMS | sha256sum -c -
-tar -xzf twinpane-v0.9.0-android-arm64.tar.gz
-install -m 755 twinpane-v0.9.0-android-arm64/twinpane "$PREFIX/bin/twinpane"
+curl -fLO https://github.com/ThatOn3Gu7/TwinPane/releases/download/v0.10.0/twinpane-v0.10.0-android-arm64.tar.gz
+curl -fLO https://github.com/ThatOn3Gu7/TwinPane/releases/download/v0.10.0/SHA256SUMS
+# with wget instead:  wget https://github.com/ThatOn3Gu7/TwinPane/releases/download/v0.10.0/twinpane-v0.10.0-android-arm64.tar.gz
+#                     wget https://github.com/ThatOn3Gu7/TwinPane/releases/download/v0.10.0/SHA256SUMS
+grep ' twinpane-v0.10.0-android-arm64.tar.gz$' SHA256SUMS | sha256sum -c -
+tar -xzf twinpane-v0.10.0-android-arm64.tar.gz
+install -m 755 twinpane-v0.10.0-android-arm64/twinpane "$PREFIX/bin/twinpane"
 twinpane --version
 ```
 
@@ -432,23 +485,23 @@ Keep the program in Termux's own folders. Shared storage (`/sdcard`,
 **Linux** (use `linux-arm64` on ARM machines):
 
 ```sh
-curl -fLO https://github.com/ThatOn3Gu7/TwinPane/releases/download/v0.9.0/twinpane-v0.9.0-linux-amd64.tar.gz
-curl -fLO https://github.com/ThatOn3Gu7/TwinPane/releases/download/v0.9.0/SHA256SUMS
-grep ' twinpane-v0.9.0-linux-amd64.tar.gz$' SHA256SUMS | sha256sum -c -
-tar -xzf twinpane-v0.9.0-linux-amd64.tar.gz
+curl -fLO https://github.com/ThatOn3Gu7/TwinPane/releases/download/v0.10.0/twinpane-v0.10.0-linux-amd64.tar.gz
+curl -fLO https://github.com/ThatOn3Gu7/TwinPane/releases/download/v0.10.0/SHA256SUMS
+grep ' twinpane-v0.10.0-linux-amd64.tar.gz$' SHA256SUMS | sha256sum -c -
+tar -xzf twinpane-v0.10.0-linux-amd64.tar.gz
 mkdir -p ~/.local/bin
-install -m 755 twinpane-v0.9.0-linux-amd64/twinpane ~/.local/bin/twinpane
+install -m 755 twinpane-v0.10.0-linux-amd64/twinpane ~/.local/bin/twinpane
 ```
 
 **macOS** (use `darwin-amd64` on Intel Macs):
 
 ```sh
-curl -fLO https://github.com/ThatOn3Gu7/TwinPane/releases/download/v0.9.0/twinpane-v0.9.0-darwin-arm64.tar.gz
-curl -fLO https://github.com/ThatOn3Gu7/TwinPane/releases/download/v0.9.0/SHA256SUMS
-grep ' twinpane-v0.9.0-darwin-arm64.tar.gz$' SHA256SUMS | shasum -a 256 -c -
-tar -xzf twinpane-v0.9.0-darwin-arm64.tar.gz
+curl -fLO https://github.com/ThatOn3Gu7/TwinPane/releases/download/v0.10.0/twinpane-v0.10.0-darwin-arm64.tar.gz
+curl -fLO https://github.com/ThatOn3Gu7/TwinPane/releases/download/v0.10.0/SHA256SUMS
+grep ' twinpane-v0.10.0-darwin-arm64.tar.gz$' SHA256SUMS | shasum -a 256 -c -
+tar -xzf twinpane-v0.10.0-darwin-arm64.tar.gz
 mkdir -p ~/.local/bin
-install -m 755 twinpane-v0.9.0-darwin-arm64/twinpane ~/.local/bin/twinpane
+install -m 755 twinpane-v0.10.0-darwin-arm64/twinpane ~/.local/bin/twinpane
 ```
 
 The macOS binaries are not signed. Files downloaded with a web browser get a
@@ -456,7 +509,7 @@ quarantine flag; remove it with
 `xattr -d com.apple.quarantine ~/.local/bin/twinpane`. Files downloaded with
 `curl` don't get that flag.
 
-**Windows (untested):** extract `twinpane-v0.9.0-windows-amd64.zip` and run
+**Windows (untested):** extract `twinpane-v0.10.0-windows-amd64.zip` and run
 `twinpane.exe` in Windows Terminal. It is compiled for completeness but has
 never been run, and Windows has no trash (deletes are permanent).
 
@@ -507,13 +560,26 @@ twinpane                    # both panels open in your home folder
 twinpane --no-mouse         # keyboard only; the terminal can select text
 twinpane --no-editor-tips   # no save/quit card before the editor starts with e
 twinpane --log-mode verbose # what the activity log records (off/warnings/actions/verbose)
-twinpane --log /tmp/tp.jsonl --no-log
+twinpane --log /tmp/tp.jsonl --log-size 4096 --log-days 7
+twinpane --no-log           # write no activity log for this run
 twinpane --version
 ```
+
+| Option | Meaning |
+|---|---|
+| `--no-mouse` | no touch or mouse input; the terminal selects text normally |
+| `--no-editor-tips` | no save/quit card before the editor starts |
+| `--log FILE` | activity log file (default: `activity.jsonl` beside `settings.json`) |
+| `--log-mode MODE` | `off`, `warnings`, `actions` (default) or `verbose` |
+| `--log-size KIB` | rotate the log at this size (64–16384, default 1024) |
+| `--log-days N` | delete rotated logs older than this (1–365, default 30) |
+| `--no-log` | write no log for this run |
+| `--version` | print the version and exit |
 
 | Key | Action | Key | Action |
 |---|---|---|---|
 | `Tab` | switch panel | `c` / `F5` | copy to the other panel |
+| `Ctrl+O` | focus mode: one panel at full width (`p` toggles its preview) | `w` | watch the selected task live (in `t`) |
 | `↑` `↓` / `j` `k` | move | `m` / `F6` | move to the other panel |
 | `Enter` / `→` | open folder, view file, browse ZIP/TAR | `r` / `F2` | rename (several: bulk rename) |
 | `Backspace` / `←` | parent folder | `d` / `F8` | delete (trash if available) |
@@ -526,16 +592,15 @@ twinpane --version
 | `L` | activity log (what TwinPane did) | `F9` / `Ctrl+S` | settings |
 | `b` / `B` | bookmarks / add | `M` | action menu |
 | `i` | storage | `?` / `F1` | help (with `/` filter) |
-| `F9` / `Ctrl+S` | settings | | |
 | `~` | home folder | `q` / `F10` | quit when idle; active tasks must finish or be cancelled |
 | `Ctrl+R` ¹ | sources: local / cloud | `n` | new file / new folder menu |
 | `Ctrl+L` ¹ | refresh both panels | `F7` ¹ | new folder (direct) |
 | `[` / `Alt+←` ² | back in this panel's history | `]` / `Alt+→` ² | forward in this panel's history |
 
-¹ New in v0.8.0; since the unreleased v0.10.0, `n` opens the New file / New
-folder menu and `F7` keeps creating a folder directly. ² New in v0.9.0: each
-panel keeps its own navigation history (cursor restored, separate from
-bookmarks), and remote text files open in the read-only viewer.
+¹ New in v0.8.0; since v0.10.0, `n` opens the New file / New folder menu and
+`F7` keeps creating a folder directly. ² New in v0.10.0: each panel keeps its
+own navigation history (cursor restored, separate from bookmarks), and remote
+text files open in the read-only viewer.
 
 The [user guide](docs/USER_GUIDE.md#keyboard-controls) lists every key,
 including those of the viewer, dialogs, search and bulk rename.
@@ -554,8 +619,9 @@ including those of the viewer, dialogs, search and bulk rename.
 / `TWINPANE_LOG_MODE` / `TWINPANE_LOG_SIZE` / `TWINPANE_LOG_DAYS` (the activity
 log, same as the `--log*` flags),
 `TWINPANE_NO_MOUSE=1` (same as `--no-mouse`), `TWINPANE_CONFIG_DIR` (an
-absolute path for the bookmarks and settings files; default
-`~/.config/twinpane`, on macOS `~/Library/Application Support/twinpane`).
+absolute path for `settings.json`, `bookmarks.json`, `history.json` and
+`activity.jsonl`; default `~/.config/twinpane`, on macOS
+`~/Library/Application Support/twinpane`).
 
 **Settings:** `F9`, `Ctrl+S` or `M` → **Settings…** open a floating
 preferences window over the panes — the directory behind stays visible —
@@ -657,7 +723,7 @@ CGO_ENABLED=0 GOOS=android GOARCH=arm64 \
   on the target system.
 - `-X main.version=…` puts the contents of the `VERSION` file into the
   program (`twinpane --version`). Override it with
-  `VERSION=0.9.0-mytest ./build.sh`. `-s -w` drop debug symbols (smaller
+  `VERSION=0.10.0-mytest ./build.sh`. `-s -w` drop debug symbols (smaller
   file); `-trimpath` keeps your folder names out of the binary.
 - `./build.sh release` additionally packs each binary with `LICENSE` and
   `README.md` into a reproducible archive and writes `SHA256SUMS`; the
@@ -691,18 +757,24 @@ Neovim. See [CONTRIBUTING.md](CONTRIBUTING.md#tests).
 TwinPane/
 ├── cmd/twinpane/          program entry point (flags, start-up)
 ├── internal/
-│   ├── ui/                Bubble Tea model: panels, dialogs, keys, help, touch input
+│   ├── ui/                Bubble Tea model: panels, dialogs, screens, keys, help, touch input
 │   ├── panel/             one panel: listing, cursor, selection, drawing
 │   ├── fsys/              directory listing, sorting, formatting
 │   ├── ops/               copy, move, rename, delete, trash (no UI)
-│   ├── archive/           ZIP browsing, safe extraction, ZIP creation
+│   ├── archive/           ZIP/TAR browsing, safe extraction, archive creation
 │   ├── compress/          TAR and single-file formats, 7-Zip detection
+│   ├── dircompare/        directory comparison and copy-only sync plans
 │   ├── textview/          viewer: bounded loading, binary detection
 │   ├── fileinfo/          Properties: metadata, permission changes
 │   ├── editor/            editor choice and terminal hand-over
 │   ├── opener/            default apps: termux-open, xdg-open, open
 │   ├── search/            filename search with fd, find or built in
 │   ├── bookmarks/         bookmark file
+│   ├── settings/          settings.json: every durable preference
+│   ├── history/           operation history (history.json)
+│   ├── activity/          activity log: redaction, filters, append-only store
+│   ├── cloud/             rclone remotes: listing, transfers, previews
+│   ├── fileext/           New file's extension catalogue and naming rules
 │   ├── storage/           filesystem capacity and mounts
 │   ├── foldersize/        bounded, cancellable recursive local scanner
 │   ├── proc/              starts programs without Android-forbidden system calls
@@ -732,7 +804,7 @@ Go tests sit next to the code they test (`*_test.go`).
 Releases are published on
 [GitHub Releases](https://github.com/ThatOn3Gu7/TwinPane/releases) by a
 workflow that runs when a version tag `vMAJOR.MINOR.PATCH` (for example
-`v0.9.0`) is pushed. Each release contains:
+`v0.10.0`) is pushed. Each release contains:
 
 - one package per platform, named `twinpane-<tag>-<os>-<arch>.tar.gz`
   (`.zip` for Windows), holding a folder with `twinpane`, `LICENSE` and
@@ -753,7 +825,7 @@ in [CHANGELOG.md](CHANGELOG.md).
 | `Permission denied` when starting it in Termux | The file is on shared storage or not executable. Keep it in `$PREFIX/bin` or `~` and run `chmod +x`. |
 | `twinpane: command not found` | The install folder is not in `PATH`. Add `export PATH="$HOME/.local/bin:$PATH"` to `~/.profile` (zsh: `~/.zshrc`) and open a new shell. |
 | Installer: `neither curl nor wget is installed` | Termux: `pkg install curl`. Debian/Ubuntu: `sudo apt install curl`. |
-| Installer: `HTTP 403` or `60 requests per hour` | GitHub limits anonymous API requests. Wait, or pass `--version v0.9.0` (this skips the API). |
+| Installer: `HTTP 403` or `60 requests per hour` | GitHub limits anonymous API requests. Wait, or pass `--version v0.10.0` (this skips the API). |
 | Installer: `checksum mismatch` | The download is incomplete or altered; nothing was installed. Try again later or use another network. |
 | Installer: `could not download the latest release information` | Network problem, or no release is published yet. |
 | macOS: "cannot be opened because the developer cannot be verified" | `xattr -d com.apple.quarantine "$(command -v twinpane)"` |

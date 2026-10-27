@@ -268,3 +268,83 @@ unchanged.
 - `Esc` closed the window; the panels were unchanged (the status line only noted
   the task was still running), and `t` then showed the task as `DONE` with
   `Copied 6000 files` in the list.
+
+## Activity log and its viewer (v0.10.0, 2026-10-27)
+
+The activity log (`internal/activity`) and its viewer (`L`) were added in
+`1f45f4c`, `fc8706a` and `4105c41`; the records themselves are documented in
+`docs/ARCHITECTURE.md`. Re-run for the 0.10.0 release on the same sandbox
+(go1.27.3 linux/amd64), after the documentation pass.
+
+## Summary
+- `gofmt -l .`: clean; `go vet ./...`: ok; `go build ./...`: ok.
+- `go test -count=1 ./...`: ok, every package (22 with tests, 2 without);
+  `internal/ui` 142.5 s, `internal/history` 0.52 s, `internal/activity` 0.02 s,
+  `internal/settings` 0.02 s, `internal/dircompare` 0.004 s,
+  `internal/fileext` 0.002 s.
+- `go test -race -count=1 ./internal/ui ./internal/activity ./internal/history
+  ./internal/proc ./internal/settings`: ok (148.9 s / 1.18 s / 2.31 s /
+  1.04 s / 1.03 s).
+- `scripts/release_notes.sh v0.10.0`: renders the `## [0.10.0]` section plus
+  the install and verify sections (the release workflow's own check).
+
+## What the activity-log tests cover
+- `internal/activity`: one NDJSON line per entry with the header fields
+  (`v`, `ts`, `run`, `seq`, `lvl`, `cat`, `ev`, msg/fields), the redactor
+  (passwords, tokens, API keys, URL userinfo, `Authorization` headers, secret
+  flags, in messages, errors and argv), rotation at the size limit with three
+  older files, the age limit, malformed lines skipped and counted, an
+  unwritable file never fatal, two stores appending to one file, and the
+  category/level/query filters (`cat:`, `lvl:`, `ev:`, plain text).
+- `internal/proc`: `SetTrace` reports a start and a finish event exactly once
+  per program (a repeated `Wait` does not repeat it), copies the argument
+  slice, keeps a wait error, covers every `Start` path, costs nothing when it
+  is switched off, and swallows a panic in a hook.
+- `internal/ui/activity_test.go`: `ui.screen`, `ui.dialog`, `ui.dialog.close`,
+  `nav.open` and `ui.view` are recorded for ordinary use; typed text in a text
+  field never reaches the file, and command arguments are redacted; command
+  durations, exit codes and signals are recorded; the modes `warnings` and
+  `off` filter what is written; the settings screen's activity rows change the
+  store; the file is created 0600; the viewer never steals keys it does not
+  own.
+- `internal/ui/activityview_test.go`: the crash (select the last entry, open
+  the details, press `↓`), the boundaries (empty log, a filter that matches
+  nothing, one entry), the selection staying visible while scrolling, the
+  scrollbar reaching the top and the bottom, the session grouping and its
+  labels (`This session · 10:00–11:00 · 4 entries`, `Today · 11:00 · 1 entry`,
+  `Wed 4 Mar`, `Wed 31 Dec 2025`), the details following the selection, taps
+  and the wheel skipping session rules, the narrow two-line layout, and
+  filters keeping the selection inside the list.
+
+## Real binary on a raw pty (`scripts/ptyterm.py`)
+- 100×24: `L` shows `Activity log · All Activity … N entries shown`, the rule
+  `── This session · 13:27 · 4 entries ──` and entry rows
+  ` 13:27:02   ui     · opened the activity log`.
+- 110×30 after a restart: this run appears under
+  `── This session · 13:27 · 4 entries ──` and the previous run under
+  `── Today · 13:26 · 5 entries ──` with no rule skipped, so sessions are
+  grouped and newest first; on a larger fixture the older run showed
+  `── Sat 24 Oct · 13:30–13:42 · 13 entries ──`.
+- 100×24, 110×30 and 80×20: `G` moves the thumb to the bottom of the last
+  column and `g` back to the top, and the thumb (`┃`) is the only one in the
+  frame while the selection is the only row carrying the cursor background, so
+  the two are visually distinct. (`activityview_test.go` covers the list that
+  fits: no bar at all.)
+- `⏎` on a selected entry opens `── Details ──` under the list with the
+  timestamp, level, event, message and session; `↓` then moves the details to
+  the next entry — the sequence that used to panic.
+- `/` typing (`/rclone`) filtered to `2 entries shown of 59` and kept the
+  session rule of each surviving entry; `x` restored the full list; `c` cycled
+  to `Commands` and an empty result read `Nothing matches this filter.`
+- 60×16: two-line rows (message, then `13:28:52 · ui · ui.screen`), no line
+  wider than the terminal, and the hint bar still shows `Esc close` (it is
+  dropped last).
+- The `activity.jsonl` those runs wrote parses as one JSON object per line, and
+  the viewer put its own entries under `This session`, i.e. their `run` equals
+  the current `history.json` session ID.
+
+## Not verified here
+- rclone and 7-Zip are not installed in this sandbox, so command tracing was
+  exercised with stand-in programs (`TWINPANE_FAKE_RCLONE`, test scripts) rather
+  than real cloud transfers and real archive tools; CI installs both and runs
+  the same code paths with `TWINPANE_REQUIRE_TOOLS=1`.

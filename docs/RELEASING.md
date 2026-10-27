@@ -57,8 +57,8 @@ checks that the README and this workflow agree.
 2. Set the version and write the changelog entry:
 
    ```sh
-   echo 0.9.0 > VERSION
-   $EDITOR CHANGELOG.md        # add "## [0.9.0]" at the top
+   echo 0.10.0 > VERSION
+   $EDITOR CHANGELOG.md        # add "## [0.10.0]" at the top
    ```
 
 3. Check locally (optional but quick):
@@ -66,18 +66,18 @@ checks that the README and this workflow agree.
    ```sh
    make lint race test-install
    ./build.sh release && RELEASE_DIR=dist/release scripts/test_install.sh
-   scripts/release_notes.sh v0.9.0
+   scripts/release_notes.sh v0.10.0
    ```
 
 4. Commit, tag and push:
 
    ```sh
    git add VERSION CHANGELOG.md
-   git commit -m "TwinPane v0.9.0"
+   git commit -m "TwinPane v0.10.0"
    git push origin master
    # wait for CI on master to pass, then tag exactly that commit:
-   git tag -a v0.9.0 -m "TwinPane v0.9.0"
-   git push origin v0.9.0
+   git tag -a v0.10.0 -m "TwinPane v0.10.0"
+   git push origin v0.10.0
    ```
 
    The commit message is `TwinPane vX.Y.Z` (as for v0.7.0). The commit
@@ -94,8 +94,8 @@ checks that the README and this workflow agree.
 6. Inspect the result:
 
    ```sh
-   gh release view v0.9.0
-   gh release download v0.9.0 --dir /tmp/tp-check
+   gh release view v0.10.0
+   gh release download v0.10.0 --dir /tmp/tp-check
    (cd /tmp/tp-check && sha256sum -c SHA256SUMS)
    ```
 
@@ -114,11 +114,11 @@ nothing was published. Fix the problem on `master`, then move the tag to the
 fixed commit and push it again:
 
 ```sh
-git push origin :refs/tags/v0.9.0     # delete the remote tag
-git tag -d v0.9.0                     # delete the local tag
+git push origin :refs/tags/v0.10.0     # delete the remote tag
+git tag -d v0.10.0                     # delete the local tag
 # fix, commit, push master
-git tag -a v0.9.0 -m "TwinPane v0.9.0"
-git push origin v0.9.0
+git tag -a v0.10.0 -m "TwinPane v0.10.0"
+git push origin v0.10.0
 ```
 
 Only do this while the version is unpublished; nobody can have downloaded
@@ -135,12 +135,12 @@ unfinished draft and starts again.
 
 **A published release is broken:** don't replace the files of a published
 version, because people may already have downloaded them and checksums
-would change under them. Publish a fixed patch version instead (`v0.9.1`).
+would change under them. Publish a fixed patch version instead (`v0.10.1`).
 If the broken release must disappear, mark the next release as latest, or
 delete the broken one:
 
 ```sh
-gh release delete v0.9.0 --yes     # keeps the git tag
+gh release delete v0.10.0 --yes     # keeps the git tag
 ```
 
 The workflow refuses to publish over an existing published release with the
