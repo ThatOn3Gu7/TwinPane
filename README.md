@@ -513,6 +513,43 @@ quarantine flag; remove it with
 `twinpane.exe` in Windows Terminal. It is compiled for completeness but has
 never been run, and Windows has no trash (deletes are permanent).
 
+### Install with Go
+
+If you already use Go, you can build and install TwinPane with the Go
+toolchain instead of downloading a package:
+
+```sh
+go install github.com/ThatOn3Gu7/TwinPane/cmd/twinpane@latest
+```
+
+This needs **Go 1.23 or newer** (the version in [go.mod](go.mod)); an older
+toolchain stops with `go.mod requires go >= 1.23`. In Termux, install Go
+first with `pkg install golang`.
+
+It builds for the Go environment it runs in — this computer's operating
+system and architecture, so a build inside Termux is the Android build — and
+installs the program into `$(go env GOPATH)/bin` (usually `~/go/bin`) unless
+`GOBIN` is set, in which case it goes into `$GOBIN`. That folder has to be
+in your `PATH` for the `twinpane` command to be found:
+
+```sh
+export PATH="$PATH:$(go env GOPATH)/bin"   # use "$GOBIN" instead if you set one
+twinpane --version
+```
+
+Add that line to your shell profile to keep it. `go env GOPATH` and
+`go env GOBIN` show where the program went.
+
+A program installed this way reports its version as `dev` —
+`twinpane dev (linux/amd64)` — instead of a release number such as
+`twinpane v0.10.0 (linux/amd64)`, because `go install` builds from the source
+tree without the release metadata the official binaries carry. Everything
+else is the same program. Run the command again to update it.
+
+The [automatic installer](#automatic-recommended) is still the recommended
+way to install a release; see [Building from source](#building-from-source)
+for a checkout you can modify.
+
 ### Optional companions
 
 | Tool | Used for | Termux | Debian/Ubuntu |
@@ -661,7 +698,7 @@ use `dist/`. Every command prints the full path when it finishes.
 | `./build.sh native` | this computer only | `dist/twinpane-<os>-<arch>`, e.g. `dist/twinpane-android-arm64` in Termux |
 | `./build.sh` (or `make dist`) | all six platforms | `dist/twinpane-android-arm64`, `dist/twinpane-linux-amd64`, … `dist/twinpane-windows-amd64.exe`, plus `dist/SHA256SUMS` |
 | `./build.sh release` (or `make release`) | all six platforms, packaged | `dist/release/twinpane-v<version>-<os>-<arch>.tar.gz` (`.zip` for Windows) and `dist/release/SHA256SUMS`, the same files as on GitHub Releases |
-| `go install github.com/ThatOn3Gu7/TwinPane/cmd/twinpane@latest` | this computer only | `$(go env GOPATH)/bin/twinpane` (usually `~/go/bin/twinpane`); reports its version as `dev` |
+| `go install github.com/ThatOn3Gu7/TwinPane/cmd/twinpane@latest` | this computer only | `$(go env GOPATH)/bin/twinpane` (usually `~/go/bin/twinpane`); reports its version as `dev` — see [Install with Go](#install-with-go) |
 
 Things that make the binaries seem to be missing:
 
