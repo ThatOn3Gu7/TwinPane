@@ -366,10 +366,12 @@ func (a *App) deleteAdvancedResult(t advancedTarget) tea.Cmd {
 // copyAdvancedPath puts the absolute path on the terminal clipboard.
 func (a *App) copyAdvancedPath(t advancedTarget) tea.Cmd {
 	if err := copyToClipboard(t.path); err != nil {
-		a.setStatusLevel("could not copy the path: "+errText(err), lvlErr)
+		a.noteResult(lvlErr, "could not copy the path: "+errText(err),
+			"Not copied", "could not copy the path: "+errText(err))
 		return nil
 	}
-	a.setStatusLevel("copied "+trimClipboardPath(t.path)+" to the "+clipboardNote, lvlOK)
+	a.noteResult(lvlOK, "copied "+trimClipboardPath(t.path)+" to the "+clipboardNote,
+		"Path copied", "copied "+trimClipboardPath(t.path)+" to the "+clipboardNote)
 	return nil
 }
 

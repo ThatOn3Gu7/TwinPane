@@ -264,7 +264,8 @@ func (a *App) createNewFile(st *newFileState, typed string) tea.Cmd {
 	a.recordNewItem("New file", started, target, nil)
 	a.dialog = nil
 	st.dlg = nil
-	a.setStatusLevel(fmt.Sprintf("Created file %q", fsys.SanitizeName(name)), lvlOK)
+	a.noteResult(lvlOK, fmt.Sprintf("Created file %q", fsys.SanitizeName(name)),
+		"File created", fmt.Sprintf("Created file %q", fsys.SanitizeName(name)))
 	p := a.panels[st.panelIdx]
 	return tea.Batch(p.RefreshFocus(name), a.panels[1-st.panelIdx].Refresh())
 }

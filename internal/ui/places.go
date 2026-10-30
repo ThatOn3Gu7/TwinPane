@@ -64,11 +64,16 @@ func (a *App) bookmarkHere() tea.Cmd {
 	bm, err := s.Add(dir, "")
 	switch {
 	case errors.Is(err, bookmarks.ErrDuplicate):
-		a.setStatusLevel(fmt.Sprintf("already bookmarked as %q — b opens the bookmarks (rename, remove)", bm.Name), lvlWarn)
+		a.noteResult(lvlWarn, fmt.Sprintf("already bookmarked as %q", bm.Name),
+			"Already bookmarked", fmt.Sprintf("This folder is already bookmarked as %q", bm.Name),
+			"b opens the bookmarks (rename, remove)")
 	case err != nil:
-		a.setStatus("could not save the bookmark: "+errText(err), true)
+		a.noteResult(lvlErr, "could not save the bookmark: "+errText(err),
+			"Bookmark not saved", "could not save the bookmark: "+errText(err))
 	default:
-		a.setStatusLevel(fmt.Sprintf("bookmarked %s as %q — b opens the bookmarks", fsys.SanitizeName(dir), bm.Name), lvlOK)
+		a.noteResult(lvlOK, fmt.Sprintf("bookmarked %s as %q", fsys.SanitizeName(dir), bm.Name),
+			"Bookmark added", fmt.Sprintf("bookmarked %s as %q", fsys.SanitizeName(dir), bm.Name),
+			"b opens the bookmarks")
 	}
 	return nil
 }
@@ -82,10 +87,13 @@ func (a *App) unbookmarkHere() tea.Cmd {
 	}
 	dir := a.ActivePanel().Path()
 	if err := s.Remove(dir); err != nil {
-		a.setStatus("could not remove the bookmark: "+errText(err), true)
+		a.noteResult(lvlErr, "could not remove the bookmark: "+errText(err),
+			"Bookmark not removed", "could not remove the bookmark: "+errText(err))
 		return nil
 	}
-	a.setStatusLevel("bookmark of "+fsys.SanitizeName(dir)+" removed (the folder is not touched)", lvlOK)
+	a.noteResult(lvlOK, "bookmark of "+fsys.SanitizeName(dir)+" removed",
+		"Bookmark removed", "removed the bookmark of "+fsys.SanitizeName(dir),
+		"the folder is not touched")
 	return nil
 }
 
@@ -245,7 +253,8 @@ func (a *App) removeBookmarkDialog(bm bookmarks.Bookmark, i int) tea.Cmd {
 			if err := a.bookmarks.Remove(bm.Path); err != nil {
 				return a.openBookmarks(i, errText(err))
 			}
-			a.setStatusLevel(fmt.Sprintf("bookmark %q removed", bm.Name), lvlOK)
+			a.noteResult(lvlOK, fmt.Sprintf("bookmark %q removed", bm.Name),
+				"Bookmark removed", fmt.Sprintf("removed the bookmark %q", bm.Name))
 			return a.openBookmarks(i, "")
 		}},
 	}

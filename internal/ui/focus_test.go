@@ -795,7 +795,7 @@ func TestFocusDestChooserCancelLeavesNothingBehind(t *testing.T) {
 	if fileExists(filepath.Join(env.dst, "a.txt")) {
 		t.Fatal("cancelling the chooser copied the file")
 	}
-	if s, _ := a.Status(); s == "" {
+	if s := reportedText(a); s == "" {
 		t.Fatal("cancelling the chooser did not report it")
 	}
 	// Cancelling the confirmation must not record the destination either.

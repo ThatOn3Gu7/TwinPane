@@ -113,8 +113,8 @@ func TestNewFileWithoutFormat(t *testing.T) {
 	if e, _ := h.a.ActivePanel().Current(); e.Name != "notes" {
 		t.Fatalf("cursor must be on the new file, got %q", e.Name)
 	}
-	if !strings.Contains(h.status(), "Created file") || h.a.statusLevel != lvlOK {
-		t.Fatalf("status %q level %d", h.status(), h.a.statusLevel)
+	if !strings.Contains(h.reported(), "Created file") || h.reportedLevel() != lvlOK {
+		t.Fatalf("report %q level %d", h.reported(), h.reportedLevel())
 	}
 }
 

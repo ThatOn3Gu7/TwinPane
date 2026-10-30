@@ -281,7 +281,8 @@ func (a *App) zipOverwriteDialog(srcIdx int, req compress.Request, size int64) {
 	d.buttons = []button{
 		{label: "Cancel (Esc)", run: func(a *App) tea.Cmd {
 			a.dialog = nil
-			a.setStatusLevel(f.Name+" not created — nothing was changed", lvlWarn)
+			a.noteResult(lvlWarn, f.Name+" not created — nothing was changed",
+				f.Name+" not created", f.Name+" not created — nothing was changed")
 			return nil
 		}},
 		{label: "Overwrite (o)", key: "o", danger: true, run: func(a *App) tea.Cmd {

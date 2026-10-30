@@ -41,6 +41,15 @@ import (
 //     counts. Those are context for what to do next, and they belong next to
 //     the panels, not in a pop-up.
 //
+// A message is never shown on both surfaces: a result goes to the pop-up and
+// the row goes back to naming the entry under the cursor (hideStatus), because
+// reading the same sentence twice — once cut short underneath the box — is
+// worse than either alone. The choice does not depend on the terminal's size:
+// a result pops up on a wide screen just as on a narrow one, and the box
+// shrinks to three rows before it gives up. Only when the screen cannot hold a
+// legible box at all (the "terminal too small" screen, or three rows short)
+// does the row keep the text, and then it is the only place it appears.
+//
 // The status line is one row, so a message can be longer than the room it has.
 // Rather than cutting the sentence the user needs — a refusal that says why, a
 // warning that names the line of keybinding.json to fix — the same message is
@@ -458,7 +467,8 @@ func (a *App) noticeBoxWithin(width, maxLines int) []string {
 		}
 		if room < len(body) {
 			body = body[:room]
-			if room > 0 {
+			if room > 1 {
+				// Mark the cut, but never spend the only line on the mark.
 				body[room-1] = th.DialogHint.Render("…")
 			}
 		}
@@ -522,17 +532,16 @@ func (a *App) noticeRect() (x, y, w, h int, ok bool) {
 		return 0, 0, 0, 0, false
 	}
 	w = a.noticeWidth()
-	if w < 20 {
+	if w < 16 {
 		return 0, 0, 0, 0, false
 	}
 	if a.width < minWidth || a.height < minHeight {
 		return 0, 0, 0, 0, false // the "terminal too small" screen owns the view
 	}
 	areaH := a.height - 3 // title + status + hint rows belong to the chrome
-	if areaH < 7 {
-		// Below this the pop-up would cover most of the screen and hide the
-		// very thing it reports about; the status line and the task list still
-		// carry the result.
+	if areaH < 4 {
+		// Three rows are the smallest box worth drawing (a heading, one line
+		// and the countdown); below that the status line carries the message.
 		return 0, 0, 0, 0, false
 	}
 	box := a.noticeBoxWithin(w, areaH-1)

@@ -354,7 +354,8 @@ func (a *App) clearFinishedEntries() tea.Cmd {
 	if n == 0 {
 		a.setStatusLevel("No completed tasks to clear", lvlInfo)
 	} else {
-		a.setStatusLevel(fmt.Sprintf("Cleared %s", plural(n, "completed task")), lvlOK)
+		a.noteResult(lvlOK, fmt.Sprintf("Cleared %s", plural(n, "completed task")),
+			"Tasks cleared", fmt.Sprintf("Cleared %s", plural(n, "completed task")))
 	}
 	a.ensureTaskSelection(a.taskEntries())
 	return nil

@@ -639,21 +639,22 @@ func TestEditLaunchesEditorAndRefreshes(t *testing.T) {
 	if len(env.execs) != 1 || strings.Join(env.execs[0].args, " ") != "/opt/myed --wait "+filepath.Join(env.src, "a.txt") {
 		t.Fatalf("exec calls %+v", env.execs)
 	}
-	if !strings.HasPrefix(h.status(), "Finished editing a.txt — nothing saved") || !strings.Contains(h.status(), "myed's own help") {
-		t.Fatalf("status %q", h.status())
+	if !strings.Contains(h.reported(), "Finished editing a.txt") || !strings.Contains(h.reported(), "nothing was saved") ||
+		!strings.Contains(h.reported(), "myed's own help") {
+		t.Fatalf("report %q", h.reported())
 	}
 
 	env.execErr = &exec.ExitError{}
 	h.press("e")
 	h.settle()
-	if !h.a.statusErr || !strings.Contains(h.status(), "editor myed exited") {
-		t.Fatalf("failing editor: %q", h.status())
+	if h.reportedLevel() != lvlErr || !strings.Contains(h.reported(), "editor myed exited") {
+		t.Fatalf("failing editor: %q", h.reported())
 	}
 	env.execErr = errors.New("exec: not started")
 	h.press("e")
 	h.settle()
-	if !strings.Contains(h.status(), "could not run editor") {
-		t.Fatalf("status %q", h.status())
+	if !strings.Contains(h.reported(), "could not run editor") {
+		t.Fatalf("report %q", h.reported())
 	}
 }
 
@@ -939,7 +940,7 @@ func TestDeletePlanningCanBeCancelled(t *testing.T) {
 		t.Fatal("Esc should cancel the active delete scan without locking the UI")
 	}
 	h.a.Update(deletePlannedMsg{id: s.id, err: context.Canceled})
-	if s.active() || h.a.busy() || !strings.Contains(h.status(), "nothing was deleted") {
+	if s.active() || h.a.busy() || !strings.Contains(h.reported(), "nothing was deleted") {
 		t.Fatal("canceled scan should finish as a retained task")
 	}
 	// A late plan result must not resurrect the cancelled confirmation.

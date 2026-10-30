@@ -189,6 +189,9 @@ func TestFolderSizeStructuredSections(t *testing.T) {
 	}
 	h.press("A")
 	waitFolderSize(t, h)
+	// The scan's own result pops up in the corner; this test is about the
+	// analysis layout, so it steps aside (the notification tests cover it).
+	h.a.dismissNotice()
 
 	h.a.width, h.a.height = 100, 30
 	view := h.a.View()

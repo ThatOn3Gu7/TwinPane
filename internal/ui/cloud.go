@@ -611,7 +611,8 @@ func (a *App) beginCloudDelete() tea.Cmd {
 	d.body = append(d.body, text("Some providers keep deleted items in their own trash (Google Drive does by default); on others this CANNOT be undone."))
 	cancelDel := func(a *App) tea.Cmd {
 		a.dialog = nil
-		a.setStatusLevel("Delete cancelled — nothing was deleted", lvlWarn)
+		a.noteResult(lvlWarn, "Delete cancelled — nothing was deleted",
+			"Delete cancelled", "nothing was deleted")
 		return nil
 	}
 	start := func(a *App) tea.Cmd {

@@ -130,7 +130,8 @@ func (a *App) beginFocusTransfer(kind ops.Kind) tea.Cmd {
 	}
 	d.onEsc = func(app *App) tea.Cmd {
 		app.dialog = nil
-		app.setStatusLevel(capitalize(kind.String())+" cancelled — nothing was transferred", lvlWarn)
+		app.noteResult(lvlWarn, capitalize(kind.String())+" cancelled — nothing was transferred",
+			capitalize(kind.String())+" cancelled", "nothing was transferred")
 		return nil
 	}
 	d.footer = "↑↓ choose · Enter confirm · Esc cancel"

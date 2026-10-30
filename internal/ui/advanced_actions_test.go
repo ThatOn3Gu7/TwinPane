@@ -627,8 +627,8 @@ func TestAdvancedActionCopyCancelAndFailure(t *testing.T) {
 	if h.a.advancedSearch == nil {
 		t.Fatal("the cancelled copy closed the search")
 	}
-	if st := h.status(); !strings.Contains(st, "nothing was transferred") {
-		t.Fatalf("status %q", st)
+	if st := h.reported(); !strings.Contains(st, "nothing was transferred") {
+		t.Fatalf("report %q", st)
 	}
 
 	if os.Geteuid() == 0 {
@@ -857,8 +857,8 @@ func TestAdvancedActionCopyPathWritesOSC52(t *testing.T) {
 	if got := buf.String(); got != want {
 		t.Fatalf("clipboard sequence %q, want %q", got, want)
 	}
-	if st := h.status(); !strings.Contains(st, "copied") || !strings.Contains(st, "a.txt") || !strings.Contains(st, "clipboard") {
-		t.Fatalf("status %q does not report the copy", st)
+	if st := h.reported(); !strings.Contains(st, "copied") || !strings.Contains(st, "a.txt") || !strings.Contains(st, "clipboard") {
+		t.Fatalf("report %q does not report the copy", st)
 	}
 	if h.a.advancedSearch == nil {
 		t.Fatal("copy path closed the search")
@@ -866,8 +866,8 @@ func TestAdvancedActionCopyPathWritesOSC52(t *testing.T) {
 	// a broken terminal writer is reported, not fatal
 	clipboardOut = failingWriter{}
 	advPick(t, h, "y")
-	if st, isErr := h.a.Status(); !isErr || !strings.Contains(st, "could not copy") {
-		t.Fatalf("write failure not reported: %q (err=%v)", st, isErr)
+	if st := h.reported(); h.reportedLevel() != lvlErr || !strings.Contains(st, "could not copy") {
+		t.Fatalf("write failure not reported: %q (level %d)", st, h.reportedLevel())
 	}
 	h.press("esc")
 }

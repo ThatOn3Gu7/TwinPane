@@ -561,11 +561,22 @@ func (a *App) hideStatus() {
 // noteResult is a result that used to be written into the status row: it is
 // logged as the row would have logged it, shown in the notification, and taken
 // out of the row, so the outcome is reported once and where it can be read in
-// full.
+// full. When no pop-up can be drawn at all — a dialog owns the screen, or the
+// terminal is at its smallest — the row keeps the message instead, because a
+// result that is reported nowhere is worse than one reported plainly.
 func (a *App) noteResult(lvl int, log, head, msg string, body ...string) {
 	a.logStatus(log, lvl)
 	a.notify(resultKind(lvl), head, msg, body...)
 	a.hideStatus()
+	if _, _, _, _, ok := a.noticeRect(); !ok {
+		a.setStatusOnly(msg, lvl)
+	}
+}
+
+// setStatusOnly puts a message in the status row without logging it or raising
+// a notification: it is the fallback for a result that has no pop-up to live in.
+func (a *App) setStatusOnly(msg string, lvl int) {
+	a.status, a.statusErr, a.statusLevel = msg, lvl == lvlErr, lvl
 }
 
 // Busy reports whether any background file operation is still active.
@@ -1168,6 +1179,13 @@ func (a *App) titleView() string {
 
 func (a *App) statusView() string {
 	text, st := a.status, a.theme.StatusInfo
+	if n := a.notice; n != nil && text != "" && text == n.msg {
+		// The pop-up is showing this very message: printing it a second time
+		// underneath (and cut short) is exactly the duplicate to avoid.
+		if _, _, _, _, ok := a.noticeRect(); ok {
+			text = ""
+		}
+	}
 	switch {
 	case text == "":
 	case a.statusErr:

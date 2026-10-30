@@ -387,16 +387,19 @@ func (a *App) editorDone(m editorDoneMsg) tea.Cmd {
 	}
 	switch {
 	case m.err != nil:
-		a.setStatus(editor.DescribeExit(m.editor, m.err)+note, true)
+		msg := editor.DescribeExit(m.editor, m.err) + note
+		a.noteResult(lvlErr, msg, "Edit failed", msg)
 	case note != "":
 		// the note (e.g. "$EDITOR was not found") goes first: the save
-		// hint after it is long and may be cut off at the screen edge
-		a.setStatusLevel("Finished editing "+what+note+result, lvlWarn)
+		// hint after it is long and may be cut off elsewhere
+		msg := "Finished editing " + what + note + result
+		a.noteResult(lvlWarn, msg, "Edit finished with a note", msg)
 	case saved == 0 && len(m.before) > 0:
-		a.setStatusLevel("Finished editing "+what+result, lvlInfo)
+		a.result(lvlOK, "Edit finished", "Finished editing "+what+result, "nothing was saved")
+		a.hideStatus()
 	default:
 		a.result(lvlOK, "Edit completed", "Finished editing "+fsys.SanitizeName(what)+result)
-		a.setStatus("", false)
+		a.hideStatus()
 	}
 	// The files may have changed size/time (or been renamed/deleted by the
 	// editor): refresh both panels, keeping cursor and selection. The window

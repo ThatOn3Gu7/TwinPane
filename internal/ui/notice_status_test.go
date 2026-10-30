@@ -264,3 +264,78 @@ func TestNoticeStillWaitsBehindDialogs(t *testing.T) {
 		t.Fatalf("the pop-up covered a dialog:\n%s", ansi.Strip(h.view()))
 	}
 }
+
+// TestResultPopsUpOnAWideTerminal is the "it depends on how far I zoomed"
+// half of the bug: a result used to reach the notification only when it was
+// wider than the status row, so on a wide terminal the very same message
+// appeared as a bare line at the bottom and never as a box.
+func TestResultPopsUpOnAWideTerminal(t *testing.T) {
+	h, _ := newOpsApp(t, nil, nil)
+	h.send(tea.WindowSizeMsg{Width: 200, Height: 40})
+	h.a.openDone(openDoneMsg{name: "photo.png", how: "android"})
+	if _, _, _, _, ok := h.a.noticeRect(); !ok {
+		t.Fatalf("no pop-up on a 200-column terminal:\n%s", h.view())
+	}
+	if !strings.Contains(ansi.Strip(h.view()), "Handed over") {
+		t.Fatalf("the pop-up is not drawn:\n%s", h.view())
+	}
+	if h.a.status != "" {
+		t.Fatalf("the row repeats the result: %q", h.a.status)
+	}
+}
+
+// TestResultIsReportedExactlyOnce: one outcome, one message. Counting the
+// message on the screen is the direct way to say "no duplicate" — the pop-up
+// wraps, so the token is a single word that cannot be split.
+func TestResultIsReportedExactlyOnce(t *testing.T) {
+	cases := []struct {
+		name  string
+		w, h  int
+		run   func(h *harness)
+		token string
+	}{
+		{"handed to Android", 60, 20, func(h *harness) {
+			h.a.openDone(openDoneMsg{name: "photo.png", how: "android"})
+		}, "termux-open"},
+		{"handed to Android, narrow", 34, 12, func(h *harness) {
+			h.a.openDone(openDoneMsg{name: "photo.png", how: "android"})
+		}, "termux-open"},
+		{"handed to Android, wide", 200, 40, func(h *harness) {
+			h.a.openDone(openDoneMsg{name: "photo.png", how: "android"})
+		}, "termux-open"},
+		{"bookmark added", 60, 20, func(h *harness) { h.press("M", "B") }, "bookmarked"},
+		{"new file", 60, 20, func(h *harness) {
+			h.press("n", "f")
+			h.typeText("notes", false)
+			h.press("enter")
+		}, "Created"},
+	}
+	for _, c := range cases {
+		h, _ := newOpsApp(t, nil, nil)
+		h.send(tea.WindowSizeMsg{Width: c.w, Height: c.h})
+		c.run(h)
+		v := ansi.Strip(h.view())
+		if got := strings.Count(v, c.token); got != 1 {
+			t.Errorf("%s at %dx%d: %q appears %d times, want once:\n%s", c.name, c.w, c.h, c.token, got, v)
+		}
+	}
+}
+
+// TestRowNeverRepeatsThePendingPopup: whatever the order of the two calls, a
+// message that the pop-up is showing is not printed under it as well. This is
+// the guard that keeps a dialog-paused result from coming back as a duplicate
+// once the dialog closes.
+func TestRowNeverRepeatsThePendingPopup(t *testing.T) {
+	h, _ := newOpsApp(t, nil, nil)
+	msg := "handed photo.png to Android (termux-open)"
+	h.a.notify(noticeOK, "Handed over", msg)
+	h.a.setStatusOnly(msg, lvlOK)
+	if v := ansi.Strip(h.view()); strings.Count(strings.ReplaceAll(v, "\n", " "), msg) != 1 {
+		t.Fatalf("the row repeated the pop-up:\n%s", v)
+	}
+	// With the pop-up gone, the row is free to say it again.
+	h.a.dismissNotice()
+	if v := ansi.Strip(h.view()); !strings.Contains(v, msg) {
+		t.Fatalf("the message vanished with the pop-up:\n%s", v)
+	}
+}

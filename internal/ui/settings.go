@@ -535,7 +535,8 @@ func (a *App) settingsResetApply() tea.Cmd {
 		}
 	}
 	a.settingsErr = nil
-	a.setStatusLevel("settings reset to defaults", lvlOK)
+	a.noteResult(lvlOK, "settings reset to defaults", "Settings reset", "settings reset to defaults",
+		"every setting is back at its default")
 	return cmd
 }
 

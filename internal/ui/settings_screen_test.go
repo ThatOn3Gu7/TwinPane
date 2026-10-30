@@ -468,7 +468,7 @@ func TestSettingsResetRecoversCorruptFile(t *testing.T) {
 	if prefs.ShowHidden || prefs.Theme != "default" || !prefs.Mouse {
 		t.Fatalf("defaults not written: %+v", prefs)
 	}
-	if !strings.Contains(h.status(), "reset") {
+	if !strings.Contains(h.reported(), "reset") {
 		t.Fatalf("status %q", h.status())
 	}
 	if strings.Contains(h.view(), "press r to reset") {

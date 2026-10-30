@@ -580,23 +580,43 @@ func TestNotificationFitsEverySize(t *testing.T) {
 	}
 }
 
-func TestNotificationIsSkippedWhenThereIsNoRoom(t *testing.T) {
+// TestNotificationShrinksInsteadOfDisappearing: a result is a pop-up on every
+// terminal TwinPane can draw on — a phone at its narrowest included — not a bare
+// line at the bottom. The box gives up its message lines before it gives up
+// itself, and only a screen too small for the interface at all (below
+// minWidth×minHeight, where the "terminal too small" message is drawn) leaves
+// the text in the status row.
+func TestNotificationShrinksInsteadOfDisappearing(t *testing.T) {
 	h, _ := newOpsApp(t, nil, nil)
-	for _, size := range []struct{ w, h int }{{30, 7}, {40, 9}, {24, 12}} {
+	for _, size := range []struct{ w, h int }{{30, 7}, {40, 9}, {60, 20}, {160, 50}} {
 		h.send(tea.WindowSizeMsg{Width: size.w, Height: size.h})
 		h.a.result(lvlOK, "Copy completed", "Copied 61 files, 16 folders")
-		if _, _, _, _, ok := h.a.noticeRect(); ok && (size.h < 10 || size.w < 26) {
-			t.Errorf("%dx%d: a pop-up would cover the whole screen", size.w, size.h)
-		}
 		if h.a.notice == nil {
-			t.Errorf("%dx%d: the result should still be pending", size.w, size.h)
+			t.Fatalf("%dx%d: the result should be pending", size.w, size.h)
 		}
-		// Growing the terminal brings it back, countdown intact.
-		h.send(tea.WindowSizeMsg{Width: 100, Height: 30})
-		if !strings.Contains(ansi.Strip(h.view()), "Copied 61 files") {
-			t.Errorf("%dx%d: the pending result did not appear after growing", size.w, size.h)
+		_, y, _, height, ok := h.a.noticeRect()
+		if !ok {
+			t.Fatalf("%dx%d: no pop-up on a screen the interface itself draws on", size.w, size.h)
+		}
+		if y < 1 || y+height > h.a.height-2 {
+			t.Errorf("%dx%d: the pop-up covers the chrome (y=%d h=%d)", size.w, size.h, y, height)
+		}
+		v := ansi.Strip(h.view())
+		if !strings.Contains(v, "Copy completed") {
+			t.Errorf("%dx%d: the pop-up lost its heading:\n%s", size.w, size.h, v)
+		}
+		if st := h.status(); strings.Contains(st, "Copied 61 files") {
+			t.Errorf("%dx%d: the row repeats the pop-up: %q", size.w, size.h, st)
 		}
 		h.a.notice = nil
+	}
+	// A screen below the interface's own minimum has no room for a box: the row
+	// is then the only place the result can be, and it is used.
+	h.send(tea.WindowSizeMsg{Width: 24, Height: 6})
+	h.a.notice = nil
+	h.a.result(lvlOK, "Copy completed", "Copied 61 files, 16 folders")
+	if _, _, _, _, ok := h.a.noticeRect(); ok {
+		t.Error("24x6: the interface is not drawn at all, so neither is a pop-up")
 	}
 }
 

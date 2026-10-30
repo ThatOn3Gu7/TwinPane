@@ -100,7 +100,9 @@ func (a *App) openExternalEntry(e fsys.Entry) tea.Cmd {
 	plat := a.platform()
 	argv, ok := plat.DefaultArgv(e.Path)
 	if !ok {
-		a.setStatus("cannot open "+fsys.SanitizeName(e.Name)+" in another app: "+plat.Why+" — v views it here, O shows other ways", true)
+		a.noteResult(lvlErr, "cannot open "+fsys.SanitizeName(e.Name)+" in another app: "+plat.Why,
+			"Cannot open it", "cannot open "+fsys.SanitizeName(e.Name)+" in another app: "+plat.Why,
+			"v views it here, O shows other ways")
 		return nil
 	}
 	return a.launchCmd(argv, e.Name, plat, "")
@@ -124,17 +126,24 @@ func (a *App) launchCmd(argv []string, name string, plat opener.Platform, how st
 
 func (a *App) openDone(m openDoneMsg) {
 	name := fsys.SanitizeName(m.name)
+	// What happened to the file goes to the notification: it is the result of
+	// the key the user pressed, and the status row is left to say where the
+	// cursor is.
 	switch {
 	case m.err != nil:
-		a.setStatus("could not open "+name+": "+errText(m.err), true)
+		a.noteResult(lvlErr, "could not open "+name+": "+errText(m.err),
+			"Could not open it", "could not open "+name+": "+errText(m.err))
 	case m.how == "share":
-		a.setStatusLevel("sent "+name+" to Android's share sheet (termux-open --send)", lvlOK)
+		a.noteResult(lvlOK, "sent "+name+" to Android's share sheet (termux-open --send)",
+			"Shared", "sent "+name+" to Android's share sheet (termux-open --send)")
 	case m.how == "android":
 		// termux-open only hands the file to Android: if no app handles
 		// it, Android shows nothing and nothing is reported back
-		a.setStatusLevel("handed "+name+" to Android (termux-open) — if nothing opens, no app handles this type: O → choose app", lvlOK)
+		a.noteResult(lvlOK, "handed "+name+" to Android (termux-open)",
+			"Handed over", "handed "+name+" to Android (termux-open)",
+			"if nothing opens, no app handles this type: O → choose app")
 	default:
-		a.setStatusLevel("opened "+name+" with "+m.how, lvlOK)
+		a.noteResult(lvlOK, "opened "+name+" with "+m.how, "Opened", "opened "+name+" with "+m.how)
 	}
 }
 
@@ -296,15 +305,20 @@ func (a *App) runDone(m runDoneMsg) tea.Cmd {
 		mouse = tea.EnableMouseCellMotion
 	}
 	var xe *editor.ExitError
+	name := fsys.SanitizeName(m.name)
 	switch {
 	case m.err == nil:
-		a.setStatusLevel(m.prog+" finished ("+fsys.SanitizeName(m.name)+")", lvlOK)
+		a.noteResult(lvlOK, m.prog+" finished ("+name+")",
+			capitalize(m.prog)+" finished", m.prog+" finished on "+name)
 	case errors.As(m.err, &xe) && xe.Signal != 0:
-		a.setStatusLevel(fmt.Sprintf("%s was terminated (%s)", m.prog, xe.Signal), lvlWarn)
+		msg := fmt.Sprintf("%s was terminated (%s)", m.prog, xe.Signal)
+		a.noteResult(lvlWarn, msg, capitalize(m.prog)+" was terminated", msg)
 	case errors.As(m.err, &xe):
-		a.setStatusLevel(fmt.Sprintf("%s exited with status %d", m.prog, xe.Code), lvlWarn)
+		msg := fmt.Sprintf("%s exited with status %d", m.prog, xe.Code)
+		a.noteResult(lvlWarn, msg, capitalize(m.prog)+" failed", msg)
 	default:
-		a.setStatus("could not run "+m.prog+": "+errText(m.err), true)
+		msg := "could not run " + m.prog + ": " + errText(m.err)
+		a.noteResult(lvlErr, msg, "Could not run "+m.prog, msg)
 	}
 	// the program may have changed files
 	return tea.Batch(tea.WindowSize(), mouse, a.panels[0].Refresh(), a.panels[1].Refresh())

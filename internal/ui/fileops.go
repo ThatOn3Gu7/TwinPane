@@ -338,11 +338,12 @@ func (a *App) cancelTask(id int) bool {
 	switch s.waitingFor {
 	case "delete confirmation":
 		a.finishTask(s, taskCanceled, "Delete cancelled — nothing was deleted")
-		a.setStatusLevel("Delete cancelled — nothing was deleted", lvlWarn)
+		a.noteResult(lvlWarn, "Delete cancelled — nothing was deleted",
+			"Delete cancelled", "nothing was deleted")
 	case "copy / move confirmation":
 		summary := capitalize(s.kind.String()) + " cancelled — nothing was transferred"
 		a.finishTask(s, taskCanceled, summary)
-		a.setStatusLevel(summary, lvlWarn)
+		a.noteResult(lvlWarn, summary, capitalize(s.kind.String())+" cancelled", "nothing was transferred")
 	default:
 		a.setStatusLevel("Stopping "+s.title+" safely…", lvlWarn)
 	}
@@ -451,7 +452,8 @@ func (a *App) handleOpMsg(msg tea.Msg) (tea.Cmd, bool) {
 		}
 		if s.canceling {
 			a.finishTask(s, taskCanceled, "Delete cancelled — nothing was deleted")
-			a.setStatusLevel("Delete cancelled — nothing was deleted", lvlWarn)
+			a.noteResult(lvlWarn, "Delete cancelled — nothing was deleted",
+				"Delete cancelled", "nothing was deleted")
 			return nil, true
 		}
 		if m.err != nil {
@@ -539,7 +541,7 @@ func (a *App) transferDialog(s *opSession, req ops.Request, targets []fsys.Entry
 		a.finishTaskPrompt(s, false)
 		summary := verb + " cancelled — nothing was transferred"
 		a.finishTask(s, taskCanceled, summary)
-		a.setStatusLevel(summary, lvlWarn)
+		a.noteResult(lvlWarn, summary, verb+" cancelled", "nothing was transferred")
 		return nil
 	}
 	d.buttons = []button{
@@ -832,7 +834,8 @@ func (a *App) deleteDialog(s *opSession, plan ops.DeletePlan) {
 		a.dialog = nil
 		a.finishTaskPrompt(s, false)
 		a.finishTask(s, taskCanceled, "Delete cancelled — nothing was deleted")
-		a.setStatusLevel("Delete cancelled — nothing was deleted", lvlWarn)
+		a.noteResult(lvlWarn, "Delete cancelled — nothing was deleted",
+			"Delete cancelled", "nothing was deleted")
 		return nil
 	}
 	start := func(a *App) tea.Cmd {

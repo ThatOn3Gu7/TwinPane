@@ -312,8 +312,8 @@ func TestCompressOverwriteNeedsConfirmation(t *testing.T) {
 	h.press("enter")
 	h.waitDialog(dlgZipExists)
 	h.press("esc")
-	if !strings.Contains(h.status(), "GZIP not created — nothing was changed") {
-		t.Fatalf("status %q", h.status())
+	if !strings.Contains(h.reported(), "GZIP not created — nothing was changed") {
+		t.Fatalf("report %q", h.reported())
 	}
 	if b, _ := os.ReadFile(out); string(b) != "keep" {
 		t.Fatalf("file changed: %q", b)
@@ -514,7 +514,7 @@ func TestOpenInDefaultAppOnTermux(t *testing.T) {
 	env.launchFn = func([]string) error { return errors.New("exit status 1") }
 	env.mu.Unlock()
 	h.press("o")
-	h.until("error", func() bool { return strings.Contains(h.status(), "could not open") })
+	h.until("error", func() bool { return strings.Contains(reportedText(h.a), "could not open") })
 	// text files still open in the viewer with Enter
 	h.press("enter")
 	if h.a.viewer == nil {
@@ -573,7 +573,7 @@ func TestOpenWithList(t *testing.T) {
 	if got := env.launched()[0]; !reflect.DeepEqual(got, []string{"/fake/bin/termux-open", "--send", "--", filepath.Join(env.src, "a.txt")}) {
 		t.Fatalf("share argv %q", got)
 	}
-	h.until("status", func() bool { return strings.Contains(h.status(), "share") })
+	h.until("status", func() bool { return strings.Contains(reportedText(h.a), "share") })
 	// the viewer entry opens the viewer
 	h.press("O")
 	h.waitDialog(dlgOpenWith)
@@ -637,8 +637,8 @@ func TestRunAProgramWithoutShell(t *testing.T) {
 	if got := env.execs[0].args; !reflect.DeepEqual(got, want) {
 		t.Fatalf("args %q, want %q", got, want)
 	}
-	if !strings.Contains(h.status(), "viewer-x finished") {
-		t.Fatalf("status %q", h.status())
+	if !strings.Contains(h.reported(), "viewer-x finished") {
+		t.Fatalf("report %q", h.reported())
 	}
 }
 
@@ -731,8 +731,8 @@ func TestMenuActionsAndDispatch(t *testing.T) {
 		t.Fatalf("after bookmarking: %q", l)
 	}
 	h.press("B")
-	if !strings.Contains(h.status(), "removed") {
-		t.Fatalf("status %q", h.status())
+	if !strings.Contains(h.reported(), "removed") {
+		t.Fatalf("report %q", h.reported())
 	}
 }
 
