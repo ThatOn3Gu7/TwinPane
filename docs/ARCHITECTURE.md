@@ -1198,7 +1198,7 @@ their scroll row, short dialogs without an indicator, long bookmark lists).
 
 Results of finished work are reported by a pop-up in a corner of the panel
 area; prompts, refusals, progress and navigation notes stay in the status
-line. `notice` holds the heading kind (success, warning, error, info), the
+line — and are repeated in the pop-up when the row cannot show them whole. `notice` holds the heading kind (success, warning, error, info), the
 heading, the message lines, the details, the corner and the remaining time.
 `App.notice` is a single slot: a newer result replaces the older one, a
 repeated result restarts its countdown, and the countdown pauses while a
@@ -1214,9 +1214,33 @@ unseen).
   or 10 rows nothing is drawn and the status line and task list still report
   the result.
 - Callers only build a `taskResult`; the operation code never draws.
+- `setStatusLevel` is also a producer: `noteLongStatus` raises a notification
+  when the message is wider than the status row (the row spends one cell on
+  its space and two on the level's icon), because the row cuts silently and the
+  tail is often the reason. The pop-up is not duplicated when it already shows
+  that text, and callers that report a result themselves (the keybinding
+  reload, the focus toggle) set the status line first and the notification
+  second, so the proper heading wins over the generic one.
+- `noticeBoxWithin` caps the message at `noticeMaxBody` (five wrapped lines,
+  marked with `…`) while the notice is unfocused. Once it is pinned,
+  `noticeWidth` widens the box to `noticeWideWidth` when that saves lines and
+  the height limit comes from the content area, so a tap unfolds the whole
+  message instead of showing the first lines. `noticeContent` is the single
+  wrapper for that, used by both the renderer and the width decision.
+- Draw order: `View` composites the notification after the Settings window and
+  the properties card (both report results from their own rows) and before a
+  dialog, which still covers it and pauses the countdown. `handleMouse` gives a
+  dialog the first claim on a tap and the notification the second, so it can be
+  tapped where it is drawn.
+- `noticeEscDismisses` lists every screen and panel state where Esc means
+  something else — overlays, a running load, an active task, an open archive —
+  and the pinned hint is built from it, so the pop-up never promises a key that
+  would cancel or leave instead.
 
 Tests: `internal/ui/notice_test.go` (kinds, wording, wrapping, pin/resume,
-replacement, dialog pause, tiny terminals).
+replacement, dialog pause, tiny terminals) and `notice_status_test.go` (a long
+status message popping up, unfolding on a tap, the keybinding reload and
+start-up problems, the note over the Settings window).
 
 ## Focus mode and panel navigation history (`ui/focus.go`, `ui/nav.go`)
 

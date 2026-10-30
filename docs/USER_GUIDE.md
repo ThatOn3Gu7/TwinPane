@@ -327,13 +327,28 @@ corner of the panel area rather than by a line at the bottom of the screen:
   heavy line that shrinks towards the left as the time runs out.
 - **What becomes a notification:** copy, move and delete results (including
   background ones), archive extraction and compression, cloud file operations,
-  reviewed directory plans, renames, folder-size scans, and an edit that
-  finished.
+  reviewed directory plans, renames, folder-size scans, an edit that finished,
+  the focus-mode toggle, and a reload of `keybinding.json` from its Settings
+  row (with the problems it found, if any).
 - **What stays in the status line:** progress ("Checking copy paths…"),
   prompts and refusals ("nothing to copy: put the cursor on an item or select
   items with Space"), navigation notes, mode toggles and selection counts.
   These describe what to do next rather than what just happened, so they
-  belong next to the panels.
+  belong next to the panels. The focus toggle is the exception that does both:
+  its note names the way back to the other layout, which is the first thing cut
+  on a narrow terminal.
+- **A message longer than the row:** the status line is one row and cuts what
+  does not fit, and the cut part is usually the reason ("… put the cursor on an
+  item", "… or M → Focus mode shows one panel at full width", which line of
+  `keybinding.json` to fix). When a message does not fit there, the same text
+  is repeated in the notification as well: the row keeps what it can show and
+  the pop-up carries the whole sentence.
+- **Folding out a long message:** the pop-up itself stays small — five wrapped
+  lines — and marks the rest with `…`. A tap on such a notification unfolds it:
+  the box grows wider (up to 84 columns) and taller, and the whole message is
+  shown, so a long error can be read in place instead of being chased through
+  the activity log. A message that already fits keeps its size when tapped, and
+  a tap outside folds it back.
 - **Colours and icons:** `✓` green for success, `!` yellow for warnings and
   cancellations, `✕` red for failures, `ℹ` blue for information. The border and
   the heading carry the same colour, so the kind is readable at a glance and
@@ -342,16 +357,21 @@ corner of the panel area rather than by a line at the bottom of the screen:
 - **Reading it at your own pace:** a tap on the pop-up *pins* it. The heavy
   line in the bottom border stops draining, the box says so (`pinned — Esc
   closes, tap outside resumes`), and it stays until you dismiss it, however
-  long you need. `Esc` on the panel screen closes a pinned notification; a tap
-  anywhere else releases it, and the countdown carries on from where it
-  stopped rather than starting over. A second tap on a pinned notification
-  about a background task opens the task list on that task, which is what a
-  single tap used to do.
+  long you need. `Esc` on the panel screen closes a pinned notification, as long
+  as it means nothing else there (while a load runs, a task is active or you are
+  inside an archive, `Esc` keeps cancelling or leaving, and the box says "tap
+  outside resumes" instead); a tap anywhere else releases it, and the countdown
+  carries on from where it stopped rather than starting over. A second tap on a
+  pinned notification about a background task opens the task list on that task,
+  which is what a single tap used to do.
 - **Going away by itself:** an unpinned notification drains its border from
   right to left and closes when it runs out (four seconds by default; Settings →
   *Notifications → Duration* sets 2–10 for the next pop-up). While a dialog is
   open the pop-up is not drawn and its countdown pauses, so a result cannot
-  expire unseen behind a prompt.
+  expire unseen behind a prompt. Over the Settings window and the properties
+  card it is drawn on top, because both report results of their own (the key
+  bindings row, applying permissions) and the answer belongs where you are
+  looking.
 - **No spam:** only one notification is shown at a time, a newer result
   replaces an older one, and repeating the same result restarts its countdown
   instead of flashing. On terminals too small for a legible box (under about
@@ -1942,7 +1962,7 @@ are.)
 - **Changes are live:** the panels, help screen, hint bar, action menu,
   dialogs and every overlay read the active set, so a rebound key works and
   the old one stops. `F9` → **Keys** → `Enter` reloads the file without
-  restarting; the status line says what changed.
+  restarting; the status line and a notification say what changed.
 - The one thing a file cannot change is typing: printable keys still edit text
   fields, and the numbers `1`–`9` and the letter hotkeys inside a dialog pick
   the row they are printed next to.
