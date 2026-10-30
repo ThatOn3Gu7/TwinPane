@@ -420,7 +420,7 @@ func (a *App) noticeBoxWithin(width, maxLines int) []string {
 	if n.total > 0 {
 		frac = float64(n.left) / float64(n.total)
 	}
-	lines = append(lines, noticeBottom(st, frac, width))
+	lines = append(lines, noticeBottom(st, th.ProgressEmpty, frac, width))
 	return lines
 }
 
@@ -448,12 +448,12 @@ func noticeTop(st lipgloss.Style, head string, width int) string {
 // noticeBottom draws the closing border with the countdown inside it: the time
 // left is a heavy line that shrinks towards the left, so the pop-up visibly
 // runs out just before it closes without spending a row of its own on a bar.
-func noticeBottom(st lipgloss.Style, frac float64, width int) string {
+func noticeBottom(st, empty lipgloss.Style, frac float64, width int) string {
 	inner := width - 2
 	filled := int(frac*float64(inner) + 0.5)
 	filled = max(0, min(inner, filled))
 	return st.Render("╰") + st.Render(strings.Repeat("━", filled)) +
-		lipgloss.NewStyle().Foreground(lipgloss.Color("238")).Render(strings.Repeat("─", inner-filled)) +
+		empty.Render(strings.Repeat("─", inner-filled)) +
 		st.Render("╯")
 }
 
