@@ -275,8 +275,8 @@ func TestLoadMissingWritesEveryAction(t *testing.T) {
 		t.Fatal(err)
 	}
 	var shape fileShape
-	if err := json.Unmarshal(data, &shape); err != nil {
-		t.Fatalf("generated file is not valid JSON: %v\n%s", err, data)
+	if err := json.Unmarshal(stripComments(data), &shape); err != nil {
+		t.Fatalf("generated file is not valid JSON once the comments are removed: %v\n%s", err, data)
 	}
 	if shape.Version != Version {
 		t.Fatalf("version = %d", shape.Version)
@@ -290,8 +290,19 @@ func TestLoadMissingWritesEveryAction(t *testing.T) {
 	if !strings.Contains(string(data), `"viewer.wrap": ["w"]`) {
 		t.Fatalf("file lacks a viewer binding:\n%s", data)
 	}
-	// The registry order gives the file one blank line per section.
-	if !strings.Contains(string(data), "\n\n    \"dialog.cancel\"") {
+	// Every binding is preceded by a comment that says where it is used and
+	// what it does; the registry order gives the file a blank line per
+	// section.
+	for _, a := range Actions() {
+		want := "    // " + entryComment(a) + "\n    \"" + a.Name + "\":"
+		if !strings.Contains(string(data), want) {
+			t.Fatalf("no hint above %s in:\n%s", a.Name, data)
+		}
+		if strings.TrimSpace(a.hint()) == "" {
+			t.Fatalf("%s has no hint for the file", a.Name)
+		}
+	}
+	if !strings.Contains(string(data), "\n\n    // ") {
 		t.Fatalf("file has no section breaks:\n%s", data)
 	}
 	info, err := os.Stat(path)
@@ -347,6 +358,177 @@ func TestLoadPartialFileAddsMissingActions(t *testing.T) {
 	}
 	if l := Load(path); l.Updated {
 		t.Fatal("a complete file must not be rewritten")
+	}
+}
+
+// TestLoadAddsHintsToACommentFreeFile: a file written before the hints
+// existed is rewritten in the documented form, values untouched.
+func TestLoadAddsHintsToACommentFreeFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), FileName)
+	if l := Load(path); l.Err != nil {
+		t.Fatalf("first load: %v", l.Err)
+	}
+	data, _ := os.ReadFile(path)
+	// Strip every hint line: the file the previous version generated.
+	var plain []string
+	for _, line := range strings.Split(string(data), "\n") {
+		if strings.Contains(line, "// ") {
+			continue
+		}
+		plain = append(plain, line)
+	}
+	commentFree := strings.Join(plain, "\n")
+	if strings.Contains(commentFree, "//") {
+		t.Fatalf("comments were not stripped:\n%s", commentFree)
+	}
+	commentFree = strings.Replace(commentFree, `"browse.copy": ["c", "f5"]`, `"browse.copy": ["y"]`, 1)
+	if err := os.WriteFile(path, []byte(commentFree), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	l := Load(path)
+	if l.Err != nil || !l.Updated || l.WriteErr != nil {
+		t.Fatalf("load = %+v", l)
+	}
+	if got := l.Set.Label("browse.copy"); got != "y" {
+		t.Fatalf("label = %q, the value must be kept", got)
+	}
+	after, _ := os.ReadFile(path)
+	if !strings.Contains(string(after), "// The two panels — copies the marked entries") {
+		t.Fatalf("the hints were not added:\n%s", after)
+	}
+	if !strings.Contains(string(after), `"browse.copy": ["y"]`) {
+		t.Fatalf("the value was lost:\n%s", after)
+	}
+	if l := Load(path); l.Updated {
+		t.Fatal("a commented file must not be rewritten again")
+	}
+}
+
+// TestLoadAcceptsAndKeepsUserComments: // comments are part of the format.
+func TestLoadAcceptsAndKeepsUserComments(t *testing.T) {
+	path := filepath.Join(t.TempDir(), FileName)
+	body := `{
+	// my own notes, this file is mine
+	"version": 1,
+	"bindings": {
+		// copy with y please
+		"browse.copy": ["y"], // trailing comments work too
+		"viewer.wrap": []
+	}
+}`
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	l := Load(path)
+	if l.Err != nil {
+		t.Fatalf("a commented file must load: %v", l.Err)
+	}
+	if got := l.Set.Label("browse.copy"); got != "y" {
+		t.Fatalf("label = %q", got)
+	}
+	if l.Set.Enabled("viewer.wrap") {
+		t.Fatal("[] must disable the action")
+	}
+	after, _ := os.ReadFile(path)
+	if !strings.Contains(string(after), "// my own notes, this file is mine") {
+		t.Fatalf("the user's comment was lost:\n%s", after)
+	}
+	if !strings.Contains(string(after), `"browse.copy": ["y"]`) {
+		t.Fatalf("the file was rewritten:\n%s", after)
+	}
+}
+
+// TestLoadPartialFileWithTrailingComment: appending keeps the file valid when
+// a binding line carries a comment of its own.
+func TestLoadPartialFileWithTrailingComment(t *testing.T) {
+	path := filepath.Join(t.TempDir(), FileName)
+	partial := `{
+	"version": 1,
+	"bindings": {
+		// a note
+		"browse.copy": ["y"] // mine
+	}
+}`
+	if err := os.WriteFile(path, []byte(partial), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	l := Load(path)
+	if l.Err != nil || !l.Updated || l.WriteErr != nil {
+		t.Fatalf("load = %+v", l)
+	}
+	data, _ := os.ReadFile(path)
+	var shape fileShape
+	if err := json.Unmarshal(stripComments(data), &shape); err != nil {
+		t.Fatalf("the completed file is not valid: %v\n%s", err, data)
+	}
+	if len(shape.Bindings) != len(Actions()) {
+		t.Fatalf("file has %d actions, registry has %d", len(shape.Bindings), len(Actions()))
+	}
+	if !strings.Contains(string(data), `"browse.copy": ["y"], // mine`) {
+		t.Fatalf("the comment moved or the value changed:\n%s", data)
+	}
+	if l := Load(path); l.Err != nil || l.Updated {
+		t.Fatalf("the completed file must load cleanly: %+v", l)
+	}
+}
+
+// TestLoadKeepsAFileWithUnknownActions: a line TwinPane cannot use is never
+// silently dropped by the comment refresh.
+func TestLoadKeepsAFileWithUnknownActions(t *testing.T) {
+	path := filepath.Join(t.TempDir(), FileName)
+	body := `{"version":1,"bindings":{"browse.copy":["y"],"browse.myKey":["k"]}}`
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	l := Load(path)
+	if l.Err != nil {
+		t.Fatalf("load = %+v", l)
+	}
+	after, _ := os.ReadFile(path)
+	if !strings.Contains(string(after), `"browse.myKey":["k"]`) || !strings.Contains(string(after), `"browse.copy":["y"]`) {
+		t.Fatalf("the lines the file already had were lost:\n%s", after)
+	}
+	if !strings.Contains(strings.Join(l.Set.Warnings(), "\n"), "browse.myKey") {
+		t.Fatalf("the unknown action was not reported: %v", l.Set.Warnings())
+	}
+}
+
+// TestCommentRefreshKeepsRequestedKeys: a conflict must not be written back
+// as a disabled action when the file is rewritten to add the hints.
+func TestCommentRefreshKeepsRequestedKeys(t *testing.T) {
+	path := filepath.Join(t.TempDir(), FileName)
+	set := Default()
+	body := `{"version":1,"bindings":{` + "\n"
+	all := Actions()
+	for i, a := range all {
+		keys := set.FileBindings()[a.Name]
+		if a.Name == "browse.copy" {
+			keys = []string{"z"} // taken from browse.compress, i.e. a conflict
+		}
+		body += "    " + quote(a.Name) + ": " + quoteList(keys)
+		if i < len(all)-1 {
+			body += ","
+		}
+		body += "\n"
+	}
+	body += "}}"
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	l := Load(path)
+	if l.Err != nil || !l.Updated {
+		t.Fatalf("load = %+v", l)
+	}
+	data, _ := os.ReadFile(path)
+	var shape fileShape
+	if err := json.Unmarshal(stripComments(data), &shape); err != nil {
+		t.Fatalf("rewritten file is not valid: %v", err)
+	}
+	if got := string(shape.Bindings["browse.compress"]); got != `["z"]` {
+		t.Fatalf("browse.compress in the file = %s, the user's request must be kept", got)
+	}
+	if got := l.Set.Label("browse.copy"); got != "z" {
+		t.Fatalf("copy label = %q", got)
 	}
 }
 
