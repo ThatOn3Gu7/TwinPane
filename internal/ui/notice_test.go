@@ -330,9 +330,25 @@ func TestEscKeepsItsMeaningElsewhere(t *testing.T) {
 	if h.a.notice == nil {
 		t.Error("Esc in the task list must not dismiss the notification")
 	}
-	// Back on the panels Esc does close it, and the hint says so.
+	// Back on the panels, the running task still owns Esc: pressing it cancels
+	// the task, so the note must not promise it.
+	if a := h.a; a.noticeEscDismisses() {
+		t.Error("a running task should keep Esc for itself")
+	}
+	if v := ansi.Strip(h.view()); strings.Contains(v, "Esc closes") {
+		t.Errorf("the focus hint promises Esc while a task would be cancelled:\n%s", v)
+	}
+	// Once nothing is left to cancel, Esc is the note's again and says so.
+	s.state = taskCompleted
+	if !h.a.noticeEscDismisses() {
+		t.Fatal("Esc should be free again")
+	}
 	if v := ansi.Strip(h.view()); !strings.Contains(v, "Esc closes") {
 		t.Errorf("the focus hint should name Esc on the panel screen:\n%s", v)
+	}
+	h.press("esc")
+	if h.a.notice != nil {
+		t.Fatal("Esc closes the note when it means nothing else")
 	}
 }
 

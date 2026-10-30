@@ -365,7 +365,10 @@ func New(opts Options) *App {
 	}
 	notices = append(notices, a.keybindNotices()...)
 	if len(notices) > 0 {
+		// The row shows what fits of the list; the pop-up is where the whole
+		// explanation of what did not load is read (one item per line).
 		a.setStatusLevel(strings.Join(notices, " · "), lvlWarn)
+		a.notify(noticeWarn, "Startup", notices[0], notices[1:]...)
 	}
 	if a.settingsErr != nil {
 		a.logRecovery("recovery.settings", "settings: "+a.settingsErr.Error())
@@ -518,6 +521,28 @@ func (a *App) setStatusLevel(msg string, lvl int) {
 	// Warnings and errors end up here, which makes this the one place that
 	// needs to know about them (see activity.go).
 	a.logStatus(msg, lvl)
+	a.noteLongStatus(msg, lvl)
+}
+
+// noteLongStatus raises a notification for a status message that the status
+// row cannot show in full. The row is one line and cuts what does not fit, and
+// the tail is often the part that matters ("… put the cursor on an item", "… or
+// M → Focus mode shows one panel at full width", the line of keybinding.json
+// that has to be fixed). Cutting is silent, so the same text is repeated in a
+// pop-up, where it wraps, is replaced by the next message like any result, and
+// grows to the whole thing when tapped.
+func (a *App) noteLongStatus(msg string, lvl int) {
+	if msg == "" || a.width <= 0 || a.quitting {
+		return // no width yet: the first resize draws the row and the message
+	}
+	// The row spends one cell on its leading space and two on the level's icon.
+	if ansi.StringWidth(msg)+3 <= a.width {
+		return
+	}
+	if n := a.notice; n != nil && n.msg == msg {
+		return // the pop-up is already showing this message whole
+	}
+	a.notify(resultKind(lvl), "", msg)
 }
 
 // Busy reports whether any background file operation is still active.
@@ -1066,7 +1091,6 @@ func (a *App) View() string {
 		// closes. Notifications are drawn on top of it below.
 		screen = overlay(screen, a.liveView(), a.width, a.height, a.theme.Backdrop)
 	}
-	screen = a.withNotice(screen)
 	if a.showSettings && !a.showHelp {
 		// The settings window floats above the panes (and anything else
 		// behind): the directory stays visible, dimmed by the backdrop,
@@ -1077,6 +1101,12 @@ func (a *App) View() string {
 	if a.props != nil && !a.showHelp {
 		screen = overlay(screen, a.renderProps(), a.width, a.height, a.theme.Backdrop)
 	}
+	// The notification is drawn over the Settings window and the properties
+	// card: both report results of their own (reloading keybinding.json from
+	// its row, applying permissions) and the corner note is where the user
+	// looks for the answer. A dialog still covers it, and pauses its
+	// countdown, because a dialog owns the keyboard until it closes.
+	screen = a.withNotice(screen)
 	if a.dialog != nil {
 		return overlay(screen, a.renderDialog(a.dialog), a.width, a.height, a.theme.Backdrop)
 	}

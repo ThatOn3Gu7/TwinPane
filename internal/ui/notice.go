@@ -33,12 +33,19 @@ import (
 //
 //   - notifications report finished actions (results): a file operation, an
 //     archive extract or compress, a cloud operation, a rename, a bookmark, an
-//     open/share, a finished edit, a folder-size scan, a directory plan;
+//     open/share, a finished edit, a folder-size scan, a directory plan, and
+//     the reload of keybinding.json;
 //   - the status line keeps everything that is not a result: progress
 //     ("Checking copy…"), prompts and refusals ("nothing to copy: put the
 //     cursor on an item"), navigation notes, mode toggles and selection
 //     counts. Those are context for what to do next, and they belong next to
 //     the panels, not in a pop-up.
+//
+// The status line is one row, so a message can be longer than the room it has.
+// Rather than cutting the sentence the user needs — a refusal that says why, a
+// warning that names the line of keybinding.json to fix — the same message is
+// raised as a notification as well: the row keeps what fits, and the pop-up
+// carries the whole text (see noteLongStatus).
 //
 // Only one notification is shown at a time and a newer result replaces an older
 // one, so a burst of operations cannot stack up; repeating the very same result
@@ -48,7 +55,11 @@ import (
 //
 // A tap brings the pop-up into focus: it stops counting down and stays until
 // Esc or a tap elsewhere, so a long message can be read at leisure. A tap
-// elsewhere releases it and the countdown carries on from where it stopped.
+// elsewhere releases it and the countdown carries on from where it stopped. A
+// message that did not fit the small box — more than a few wrapped lines —
+// grows when it is focused: the heading widens (up to noticeWideWidth) and the
+// box uses the height it needs, so tapping an error shows all of it instead of
+// the first lines and "…".
 
 const (
 	// noticeLife is the default lifetime of a notification; the settings
@@ -60,6 +71,14 @@ const (
 	// noticeMaxWidth bounds the pop-up so it stays a corner note on wide
 	// terminals instead of becoming a banner.
 	noticeMaxWidth = 46
+	// noticeWideWidth is how wide a focused notification may become: the whole
+	// message has to be readable, and a narrow column turns a paragraph into a
+	// tower of lines that no terminal is tall enough to show.
+	noticeWideWidth = 84
+	// noticeMaxBody is how many body lines the unfocused box spends on its
+	// message before it gives up and shows "…". The rest is one tap away, and
+	// the task list or the activity log keep the whole record.
+	noticeMaxBody = 5
 )
 
 // noticeKind selects the colours, the border and the icon of a notification.
@@ -346,6 +365,60 @@ func (a *App) noticeBox(width int) []string {
 	return a.noticeBoxWithin(width, 0)
 }
 
+// noticeContent wraps what the pop-up has to say for a box of the given width
+// (its border included): the message, which is the content, and the details
+// under it, which are dimmed context. A focused pop-up also gets its footer
+// hint here, because the focus hint explains why the box is not going away.
+func (a *App) noticeContent(n *notice, width int) (body, hint []string) {
+	th := a.theme
+	inner := width - 2
+	for _, part := range wrapText(n.msg, inner-2) {
+		body = append(body, th.DialogText.Render(part))
+	}
+	for _, line := range n.body {
+		for _, part := range wrapText(line, inner-2) {
+			body = append(body, th.DialogHint.Render(part))
+		}
+	}
+	if n.pinned {
+		// Esc only closes the pop-up where it means nothing else; elsewhere the
+		// hint just names the gesture that always works.
+		text := noticePinnedHint
+		if !a.noticeEscDismisses() {
+			text = noticePinnedHintNoEsc
+		}
+		for _, part := range wrapText(text, inner-2) {
+			hint = append(hint, th.DialogHint.Render(part))
+		}
+	}
+	return body, hint
+}
+
+// noticeWidth is the box width for the current notification: a corner note
+// while it counts down, and a wider box once it has been focused and its
+// message needed more lines than the note is allowed to spend (noticeMaxBody).
+// Widening only wins when it actually saves lines, so a short message does not
+// jump across the screen because it was tapped.
+func (a *App) noticeWidth() int {
+	w := min(noticeMaxWidth, a.width-4)
+	n := a.notice
+	if n == nil || !n.pinned {
+		return w
+	}
+	body, _ := a.noticeContent(n, w)
+	if len(body) <= noticeMaxBody {
+		return w
+	}
+	wide := min(noticeWideWidth, a.width-4)
+	if wide <= w {
+		return w
+	}
+	if wrapped, _ := a.noticeContent(n, wide); len(wrapped) < len(body) {
+		return wide
+	}
+	return w
+}
+
 // noticeBoxWithin is noticeBox limited to maxLines rows. A short terminal gets
 // the heading and the countdown first and loses body lines, so the pop-up is
 // always drawn whole instead of disappearing when the content area is small.
@@ -366,35 +439,13 @@ func (a *App) noticeBoxWithin(width, maxLines int) []string {
 	if head == "" {
 		head = noticeWord(n.kind)
 	}
-	// The message is the content of the box, so it wraps over as many lines as
-	// it needs; the details below it are dimmed context.
-	var body []string
-	for _, part := range wrapText(n.msg, inner-2) {
-		body = append(body, th.DialogText.Render(part))
-	}
-	for _, line := range n.body {
-		for _, part := range wrapText(line, inner-2) {
-			body = append(body, th.DialogHint.Render(part))
-		}
-	}
-	// Keep the pop-up small: the task list has the full record.
-	if limit := 5; len(body) > limit {
-		body = body[:limit]
-		body[limit-1] = th.DialogHint.Render("…")
-	}
-	// A focused pop-up says so, and says how to get rid of it: it no longer
-	// runs on its own, so the timer alone will not take it away.
-	var hint []string
-	if n.pinned {
-		// Esc only closes the pop-up where it means nothing else; elsewhere the
-		// hint just names the gesture that always works.
-		text := noticePinnedHint
-		if !a.noticeEscDismisses() {
-			text = noticePinnedHintNoEsc
-		}
-		for _, part := range wrapText(text, inner-2) {
-			hint = append(hint, th.DialogHint.Render(part))
-		}
+	body, hint := a.noticeContent(n, width)
+	// Keep the pop-up small while it counts down: the task list and the
+	// activity log have the full record, and the whole message is one tap
+	// away. A focused pop-up spends the room it needs instead.
+	if !n.pinned && len(body) > noticeMaxBody {
+		body = body[:noticeMaxBody]
+		body[noticeMaxBody-1] = th.DialogHint.Render("…")
 	}
 	if maxLines > 0 {
 		// The heading and the bottom border are fixed rows; body lines give way
@@ -405,6 +456,9 @@ func (a *App) noticeBoxWithin(width, maxLines int) []string {
 		}
 		if room < len(body) {
 			body = body[:room]
+			if room > 0 {
+				body[room-1] = th.DialogHint.Render("…")
+			}
 		}
 	}
 
@@ -465,7 +519,7 @@ func (a *App) noticeRect() (x, y, w, h int, ok bool) {
 	if a.notice == nil || !a.noticeVisible() {
 		return 0, 0, 0, 0, false
 	}
-	w = min(noticeMaxWidth, a.width-4)
+	w = a.noticeWidth()
 	if w < 20 {
 		return 0, 0, 0, 0, false
 	}
@@ -536,12 +590,20 @@ func (a *App) noticeAt(x, y int) bool {
 // noticeEscDismisses reports whether Esc is free to dismiss the notification:
 // only on the plain browsing screen, where Esc has no other meaning. Overlays,
 // the task list, the live progress window and dialogs keep their own Esc
-// behaviour.
+// behaviour, and so does the panel itself: Esc cancels a running load, cancels
+// a background operation, or leaves an archive, and a corner note must never
+// take those away.
 func (a *App) noticeEscDismisses() bool {
-	return a.dialog == nil && !a.quitting && !a.editing && !a.showHelp && !a.showSettings &&
-		!a.tasks.showing && a.actView == nil &&
-		a.live == nil && a.viewer == nil && a.search == nil && a.advancedSearch == nil &&
-		a.bulk == nil && a.folderSize == nil && a.comparison == nil && a.props == nil
+	if a.dialog != nil || a.quitting || a.editing || a.showHelp || a.showSettings ||
+		a.tasks.showing || a.actView != nil || a.live != nil || a.viewer != nil ||
+		a.search != nil || a.advancedSearch != nil || a.bulk != nil ||
+		a.folderSize != nil || a.comparison != nil || a.props != nil {
+		return false
+	}
+	if p := a.ActivePanel(); p != nil && (p.InArchive() || p.Loading()) {
+		return false
+	}
+	return a.tasks.latestActive() == nil
 }
 
 // tapNotice handles a tap on the notification. The first tap brings it into

@@ -126,6 +126,16 @@ func (a *App) syncMode() {
 	}
 }
 
+// The focus toggle reports the same thing twice: once in the status row, where
+// it stays, and once in a notification, because the row cuts "… shows one panel
+// at full width" off on a terminal that is short of width.
+const (
+	focusOnDetail  = "Tab switches panels, Ctrl+O or M → Two panes shows both again"
+	focusOffDetail = "Ctrl+O or M → Focus mode shows one panel at full width"
+	focusOnStatus  = "focus mode — " + focusOnDetail
+	focusOffStatus = "two panes — " + focusOffDetail
+)
+
 // toggleFocus switches between one panel and two panels.
 func (a *App) toggleFocus() tea.Cmd {
 	a.focus = !a.focus
@@ -133,12 +143,15 @@ func (a *App) toggleFocus() tea.Cmd {
 	a.focusPrev = focusPreview{}
 	a.layout()
 	a.syncMode()
+	// The title bar already names the panel ("focus · left panel"), so the
+	// status line spends its room on the ways out; the notification says the
+	// same thing where a narrow row would have cut it.
 	if a.focus {
-		// The title bar already names the panel ("focus · left panel"), so
-		// the status line spends its room on the ways out.
-		a.setStatusLevel("focus mode — Tab switches panels, Ctrl+O or M → Two panes shows both again", lvlOK)
+		a.setStatusLevel(focusOnStatus, lvlOK)
+		a.result(lvlOK, "Focus mode", focusOnDetail)
 	} else {
-		a.setStatusLevel("two panes — Ctrl+O or M → Focus mode shows one panel at full width", lvlOK)
+		a.setStatusLevel(focusOffStatus, lvlOK)
+		a.result(lvlOK, "Two panes", focusOffDetail)
 	}
 	return nil
 }

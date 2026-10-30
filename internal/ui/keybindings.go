@@ -83,15 +83,26 @@ func (a *App) reloadBindings() tea.Cmd {
 	if a.actLog != nil {
 		a.logf(activity.LevelInfo, activity.CatSettings, "keybindings.reload", "%s: %d customised", a.keybindPath, len(a.binds.Diff()))
 	}
+	// The status line keeps the summary it always had; the notification carries
+	// the detail that does not fit there. The status line is set first and the
+	// pop-up after it, so a message too long for the row is replaced by the
+	// proper heading instead of the generic one noteLongStatus gives it.
 	switch {
 	case a.keybindErr != nil:
-		a.setStatusLevel("key bindings: "+a.keybindErr.Error(), lvlErr)
+		msg := a.keybindErr.Error()
+		a.setStatusLevel("key bindings: "+msg, lvlErr)
+		a.result(lvlErr, "Key bindings not reloaded", msg)
 	case len(a.keybindWarnings) > 0:
 		a.setStatusLevel("key bindings reloaded with warnings: "+strings.Join(a.keybindWarnings, " · "), lvlWarn)
+		a.result(lvlWarn, "Key bindings reloaded with problems",
+			a.keybindWarnings[0], a.keybindWarnings[1:]...)
 	case len(a.binds.Diff()) == 0:
 		a.setStatus("key bindings reloaded: every default in place", false)
+		a.result(lvlOK, "Key bindings reloaded", "Every default in place")
 	default:
-		a.setStatus(fmt.Sprintf("key bindings reloaded: %d changed", len(a.binds.Diff())), false)
+		n := len(a.binds.Diff())
+		a.setStatus(fmt.Sprintf("key bindings reloaded: %d changed", n), false)
+		a.result(lvlOK, "Key bindings reloaded", fmt.Sprintf("%d of the defaults changed", n))
 	}
 	return nil
 }

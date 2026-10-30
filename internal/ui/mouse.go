@@ -94,9 +94,20 @@ func (a *App) handleMouse(m tea.MouseMsg) tea.Cmd {
 		a.press = pressState{}
 	}
 
-	switch {
-	case a.dialog != nil:
+	if a.dialog != nil {
 		return a.dialogMouse(a.dialog, ev)
+	}
+	// The notification: a tap brings it into focus (and unfolds a message that
+	// did not fit), so it stops counting down and stays until Esc or a tap
+	// outside. It is drawn above every other view except a dialog, so it takes
+	// the tap before them.
+	if a.noticeAt(ev.X, ev.Y) {
+		if ev.Action == tea.MouseActionRelease && ev.Button == tea.MouseButtonLeft {
+			return a.tapNotice()
+		}
+		return nil
+	}
+	switch {
 	case a.tasks.showing:
 		return a.taskViewMouse(ev)
 	case a.actView != nil:
@@ -121,15 +132,6 @@ func (a *App) handleMouse(m tea.MouseMsg) tea.Cmd {
 		return a.folderSizeMouse(ev)
 	case a.comparison != nil:
 		return a.comparisonMouse(ev)
-	}
-	// The notification: a tap brings it into focus, so it stops counting down
-	// and stays until Esc or a tap outside. It is only drawn over the panels,
-	// so it can never take a click from a dialog or another overlay.
-	if a.noticeAt(ev.X, ev.Y) {
-		if ev.Action == tea.MouseActionRelease && ev.Button == tea.MouseButtonLeft {
-			return a.tapNotice()
-		}
-		return nil
 	}
 	// A tap anywhere else releases a focused notification: its countdown picks
 	// up where it stopped, and the tap still does its normal job below.
