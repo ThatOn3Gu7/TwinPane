@@ -678,7 +678,15 @@ Four new packages with no UI dependency. The TUI code lives in four
   `$TWINPANE_CONFIG_DIR` applies), writes the complete default file when it is
   missing (0600, atomic), appends actions a newer version added without
   touching existing values, and reports a damaged or newer file as a
-  `*CorruptError` without rewriting it. `Options.KeybindingPath` and
+  `*CorruptError` without rewriting it. The generated file is JSON with `//`
+  comments: every binding carries a hint written for a reader who does not
+  know the program (the section's title as the place, `Action.Hint` — falling
+  back to `Desc` — as the effect). `stripComments` removes whole-line and
+  trailing comments outside string literals before decoding, so the comments
+  cost nothing and users may add their own; the location to append to is found
+  by brace matching, and one trailing comment on the last binding moves the
+  separating comma in front of it. A file with no comments at all is rewritten
+  once in the documented form (values preserved). `Options.KeybindingPath` and
   `Options.Bindings` override the file (tests, embedders).
 - The UI builds its `KeyMap` (browse help sections) from the set, and every
   overlay asks `App.is(action, msg)`; hint chips, the action menu and dialog

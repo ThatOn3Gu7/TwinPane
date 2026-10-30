@@ -665,8 +665,9 @@ search, Advanced Search, tasks, the activity log, Properties, bulk rename,
 help, Settings, folder sizes, the directory comparison, the dialogs and the
 text fields — can be changed in `keybinding.json` in the configuration
 directory. The file is created on first start with every action and its
-defaults; a list replaces an action's keys, `[]` turns it off, and an action
-you leave out keeps its default. Unknown names, keys it cannot use and two
+defaults, each one under a `//` comment that says where the key applies and
+what it does; a list replaces an action's keys, `[]` turns it off, and an
+action you leave out keeps its default. Unknown names, keys it cannot use and two
 actions of one screen asking for the same key are reported on the status line
 (and in the activity log) while the rest of the file still applies; a damaged
 file is never overwritten. Changes are live — the help screen, the hint bar,

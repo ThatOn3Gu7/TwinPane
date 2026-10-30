@@ -1888,12 +1888,21 @@ you can read the complete key map in one place:
 {
   "version": 1,
   "bindings": {
+    // The two panels — copies the marked entries (or the cursor's) to the other panel.
     "browse.copy": ["y", "f5"],
-    "browse.quit": ["q", "f10"],
+    // The file viewer — turns line wrapping on or off.
     "viewer.wrap": ["w"]
   }
 }
 ```
+
+Every binding has a `//` comment above it saying **where** the key works
+(the panels, a dialog, the viewer, a text field, …) and **what pressing it
+does**, so the file can be read without knowing the program. The comments are
+only documentation: they are ignored when the file is read, and you may add
+your own next to or above any line. (A strict JSON editor may not know
+comments; the file is JSON with comments, the way many configuration files
+are.)
 
 - **Names** are the ones in the file: `browse.*` for the panels, then
   `dialog`, `list`, `filterList`, `input`, `viewer`, `search`,
@@ -1910,7 +1919,9 @@ you can read the complete key map in one place:
   the action off.** An action you leave out keeps its default, so a short
   file with a few changes is fine.
 - **Defaults for new actions** are added when a new version has keys the file
-  does not mention; every value you set is kept.
+  does not mention; every value you set is kept. A file without any comments
+  (from an older TwinPane, or written by hand) is filled in with the full list
+  and the hints once, keeping every key you set.
 - **Mistakes are warnings, never a refusal to start:** an unknown action name,
   a key TwinPane cannot use, or two actions of the same screen asking for the
   same key are reported on the status line and in the activity log (`L`), and

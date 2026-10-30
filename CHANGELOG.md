@@ -7,6 +7,53 @@ the tagged version as the release notes, so every release needs an entry here.
 The complete description of every feature is in
 [docs/USER_GUIDE.md](docs/USER_GUIDE.md).
 
+## [0.11.0]
+
+Every key TwinPane uses is now listed in `keybinding.json` and can be changed
+there — the panels, the overlays, the menus, the dialogs and the text fields.
+Defaults do not move: an untouched installation behaves exactly as before, and
+a missing file is written with the complete default list on first start.
+
+### Added
+- **Custom key bindings.** `keybinding.json` lives next to `settings.json`
+  (`$TWINPANE_CONFIG_DIR`, default `~/.config/twinpane`). It names every action
+  (`browse.copy`, `viewer.wrap`, `tasks.close`, `input.backspace`, …), grouped
+  by the screen it belongs to, with its default keys, so the whole key map can
+  be read in one place. A list replaces an action's keys, the first key is the
+  one the hint bar shows and a tap sends, `[]` switches the action off, and an
+  action left out keeps its default. Names the parser cannot use, keys that do
+  not exist and two actions of one screen asking for the same key are reported
+  on the status line and in the activity log while the rest of the file still
+  applies; closing actions and quitting always keep a key. A damaged or
+  newer-version file is announced, never overwritten, and TwinPane starts on
+  the defaults.
+- **Hints in the file.** Every binding is written under a `//` comment that
+  says where the key is used (the panels, a dialog, the file viewer, a text
+  field, the task list, …) and what pressing it does, so the file doubles as a
+  guide for someone who has never seen TwinPane. The hints are documentation
+  only: they are skipped when the file is read, you may add comments of your
+  own, and a file without any comments (from an older version or written by
+  hand) is filled in with the full list and the hints once, keeping every key
+  set.
+- **Live everywhere.** The panels, help screen, hint bar, action menu, dialogs,
+  overlays and text fields all read the active set, so a rebound key works and
+  the old key stops; labels are drawn from the same set, and a hint or menu row
+  tapped on a touch screen sends the configured key.
+- **Settings → Keys.** A row that names the file and its state (all defaults,
+  how many keys differ, or why the file could not be used) and reloads it on
+  `Enter`, without a restart, reporting the result on the status line and in
+  the activity log. There is deliberately no key editor in the interface.
+
+### Changed
+- The browse key map, the focus-mode toggle, the preview pane and Go to are
+  bindings now instead of hard-coded key strings, and the activity log records
+  the action's name rather than the old key.
+- The help screen, hint bar and action menu take their labels from the active
+  file; the defaults (`c/F5`, `m/F6`, `Esc`, `^L`, `Space`, `PgUp`, …) are
+  unchanged.
+- `internal/keybinding` is a new package with no UI code; `docs/ARCHITECTURE.md`
+  describes the registry, the parser and the loader.
+
 ## [0.10.0]
 
 A settings screen for every preference, notifications for results, one Tasks
