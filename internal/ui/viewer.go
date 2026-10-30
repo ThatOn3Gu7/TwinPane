@@ -754,31 +754,31 @@ func (a *App) viewerMessage() []string {
 
 func (a *App) viewerHints() []barItem {
 	v := a.viewer
-	out := []barItem{item("Esc", "close", "esc")}
+	out := []barItem{a.bind("viewer.close", "close")}
 	if !v.showsText() {
 		if v.path != "" && !v.fromAdvanced && !v.remote && v.err == nil && !v.loading {
-			out = append(out, item("e", "edit externally", "e"))
+			out = append(out, a.bind("viewer.edit", "edit externally"))
 		}
 		return out
 	}
-	out = append(out, item("↑↓", "scroll", ""), item("/", "find", "/"))
+	out = append(out, item("↑↓", "scroll", ""), a.bind("viewer.find", "find"))
 	if len(v.matches) > 0 {
-		out = append(out, item("n/N", "next/prev", "n"))
+		out = append(out, a.bindAll("next/prev", "viewer.nextMatch", "viewer.prevMatch"))
 	}
 	wrap := "no wrap"
 	if !v.wrap {
 		wrap = "wrap"
 		out = append(out, item("←→", "sideways", ""))
 	}
-	out = append(out, item("w", wrap, "w"))
+	out = append(out, a.bind("viewer.wrap", wrap))
 	if v.path != "" && !v.fromAdvanced {
-		out = append(out, item("e", "edit externally", "e"))
+		out = append(out, a.bind("viewer.edit", "edit externally"))
 	}
 	nums := "hide numbers"
 	if !v.numbers {
 		nums = "line numbers"
 	}
-	out = append(out, item("PgDn", "page", "pgdown"), item("g/G", "top/end", "g"), item("#", nums, "#"))
+	out = append(out, a.bind("viewer.pageDown", "page"), a.bindAll("top/end", "viewer.top", "viewer.bottom"), a.bind("viewer.numbers", nums))
 	return out
 }
 

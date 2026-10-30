@@ -230,7 +230,7 @@ func TestEssentialCannotBeUnbound(t *testing.T) {
 	if !s.Enabled("browse.quit") || !s.Enabled("dialog.cancel") {
 		t.Fatal("essential actions must stay reachable")
 	}
-	if got := s.Label("browse.quit"); got != "q/^C/F10" {
+	if got := s.Label("browse.quit"); got != "q" {
 		t.Fatalf("quit label = %q", got)
 	}
 	if !strings.Contains(strings.Join(s.Warnings(), "\n"), "cannot be left without a key") {

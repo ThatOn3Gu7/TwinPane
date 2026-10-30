@@ -1,6 +1,10 @@
 package ui
 
-import tea "github.com/charmbracelet/bubbletea"
+import (
+	tea "github.com/charmbracelet/bubbletea"
+
+	"github.com/ThatOn3Gu7/TwinPane/internal/keybinding"
+)
 
 // Binding maps one action to one or more key strings (as produced by
 // tea.KeyMsg.String()) plus help text.
@@ -56,66 +60,83 @@ type KeyMap struct {
 	// troubleshooting). It is not the operation history, which lives in the
 	// Tasks screen (t).
 	Activity Binding
+
+	// Focus mode: the toggle, the preview pane and the typed location box.
+	// They only reach the panels while focus mode is on.
+	Focus, Preview, GoTo Binding
 }
 
 // DefaultKeys returns the default key bindings.
-func DefaultKeys() KeyMap {
+func DefaultKeys() KeyMap { return keyMapFrom(keybinding.Default()) }
+
+// keyMapFrom builds the browse key map from the active binding set, so a key
+// changed in keybinding.json is what the panels listen for and what the help
+// screen and the hint bar show.
+func keyMapFrom(s *keybinding.Set) KeyMap {
+	b := func(name, desc string) Binding {
+		return Binding{Keys: s.Keys(name), Help: s.Label(name), Desc: desc}
+	}
 	return KeyMap{
-		Up:       Binding{[]string{"up", "k"}, "↑/k", "move up"},
-		Down:     Binding{[]string{"down", "j"}, "↓/j", "move down"},
-		PageUp:   Binding{[]string{"pgup", "ctrl+b"}, "PgUp", "page up"},
-		PageDown: Binding{[]string{"pgdown", "ctrl+f"}, "PgDn", "page down"},
-		Top:      Binding{[]string{"home", "g"}, "Home/g", "first entry"},
-		Bottom:   Binding{[]string{"end", "G"}, "End/G", "last entry"},
-		Open:     Binding{[]string{"enter", "right", "l"}, "⏎/→/l", "open directory"},
-		Parent:   Binding{[]string{"backspace", "left"}, "⌫/←", "parent directory"},
+		Up:       b("browse.up", "move up"),
+		Down:     b("browse.down", "move down"),
+		PageUp:   b("browse.pageUp", "page up"),
+		PageDown: b("browse.pageDown", "page down"),
+		Top:      b("browse.top", "first entry"),
+		Bottom:   b("browse.bottom", "last entry"),
+		Open:     b("browse.open", "open directory"),
+
 		// One help row for both directions keeps the help screen a page;
-		// the keys themselves are separate bindings (see handleKey).
-		Back:       Binding{[]string{"alt+left", "["}, "[ / ]", "back / forward (history)"},
-		Forward:    Binding{[]string{"alt+right", "]"}, "[ / ]", "back / forward (history)"},
-		Home:       Binding{[]string{"~"}, "~", "go to home directory"},
-		SyncOther:  Binding{[]string{"="}, "=", "same dir in other panel"},
-		Compare:    Binding{[]string{"D"}, "D", "compare local directories"},
-		FolderSize: Binding{[]string{"A"}, "A", "analyze folder sizes"},
-		Select:     Binding{[]string{" ", "insert"}, "Space/Ins", "toggle selection"},
-		SelectAll:  Binding{[]string{"a"}, "a", "select all / none"},
-		Unselect:   Binding{[]string{"u"}, "u", "clear selection"},
-		Switch:     Binding{[]string{"tab", "shift+tab"}, "Tab", "switch active panel"},
-		Hidden:     Binding{[]string{"h", "H", "."}, "h/H/.", "hidden files (both panels)"},
-		Sort:       Binding{[]string{"s"}, "s", "sort by name/size/time/type"},
-		Reverse:    Binding{[]string{"S"}, "S", "reverse sort order (↑/↓)"},
-		Search:     Binding{[]string{"/"}, "/", "find files by name (live)"},
-		Refresh:    Binding{[]string{"ctrl+l"}, "^L", "refresh both panels"},
-		Copy:       Binding{[]string{"c", "f5"}, "c/F5", "copy to other panel"},
-		Move:       Binding{[]string{"m", "f6"}, "m/F6", "move to other panel"},
-		Rename:     Binding{[]string{"r", "f2"}, "r/F2", "rename (several: bulk)"},
-		Delete:     Binding{[]string{"d", "f8", "delete"}, "d/F8/Del", "delete (trash if available)"},
-		Edit:       Binding{[]string{"e", "f4"}, "e/F4", "edit in default editor"},
-		EditWith:   Binding{[]string{"E"}, "E", "edit with… (choose editor)"},
-		Cancel:     Binding{[]string{"esc"}, "Esc", "cancel dialog / operation"},
-		Tasks:      Binding{[]string{"t"}, "t", "tasks & operation history"},
-		Help:       Binding{[]string{"?", "f1"}, "?", "toggle help"},
-		Settings:   Binding{[]string{"f9", "ctrl+s"}, "F9 / ^S", "settings"},
-		Quit:       Binding{[]string{"q", "ctrl+c", "f10"}, "q", "quit"},
+		// the keys themselves are separate actions (see handleKey).
+		Parent:     b("browse.parent", "parent directory"),
+		Back:       b("browse.back", "back / forward (history)"),
+		Forward:    b("browse.forward", "back / forward (history)"),
+		Home:       b("browse.home", "go to home directory"),
+		SyncOther:  b("browse.syncOther", "same dir in other panel"),
+		Compare:    b("browse.compare", "compare local directories"),
+		FolderSize: b("browse.folderSize", "analyze folder sizes"),
+		Select:     b("browse.select", "toggle selection"),
+		SelectAll:  b("browse.selectAll", "select all / none"),
+		Unselect:   b("browse.unselect", "clear selection"),
+		Switch:     b("browse.switch", "switch active panel"),
+		Hidden:     b("browse.hidden", "hidden files (both panels)"),
+		Sort:       b("browse.sort", "sort by name/size/time/type"),
+		Reverse:    b("browse.reverse", "reverse sort order (↑/↓)"),
+		Search:     b("browse.search", "find files by name (live)"),
+		Refresh:    b("browse.refresh", "refresh both panels"),
+		Copy:       b("browse.copy", "copy to other panel"),
+		Move:       b("browse.move", "move to other panel"),
+		Rename:     b("browse.rename", "rename (several: bulk)"),
+		Delete:     b("browse.delete", "delete (trash if available)"),
+		Edit:       b("browse.edit", "edit in default editor"),
+		EditWith:   b("browse.editWith", "edit with… (choose editor)"),
+		Cancel:     b("browse.cancel", "cancel dialog / operation"),
+		Tasks:      b("browse.tasks", "tasks & operation history"),
+		Help:       b("browse.help", "toggle help"),
+		Settings:   b("browse.settings", "settings"),
+		Quit:       b("browse.quit", "quit"),
 
-		Properties: Binding{[]string{"P"}, "P", "properties / permissions"},
-		View:       Binding{[]string{"v", "f3"}, "v/F3", "view file (read-only)"},
-		Extract:    Binding{[]string{"x"}, "x", "extract archive / selected"},
-		ExtractAll: Binding{[]string{"X"}, "X", "extract all (in a ZIP)"},
-		Zip:        Binding{[]string{"z"}, "z", "compress (ZIP/TAR/7Z…)"},
+		Properties: b("browse.properties", "properties / permissions"),
+		View:       b("browse.view", "view file (read-only)"),
+		Extract:    b("browse.extract", "extract archive / selected"),
+		ExtractAll: b("browse.extractAll", "extract all (in a ZIP)"),
+		Zip:        b("browse.compress", "compress (ZIP/TAR/7Z…)"),
 
-		OpenExt:   Binding{[]string{"o"}, "o", "open in default app"},
-		OpenWith:  Binding{[]string{"O"}, "O", "open with… (choose)"},
-		Menu:      Binding{[]string{"M"}, "M", "menu of actions"},
-		Bookmarks: Binding{[]string{"b"}, "b", "bookmarks (jump/edit)"},
-		Bookmark:  Binding{[]string{"B"}, "B", "bookmark this folder"},
-		Storage:   Binding{[]string{"i"}, "i", "storage / free space"},
+		OpenExt:   b("browse.openExternal", "open in default app"),
+		OpenWith:  b("browse.openWith", "open with… (choose)"),
+		Menu:      b("browse.menu", "menu of actions"),
+		Bookmarks: b("browse.bookmarks", "bookmarks (jump/edit)"),
+		Bookmark:  b("browse.bookmark", "bookmark this folder"),
+		Storage:   b("browse.storage", "storage / free space"),
 
-		Sources: Binding{[]string{"ctrl+r"}, "^R", "source: local / cloud"},
-		Mkdir:   Binding{[]string{"f7"}, "F7", "new folder (direct)"},
-		New:     Binding{[]string{"n"}, "n", "new file / new folder"},
+		Sources: b("browse.sources", "source: local / cloud"),
+		Mkdir:   b("browse.mkdir", "new folder (direct)"),
+		New:     b("browse.new", "new file / new folder"),
 
-		Activity: Binding{[]string{"L"}, "L", "activity log"},
+		Activity: b("browse.activity", "activity log"),
+
+		Focus:   b("browse.focus", "focus mode (one panel)"),
+		Preview: b("browse.preview", "preview pane (focus mode)"),
+		GoTo:    b("browse.goTo", "go to a folder (focus mode)"),
 	}
 }
 

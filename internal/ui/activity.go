@@ -442,9 +442,9 @@ func (a *App) logKeyAction(msg tea.KeyMsg) {
 	if !a.logEnabled(activity.LevelDebug) {
 		return
 	}
-	for _, b := range keyActions {
-		if b.binding.Matches(msg) {
-			a.logf(activity.LevelDebug, activity.CatUI, "key.action", "%s: %s", b.label, b.binding.Help)
+	for _, k := range keyActions {
+		if a.is(k.action, msg) {
+			a.logf(activity.LevelDebug, activity.CatUI, "key.action", "%s: %s", k.label, a.label(k.action))
 			return
 		}
 	}
@@ -452,22 +452,23 @@ func (a *App) logKeyAction(msg tea.KeyMsg) {
 
 // keyAction is one named binding, for the verbose shortcut log.
 type keyAction struct {
-	label   string
-	binding Binding
+	label  string
+	action string
 }
 
 // keyActions names the bindings that the verbose log reports. It is a static
-// list (not built from KeyMap by reflection) so a new binding has to be named
-// here deliberately rather than silently flooding the log.
+// list (not built from the registry by reflection) so a new binding has to be
+// named here deliberately rather than silently flooding the log. The keys come
+// from the active key map, so a rebound shortcut is logged under its real key.
 var keyActions = []keyAction{
-	{"switch panel", DefaultKeys().Switch}, {"open", DefaultKeys().Open}, {"parent", DefaultKeys().Parent},
-	{"copy", DefaultKeys().Copy}, {"move", DefaultKeys().Move}, {"rename", DefaultKeys().Rename},
-	{"delete", DefaultKeys().Delete}, {"edit", DefaultKeys().Edit}, {"view", DefaultKeys().View},
-	{"new menu", DefaultKeys().New}, {"new folder", DefaultKeys().Mkdir}, {"compress", DefaultKeys().Zip},
-	{"extract", DefaultKeys().Extract}, {"properties", DefaultKeys().Properties}, {"search", DefaultKeys().Search},
-	{"tasks", DefaultKeys().Tasks}, {"settings", DefaultKeys().Settings}, {"sources", DefaultKeys().Sources},
-	{"refresh", DefaultKeys().Refresh}, {"hidden files", DefaultKeys().Hidden}, {"sort", DefaultKeys().Sort},
-	{"bookmarks", DefaultKeys().Bookmarks}, {"storage", DefaultKeys().Storage}, {"menu", DefaultKeys().Menu},
+	{"switch panel", "browse.switch"}, {"open", "browse.open"}, {"parent", "browse.parent"},
+	{"copy", "browse.copy"}, {"move", "browse.move"}, {"rename", "browse.rename"},
+	{"delete", "browse.delete"}, {"edit", "browse.edit"}, {"view", "browse.view"},
+	{"new menu", "browse.new"}, {"new folder", "browse.mkdir"}, {"compress", "browse.compress"},
+	{"extract", "browse.extract"}, {"properties", "browse.properties"}, {"search", "browse.search"},
+	{"tasks", "browse.tasks"}, {"settings", "browse.settings"}, {"sources", "browse.sources"},
+	{"refresh", "browse.refresh"}, {"hidden files", "browse.hidden"}, {"sort", "browse.sort"},
+	{"bookmarks", "browse.bookmarks"}, {"storage", "browse.storage"}, {"menu", "browse.menu"},
 }
 
 // ---- tasks, operations, cloud ------------------------------------------------

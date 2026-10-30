@@ -380,15 +380,15 @@ func (a *App) focusHints() []barItem {
 	if !a.focus {
 		return nil
 	}
-	out := []barItem{chipItem("^O", "two panes", "focus")}
+	out := []barItem{chipItem(a.primaryLabel("browse.focus"), "two panes", "focus")}
 	if a.focusPreviewAvail() {
 		label := "preview"
 		if a.focusPreview {
 			label = "preview on"
 		}
-		out = append(out, item("p", label, "p"))
+		out = append(out, a.bind("browse.preview", label))
 	}
-	return append(out, item("^G", "go to path", "ctrl+g"))
+	return append(out, a.bind("browse.goTo", "go to path"))
 }
 
 // focusToggleHint is the two-pane counterpart of the focus chip. It is the
@@ -398,7 +398,7 @@ func (a *App) focusToggleHint() []barItem {
 	if a.focus {
 		return nil
 	}
-	return []barItem{chipItem("^O", "focus", "focus")}
+	return []barItem{chipItem(a.primaryLabel("browse.focus"), "focus", "focus")}
 }
 
 // focusMenuEntries adds the mode entries to the action menu, which is the
@@ -406,7 +406,7 @@ func (a *App) focusToggleHint() []barItem {
 // the TwinPane badge).
 func (a *App) focusMenuEntries() []menuEntry {
 	if !a.focus {
-		return []menuEntry{{label: "Focus mode", detail: "one panel, full width", key: "^O",
+		return []menuEntry{{label: "Focus mode", detail: "one panel, full width", action: "browse.focus",
 			run: func() tea.Cmd { return a.toggleFocus() }}}
 	}
 	preview := "on"
@@ -416,13 +416,13 @@ func (a *App) focusMenuEntries() []menuEntry {
 		detail = "show details beside the list"
 	}
 	out := []menuEntry{
-		{label: "Two panes", detail: "show both panels again", key: "^O", run: func() tea.Cmd { return a.toggleFocus() }},
+		{label: "Two panes", detail: "show both panels again", action: "browse.focus", run: func() tea.Cmd { return a.toggleFocus() }},
 	}
 	if a.focusPreviewAvail() {
-		out = append(out, menuEntry{label: "Preview pane: " + preview, detail: detail, key: "p",
+		out = append(out, menuEntry{label: "Preview pane: " + preview, detail: detail, action: "browse.preview",
 			run: func() tea.Cmd { return a.togglePreview() }})
 	}
-	return append(out, menuEntry{label: "Go to path…", detail: "local folder or remote:", key: "^G", send: "ctrl+g"})
+	return append(out, menuEntry{label: "Go to path…", detail: "local folder or remote:", action: "browse.goTo"})
 }
 
 // ---- go to path (Ctrl+G) ---------------------------------------------------------

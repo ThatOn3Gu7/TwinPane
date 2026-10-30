@@ -22,6 +22,7 @@ import (
 	"github.com/ThatOn3Gu7/TwinPane/internal/editor"
 	"github.com/ThatOn3Gu7/TwinPane/internal/fsys"
 	"github.com/ThatOn3Gu7/TwinPane/internal/history"
+	"github.com/ThatOn3Gu7/TwinPane/internal/keybinding"
 	"github.com/ThatOn3Gu7/TwinPane/internal/opener"
 	"github.com/ThatOn3Gu7/TwinPane/internal/ops"
 	"github.com/ThatOn3Gu7/TwinPane/internal/panel"
@@ -103,6 +104,16 @@ type Options struct {
 	// ActivityMaxKiB and ActivityKeepDays override the log's retention for
 	// this run (--log-size, --log-days); zero keeps the preference.
 	ActivityMaxKiB, ActivityKeepDays int
+
+	// KeybindingPath is the key bindings file (keybinding.json). Empty keeps
+	// the built-in defaults only (tests, embedders); the command sets
+	// keybinding.DefaultPath().
+	KeybindingPath string
+	// KeybindingPathError reports a failure resolving the default path.
+	KeybindingPathError string
+	// Bindings, when set, is used instead of reading the file (tests,
+	// embedders).
+	Bindings *keybinding.Set
 }
 
 // status levels
@@ -227,6 +238,15 @@ type App struct {
 	noticeSeq     int
 	noticeTicking bool
 
+	// Key bindings: the resolved set (keybinding.json), the file it came from
+	// and what happened when it was read (keybinding.go in this package).
+	binds           *keybinding.Set
+	keybindPath     string
+	keybindErr      error
+	keybindWarnings []string
+	keybindCreated  bool
+	keybindUpdated  bool
+
 	// Phase 15: the User Activity Log (activity.go, activityview.go). The
 	// store is nil when logging is disabled (no path, or mode "off").
 	activityPath string
@@ -321,6 +341,7 @@ func New(opts Options) *App {
 	// read together. It is opened before the first panel load, so the startup
 	// itself is in the log.
 	a.initActivityLog(opts.ActivityPath, opts.ActivityPathError, opts.ActivityMode)
+	a.loadBindings()
 	a.panels[0] = panel.New(0, opts.Lister)
 	a.panels[1] = panel.New(1, opts.Lister)
 	// Install the effective preferences before Init starts either panel's
@@ -342,6 +363,7 @@ func New(opts Options) *App {
 	if historyErr != nil {
 		notices = append(notices, "history: "+historyErr.Error())
 	}
+	notices = append(notices, a.keybindNotices()...)
 	if len(notices) > 0 {
 		a.setStatusLevel(strings.Join(notices, " · "), lvlWarn)
 	}
@@ -350,6 +372,9 @@ func New(opts Options) *App {
 	}
 	if historyErr != nil {
 		a.logRecovery("recovery.history", "history: "+historyErr.Error())
+	}
+	if a.keybindErr != nil {
+		a.logRecovery("recovery.keybindings", "key bindings: "+a.keybindErr.Error())
 	}
 	return a
 }
@@ -661,7 +686,7 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// A notification is dismissed with Esc where Esc means nothing else.
 		// Everywhere else Esc keeps its own meaning (closing the task list, a
 		// dialog, leaving the live progress window), so no shortcut is taken away.
-		if a.notice != nil && msg.String() == "esc" && a.noticeEscDismisses() {
+		if a.notice != nil && a.is("browse.cancel", msg) && a.noticeEscDismisses() {
 			a.dismissNotice()
 			return a, nil
 		}
@@ -677,7 +702,7 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if a.dialog == nil && a.comparison != nil && !a.showHelp {
 			return a, a.comparisonKey(msg)
 		}
-		if a.dialog == nil && msg.String() == "ctrl+c" {
+		if a.dialog == nil && a.is("browse.interrupt", msg) {
 			if s := a.tasks.latestActive(); s != nil {
 				a.cancelTask(s.id)
 				return a, nil
@@ -724,7 +749,7 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// Movement keys may continue the burst only while nothing
 				// else changed: no dialog opened or closed, no overlay,
 				// operation, help screen or editor started, not quitting.
-				if i > 0 && (!burstSafe(r) || a.uiState() != before) {
+				if i > 0 && (!a.burstSafe(r) || a.uiState() != before) {
 					break
 				}
 				_, cmd := a.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
@@ -775,7 +800,7 @@ func (a *App) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if a.tasks.showing {
 		return a, a.taskViewKey(msg)
 	}
-	if msg.String() == "ctrl+c" {
+	if a.is("browse.interrupt", msg) {
 		if s := a.tasks.latestActive(); s != nil {
 			a.cancelTask(s.id)
 			return a, nil
@@ -795,7 +820,7 @@ func (a *App) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if a.quitting {
 		return a, nil
 	}
-	if msg.Type == keyFocusMode || msg.String() == focusKey {
+	if msg.Type == keyFocusMode || a.is("browse.focus", msg) {
 		// The focus-mode toggle. Ctrl+O is a plain Ctrl-only key event, so
 		// it works in terminals and on-screen keyboards (Termux, Gboard)
 		// that cannot report modified keys without an enhanced protocol.
@@ -952,10 +977,10 @@ func (a *App) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return a, a.bookmarkHere()
 	case k.Storage.Matches(msg):
 		return a, a.showStorage()
-	case a.focus && msg.String() == "p":
+	case a.focus && k.Preview.Matches(msg):
 		// focus mode only: the preview pane (the panels have no p key)
 		return a, a.togglePreview()
-	case a.focus && msg.String() == "ctrl+g":
+	case a.focus && k.GoTo.Matches(msg):
 		// focus mode only: the panels' Ctrl+G equivalent, a typed
 		// local folder or remote location (see focus.go)
 		return a, a.openGoTo()

@@ -235,7 +235,7 @@ func TestFolderSizeMenuAndHelpBinding(t *testing.T) {
 	_, entries := h.a.menuEntries()
 	found := false
 	for _, entry := range entries {
-		if entry.key == "A" && strings.Contains(entry.label, "folder sizes") {
+		if entry.action == "browse.folderSize" && strings.Contains(entry.label, "folder sizes") {
 			found = true
 		}
 	}

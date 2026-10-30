@@ -728,8 +728,8 @@ func (a *App) settingsHints() []barItem {
 	return []barItem{
 		item("↑↓", "move", ""),
 		item("←→", "change", ""),
-		item("⏎", "open / toggle", "enter"),
-		item("r", "reset defaults", "r"),
-		item("Esc", "close", "esc"),
+		a.bind("settings.next", "open / toggle"),
+		a.bind("settings.reset", "reset defaults"),
+		a.bind("settings.close", "close"),
 	}
 }

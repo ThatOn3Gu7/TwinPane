@@ -16,10 +16,20 @@ type Binding struct {
 	Desc    string   // "copy to the other panel"
 	Keys    []string // canonical key strings, in display order
 	Default bool     // the keys are the registry defaults
+	// Fixed is the compact help label used while the action is unchanged. A
+	// customized action is labelled from its real keys instead.
+	Fixed string
 }
 
-// Label renders every key of the action, e.g. "c/F5".
-func (b Binding) Label() string { return JoinPretty(b.Keys) }
+// Label renders the action's keys, e.g. "c/F5". While the action still has
+// its defaults the registry's compact label is used, so the help screen keeps
+// its familiar shorthand; once a key is changed the label follows the keys.
+func (b Binding) Label() string {
+	if b.Fixed != "" {
+		return b.Fixed
+	}
+	return JoinPretty(b.Keys)
+}
 
 // Primary is the first key: the one the hint bar and the action menu send when
 // they are tapped.
@@ -121,7 +131,7 @@ func New(custom map[string][]string) *Set {
 			s.custom[a.Name] = !sameList(keys, canonicalDefaults(a))
 		}
 		s.bindings[a.Name] = Binding{Name: a.Name, Section: a.Section, Desc: a.Desc, Keys: keys,
-			Default: !s.custom[a.Name]}
+			Default: !s.custom[a.Name], Fixed: fixedLabel(a, s.custom[a.Name])}
 		s.order = append(s.order, a.Name)
 	}
 
@@ -159,6 +169,7 @@ func New(custom map[string][]string) *Set {
 		}
 		b.Keys = keys
 		b.Default = !s.custom[name]
+		b.Fixed = fixedLabel(action, s.custom[name])
 		s.bindings[name] = b
 	}
 
@@ -169,6 +180,7 @@ func New(custom map[string][]string) *Set {
 		if !b.Enabled() && action.Essential {
 			b.Keys = canonicalDefaults(action)
 			b.Default = true
+			b.Fixed = fixedLabel(action, false)
 			s.bindings[name] = b
 			warn("%s cannot be left without a key; its defaults are used", name)
 		}
@@ -178,6 +190,13 @@ func New(custom map[string][]string) *Set {
 
 // Default returns the registry defaults.
 func Default() *Set { return New(nil) }
+
+func fixedLabel(a Action, customized bool) string {
+	if customized {
+		return ""
+	}
+	return a.Label
+}
 
 func canonicalDefaults(a Action) []string {
 	out := make([]string, 0, len(a.Keys))

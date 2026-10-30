@@ -8,6 +8,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/ThatOn3Gu7/TwinPane/internal/foldersize"
+	"github.com/ThatOn3Gu7/TwinPane/internal/keybinding"
 )
 
 // barItem is one item of the context hint bar at the bottom of the screen.
@@ -25,6 +26,35 @@ type barItem struct {
 }
 
 func item(key, desc, send string) barItem { return barItem{key: key, desc: desc, send: send} }
+
+// bind is a hint for one bindable action: the chip shows the key the user has
+// configured and a tap sends exactly that key, so a rebinding never leaves a
+// chip that does nothing.
+func (a *App) bind(action, desc string) barItem {
+	return barItem{key: a.primaryLabel(action), desc: desc, send: a.binds.Primary(action)}
+}
+
+// bindAll joins the primary keys of several actions into one chip ("s/S")
+// and sends the first, for pairs that share a row on purpose.
+func (a *App) bindAll(desc string, actions ...string) barItem {
+	keys := make([]string, 0, len(actions))
+	for _, action := range actions {
+		keys = append(keys, a.primaryLabel(action))
+	}
+	first := ""
+	if len(actions) > 0 {
+		first = a.binds.Primary(actions[0])
+	}
+	return barItem{key: strings.Join(keys, "/"), desc: desc, send: first}
+}
+
+// bindChip is bind for a chip that must stay visible even when the bar is
+// crowded (it is drawn bare in the leftover cells).
+func (a *App) bindChip(action, desc string) barItem {
+	it := a.bind(action, desc)
+	it.keepChip = true
+	return it
+}
 
 // footerHit is the screen range of a clickable hint (row = last screen line).
 type footerHit struct {
@@ -66,7 +96,7 @@ func (a *App) hints() (items []barItem, pinned *barItem) {
 	case a.comparison != nil:
 		return a.comparisonHints(), nil
 	}
-	help := item("?", "help", "?")
+	help := a.bind("browse.help", "help")
 	return a.browseHints(), &help
 }
 
@@ -78,11 +108,11 @@ func (a *App) liveHints() []barItem {
 	s := a.liveTaskSession()
 	out := []barItem{item("↑↓", "scroll", "")}
 	if s != nil && s.active() {
-		out = append(out, item("c", "cancel", "c"), item("Esc", "background", "esc"))
+		out = append(out, a.bind("live.cancel", "cancel"), a.bind("live.close", "background"))
 	} else {
-		out = append(out, item("Esc", "close", "esc"))
+		out = append(out, a.bind("live.close", "close"))
 	}
-	return append(out, item("t", "tasks", "t"))
+	return append(out, a.bind("live.tasks", "tasks"))
 }
 
 // browseHints adapts the normal-mode hints to the active panel: actions
@@ -91,11 +121,11 @@ func (a *App) browseHints() []barItem {
 	p := a.ActivePanel()
 	if p.Err() != nil {
 		if p.InRemote() {
-			return []barItem{item("^L", "retry", "ctrl+l"), item("^R", "sources", "ctrl+r"),
-				item("Tab", "switch", "tab"), item("t", "tasks", "t"), item("~", "local home", "~"), item("q", "quit", "q")}
+			return []barItem{a.bind("browse.refresh", "retry"), a.bind("browse.sources", "sources"),
+				a.bind("browse.switch", "switch"), a.bind("browse.tasks", "tasks"), a.bind("browse.home", "local home"), a.bind("browse.quit", "quit")}
 		}
-		return []barItem{item("⌫", "parent", "backspace"), item("^L", "retry", "ctrl+l"),
-			item("Tab", "switch", "tab"), item("t", "tasks", "t"), item("~", "home", "~"), item("q", "quit", "q"), item("^R", "sources", "ctrl+r")}
+		return []barItem{a.bind("browse.parent", "parent"), a.bind("browse.refresh", "retry"),
+			a.bind("browse.switch", "switch"), a.bind("browse.tasks", "tasks"), a.bind("browse.home", "home"), a.bind("browse.quit", "quit"), a.bind("browse.sources", "sources")}
 	}
 	if p.InArchive() {
 		return a.archiveHints()
@@ -108,26 +138,26 @@ func (a *App) browseHints() []barItem {
 	nsel := len(p.Selection())
 	isBrowsable := ok && !cur.IsDir && !cur.IsParent && a.isBrowsableArchive(cur.Path)
 
-	out := []barItem{item("Tab", "switch", "tab")}
+	out := []barItem{a.bind("browse.switch", "switch")}
 	// the mode and history chips come right after Tab: they are contextual,
 	// and the end of the bar is what narrow terminals drop
 	out = append(out, a.focusHints()...)
 	out = append(out, a.navHints(p)...)
 	if isBrowsable && nsel == 0 {
-		out = append(out, item("⏎", "browse archive", "enter"), item("x", "extract", "x"))
+		out = append(out, a.bind("browse.open", "browse archive"), a.bind("browse.extract", "extract"))
 	}
 	if ok && cur.IsDir && nsel == 0 {
-		out = append(out, item("⏎", "open", "enter"))
+		out = append(out, a.bind("browse.open", "open"))
 	}
 	if ok && !cur.IsParent {
 		if p.IsSelected(cur.Name) {
-			out = append(out, item("Space", "unselect", " "))
+			out = append(out, a.bind("browse.select", "unselect"))
 		} else {
-			out = append(out, item("Space", "select", " "))
+			out = append(out, a.bind("browse.select", "select"))
 		}
 	}
 	if nsel > 0 {
-		out = append(out, item("u", "clear", "u"))
+		out = append(out, a.bind("browse.unselect", "clear"))
 	}
 	if len(targets) > 0 {
 		rename := "rename"
@@ -139,7 +169,7 @@ func (a *App) browseHints() []barItem {
 			// one pane: the destination is chosen first (focus_dest.go)
 			copyDesc, moveDesc = "copy to…", "move to…"
 		}
-		out = append(out, item("c", copyDesc, "c"), item("m", moveDesc, "m"), item("r", rename, "r"), item("d", "delete", "d"))
+		out = append(out, a.bind("browse.copy", copyDesc), a.bind("browse.move", moveDesc), a.bind("browse.rename", rename), a.bind("browse.delete", "delete"))
 		files := true
 		for _, e := range targets {
 			if e.IsDir {
@@ -148,51 +178,51 @@ func (a *App) browseHints() []barItem {
 			}
 		}
 		if files {
-			out = append(out, item("e/E", "edit", "e"))
+			out = append(out, a.bindAll("edit", "browse.edit", "browse.editWith"))
 		}
 	}
-	out = append(out, item("t", "tasks", "t"))
+	out = append(out, a.bind("browse.tasks", "tasks"))
 	// Files open in the viewer or external app; supported archives were
 	// given their browse/extract actions near the front of the hint bar.
 	if ok && !cur.IsDir && !cur.IsParent && nsel == 0 && !isBrowsable {
 		if a.hintPrefersExternal(cur) {
-			out = append(out, item("⏎", "open", "enter"))
+			out = append(out, a.bind("browse.open", "open"))
 		} else {
-			out = append(out, item("⏎", "view", "enter"))
+			out = append(out, a.bind("browse.open", "view"))
 		}
 		if looksLikeArchive(cur.Name) {
-			out = append(out, item("x", "extract", "x")) // TAR, 7Z, RAR, compressed files
+			out = append(out, a.bind("browse.extract", "extract")) // TAR, 7Z, RAR, compressed files
 		}
 	}
 	hidden := "show hidden"
 	if a.showHidden {
 		hidden = "hide hidden"
 	}
-	out = append(out, item("/", "find", "/"), item("h", hidden, "h"), item("s/S", "sort", "s"))
+	out = append(out, a.bind("browse.search", "find"), a.bind("browse.hidden", hidden), a.bindAll("sort", "browse.sort", "browse.reverse"))
 	if ok && !cur.IsParent {
-		out = append(out, item("P", "properties", "P"))
+		out = append(out, a.bind("browse.properties", "properties"))
 	}
-	out = append(out, item("q", "quit", "q"))
+	out = append(out, a.bind("browse.quit", "quit"))
 	// phase 6, after everything that was there before so those keep their
 	// place: the action menu (also reachable by tapping the TwinPane
 	// badge, at any width), Open with, bookmarks, storage
-	out = append(out, item("M", "menu", "M"))
+	out = append(out, a.bind("browse.menu", "menu"))
 	if ok && !cur.IsDir && !cur.IsParent && nsel == 0 && !isBrowsable {
-		out = append(out, item("o/O", "open with", "O"))
+		out = append(out, a.bindAll("open with", "browse.openExternal", "browse.openWith"))
 	}
-	out = append(out, item("b", "bookmarks", "b"), item("i", "storage", "i"), item("A", "folder sizes", "A"))
+	out = append(out, a.bind("browse.bookmarks", "bookmarks"), a.bind("browse.storage", "storage"), a.bind("browse.folderSize", "folder sizes"))
 	if len(targets) > 0 {
-		out = append(out, item("z", "compress", "z"))
+		out = append(out, a.bind("browse.compress", "compress"))
 	}
 	// phase 9, again after everything that was there before
-	out = append(out, item("^R", "sources", "ctrl+r"), item("n", "new file / folder", "n"))
+	out = append(out, a.bind("browse.sources", "sources"), a.bind("browse.new", "new file / folder"))
 	out = append(out, a.focusToggleHint()...)
 	// phase 13: the settings screen, last like the other late additions.
 	// keepChip (and the position after the focus toggle, which keeps its
 	// own keep-chip priority) means a bare "F9" still renders from the
 	// leftover cells of a crowded bar, and the full "F9 settings" chip
 	// shows once the bar has room.
-	return append(out, barItem{key: "F9", desc: "settings", send: "f9", keepChip: true})
+	return append(out, a.bindChip("browse.settings", "settings"))
 }
 
 // remoteHints is the hint bar of a panel showing an rclone remote: only
@@ -201,36 +231,36 @@ func (a *App) remoteHints() []barItem {
 	p := a.ActivePanel()
 	cur, ok := p.Current()
 	nsel := len(p.Selection())
-	out := []barItem{item("Tab", "switch", "tab"), item("t", "tasks", "t")}
+	out := []barItem{a.bind("browse.switch", "switch"), a.bind("browse.tasks", "tasks")}
 	out = append(out, a.focusHints()...)
 	out = append(out, a.navHints(p)...)
 	if ok && cur.IsDir && nsel == 0 {
-		out = append(out, item("⏎", "open", "enter"))
+		out = append(out, a.bind("browse.open", "open"))
 	}
 	if ok && !cur.IsParent {
 		if p.IsSelected(cur.Name) {
-			out = append(out, item("Space", "unselect", " "))
+			out = append(out, a.bind("browse.select", "unselect"))
 		} else {
-			out = append(out, item("Space", "select", " "))
+			out = append(out, a.bind("browse.select", "select"))
 		}
 	}
 	if nsel > 0 {
-		out = append(out, item("u", "clear", "u"))
+		out = append(out, a.bind("browse.unselect", "clear"))
 	}
 	if len(p.Targets()) > 0 {
-		out = append(out, item("c", "copy", "c"), item("m", "move", "m"))
+		out = append(out, a.bind("browse.copy", "copy"), a.bind("browse.move", "move"))
 		if len(p.Targets()) == 1 {
-			out = append(out, item("r", "rename", "r"))
+			out = append(out, a.bind("browse.rename", "rename"))
 		}
-		out = append(out, item("d", "delete", "d"))
+		out = append(out, a.bind("browse.delete", "delete"))
 	}
-	out = append(out, item("n", "new", "n"), item("^R", "sources", "ctrl+r"), item("^L", "refresh", "ctrl+l"))
+	out = append(out, a.bind("browse.new", "new"), a.bind("browse.sources", "sources"), a.bind("browse.refresh", "refresh"))
 	hidden := "show hidden"
 	if a.showHidden {
 		hidden = "hide hidden"
 	}
-	out = append(out, item("h", hidden, "h"), item("s/S", "sort", "s"))
-	out = append(out, item("M", "menu", "M"), item("q", "quit", "q"))
+	out = append(out, a.bind("browse.hidden", hidden), a.bindAll("sort", "browse.sort", "browse.reverse"))
+	out = append(out, a.bind("browse.menu", "menu"), a.bind("browse.quit", "quit"))
 	return append(out, a.focusToggleHint()...)
 }
 
@@ -240,42 +270,42 @@ func (a *App) archiveHints() []barItem {
 	p := a.ActivePanel()
 	cur, ok := p.Current()
 	nsel := len(p.Selection())
-	out := []barItem{item("Tab", "switch", "tab"), item("t", "tasks", "t"), item("Esc", "leave archive", "esc")}
+	out := []barItem{a.bind("browse.switch", "switch"), a.bind("browse.tasks", "tasks"), a.bind("browse.cancel", "leave archive")}
 	out = append(out, a.focusHints()...)
 	out = append(out, a.navHints(p)...)
 	if len(p.Targets()) > 0 {
-		out = append(out, item("x", "extract", "x"))
+		out = append(out, a.bind("browse.extract", "extract"))
 	}
 	if ok && nsel == 0 {
 		switch {
 		case cur.IsParent && p.ArchiveInner() == "":
-			out = append(out, item("⏎", "leave archive", "enter"))
+			out = append(out, a.bind("browse.open", "leave archive"))
 		case cur.IsDir:
-			out = append(out, item("⏎", "open", "enter"))
+			out = append(out, a.bind("browse.open", "open"))
 		default:
-			out = append(out, item("⏎", "view", "enter"))
+			out = append(out, a.bind("browse.open", "view"))
 		}
 	}
 	if ok && !cur.IsParent {
 		if p.IsSelected(cur.Name) {
-			out = append(out, item("Space", "unselect", " "))
+			out = append(out, a.bind("browse.select", "unselect"))
 		} else {
-			out = append(out, item("Space", "select", " "))
+			out = append(out, a.bind("browse.select", "select"))
 		}
 	}
 	if nsel > 0 {
-		out = append(out, item("u", "clear", "u"))
+		out = append(out, a.bind("browse.unselect", "clear"))
 	}
-	out = append(out, item("X", "extract all", "X"))
+	out = append(out, a.bind("browse.extractAll", "extract all"))
 	if ok && !cur.IsParent {
-		out = append(out, item("P", "info", "P"))
+		out = append(out, a.bind("browse.properties", "info"))
 	}
 	hidden := "show hidden"
 	if a.showHidden {
 		hidden = "hide hidden"
 	}
-	out = append(out, item("h", hidden, "h"), item("s/S", "sort", "s"))
-	return append(append(out, item("q", "quit", "q")), a.focusToggleHint()...)
+	out = append(out, a.bind("browse.hidden", hidden), a.bindAll("sort", "browse.sort", "browse.reverse"))
+	return append(append(out, a.bind("browse.quit", "quit")), a.focusToggleHint()...)
 }
 
 func (a *App) searchHints() []barItem {
@@ -284,15 +314,15 @@ func (a *App) searchHints() []barItem {
 	if sv.list {
 		out := []barItem{}
 		if have {
-			out = append(out, item("⏎", "go to", "enter"), item("e", "edit", "e"), item("E", "edit with…", "E"), item("Space", "mark", " "))
+			out = append(out, a.bind("search.jump", "go to"), a.bind("searchList.edit", "edit"), a.bind("searchList.editWith", "edit with…"), a.bind("searchList.select", "mark"))
 		}
-		return append(out, item("^G", "advanced", "ctrl+g"), item("↑↓", "move", ""), item("/", "type", "/"), item("Esc", "close", "esc"))
+		return append(out, a.bind("search.advanced", "advanced"), item("↑↓", "move", ""), a.bind("searchList.back", "type"), a.bind("search.close", "close"))
 	}
 	out := []barItem{item("type", "to filter", "")}
 	if have {
-		out = append(out, item("⏎", "go to", "enter"), item("Tab", "results", "tab"), item("F4", "edit", "f4"), item("↑↓", "move", ""))
+		out = append(out, a.bind("search.jump", "go to"), a.bind("search.toggleFocus", "results"), a.bind("search.edit", "edit"), item("↑↓", "move", ""))
 	}
-	return append(out, item("^G", "advanced", "ctrl+g"), item("Esc", "close", "esc"))
+	return append(out, a.bind("search.advanced", "advanced"), a.bind("search.close", "close"))
 }
 
 func (a *App) bulkHints() []barItem {
@@ -301,9 +331,9 @@ func (a *App) bulkHints() []barItem {
 		return nil
 	}
 	return []barItem{
-		item("a", "apply…", "a"), item("Esc", "cancel", "esc"),
-		item("⏎", "edit name", "enter"), item("f", "find/replace", "f"), item("n", "pattern", "n"),
-		item("E", "edit in editor", "E"), item("L/U", "case", ""), item("R", "reset", "R"), item("↑↓", "move", ""),
+		a.bind("bulkRename.apply", "apply…"), a.bind("bulkRename.cancel", "cancel"),
+		a.bind("bulkRename.editRow", "edit name"), a.bind("bulkRename.find", "find/replace"), a.bind("bulkRename.pattern", "pattern"),
+		a.bind("bulkRename.editAll", "edit in editor"), a.bindAll("case", "bulkRename.lower", "bulkRename.upper"), a.bind("bulkRename.reset", "reset"), item("↑↓", "move", ""),
 	}
 }
 
@@ -320,18 +350,18 @@ func (a *App) dialogHints(d *dialog) []barItem {
 	case d.filter != nil:
 		out := []barItem{item("type", "to filter", "")}
 		if len(d.list) > 0 {
-			out = append(out, item("⏎", "choose", "enter"))
+			out = append(out, a.bind("dialog.confirm", "choose"))
 		}
-		return append(out, item("↑↓", "move", ""), item("Esc", "back", "esc"))
+		return append(out, item("↑↓", "move", ""), a.bind("dialog.cancel", "back"))
 	case d.input != nil:
-		out := []barItem{item("⏎", "OK", "enter")}
+		out := []barItem{a.bind("dialog.confirm", "OK")}
 		for _, t := range d.inToggles {
 			out = append(out, item(t.help, strings.ToLower(t.label), t.key))
 		}
 		for _, sel := range d.selectors {
 			out = append(out, item(sel.help, sel.hint, sel.keys[1]))
 		}
-		return append(out, item("Esc", escDesc, "esc"))
+		return append(out, a.bind("dialog.cancel", escDesc))
 	case d.list != nil:
 		out := []barItem{item("↑↓", "choose", "")}
 		if d.listKeyed() {
@@ -344,7 +374,7 @@ func (a *App) dialogHints(d *dialog) []barItem {
 			pick = "run"
 		}
 		if len(d.list) > 0 {
-			out = append(out, item("⏎", pick, "enter"))
+			out = append(out, a.bind("dialog.confirm", pick))
 		}
 		for _, act := range d.listActions {
 			if act.needItem && len(d.list) == 0 {
@@ -352,7 +382,7 @@ func (a *App) dialogHints(d *dialog) []barItem {
 			}
 			out = append(out, item(act.key, act.label, act.key))
 		}
-		return append(out, item("Esc", escDesc, "esc"))
+		return append(out, a.bind("dialog.cancel", escDesc))
 	}
 	var out []barItem
 	if len(d.buttons) == 1 && d.buttons[0].key == "" {
@@ -361,9 +391,9 @@ func (a *App) dialogHints(d *dialog) []barItem {
 			if a.compressProgress != nil && a.compressProgress.finished {
 				action = "dismiss"
 			}
-			out = append(out, item("⏎", action, "enter"), item("Esc", action, "esc"))
+			out = append(out, a.bind("dialog.confirm", action), a.bind("dialog.cancel", action))
 		} else {
-			out = append(out, item("⏎", "close", "enter"))
+			out = append(out, a.bind("dialog.confirm", "close"))
 		}
 		if d.scrollable {
 			out = append(out, item("↑↓", "scroll", ""))
@@ -386,7 +416,7 @@ func (a *App) dialogHints(d *dialog) []barItem {
 	if d.toggleKey != "" {
 		out = append(out, item(d.toggleKey, "apply to all", d.toggleKey))
 	}
-	out = append(out, item("Esc", escDesc, "esc"))
+	out = append(out, a.bind("dialog.cancel", escDesc))
 	if len(d.buttons) > 1 {
 		out = append(out, item("←→", "choose", ""))
 	}
@@ -518,27 +548,18 @@ func (a *App) fitSegment(it barItem, w int) string {
 	return chip
 }
 
-// keyFor builds the key message that a clickable hint stands for.
+// keyFor builds the key message that a clickable hint stands for. The string
+// is a canonical key (tea.KeyMsg.String()) from the active key binding set, so
+// a tap presses the configured key even after a rebinding. "focus" is the
+// synthetic key of the focus-mode chip.
 func keyFor(s string) tea.KeyMsg {
 	if s == "focus" {
-		// the hint chip / menu action of the focus-mode toggle (focus.go)
 		return tea.KeyMsg{Type: keyFocusMode}
 	}
-	special := map[string]tea.KeyType{
-		"esc": tea.KeyEsc, "enter": tea.KeyEnter, "tab": tea.KeyTab, "backspace": tea.KeyBackspace,
-		"ctrl+r": tea.KeyCtrlR, "ctrl+l": tea.KeyCtrlL, "ctrl+f": tea.KeyCtrlF, "ctrl+a": tea.KeyCtrlA,
-		"f7": tea.KeyF7, "ctrl+t": tea.KeyCtrlT, "f4": tea.KeyF4, "up": tea.KeyUp, "down": tea.KeyDown,
-		"pgup": tea.KeyPgUp, "pgdown": tea.KeyPgDown, "left": tea.KeyLeft, "right": tea.KeyRight,
-		"shift+tab": tea.KeyShiftTab, "home": tea.KeyHome, "end": tea.KeyEnd,
-		"f9": tea.KeyF9, "ctrl+s": tea.KeyCtrlS,
+	if msg, _, err := keybinding.Parse(s); err == nil {
+		return msg
 	}
-	if t, ok := special[s]; ok {
-		return tea.KeyMsg{Type: t}
-	}
-	if s == " " {
-		return tea.KeyMsg{Type: tea.KeySpace, Runes: []rune{' '}}
-	}
-	return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(s)}
+	return tea.KeyMsg{}
 }
 
 // advancedSearchHints is the hint bar of Advanced Search: read-only result
@@ -546,11 +567,11 @@ func keyFor(s string) tea.KeyMsg {
 func (a *App) advancedSearchHints() []barItem {
 	return []barItem{
 		item("↑↓", "move", ""),
-		item("^A", "actions", "ctrl+a"),
-		item("Enter", "open / inspect", "enter"),
-		item("^T", "toggle files/content", "ctrl+t"),
-		item("?", "help", "?"),
-		item("Esc", "close", "esc"),
+		a.bind("advanced.actions", "actions"),
+		a.bind("advanced.open", "open / inspect"),
+		a.bind("advanced.mode", "toggle files/content"),
+		a.bind("advanced.help", "help"),
+		a.bind("advanced.close", "close"),
 	}
 }
 
@@ -563,18 +584,18 @@ func (a *App) folderSizeHints() []barItem {
 		return nil
 	}
 	if v.loading {
-		return []barItem{item("Esc", "cancel scan", "esc")}
+		return []barItem{a.bind("folderSize.close", "cancel scan")}
 	}
 	if v.result == nil || v.root == nil {
-		return []barItem{item("r", "retry scan", "r"), item("?", "keys/semantics", "?"), item("Esc", "close", "esc")}
+		return []barItem{a.bind("folderSize.retry", "retry scan"), a.bind("folderSize.help", "keys/semantics"), a.bind("folderSize.close", "close")}
 	}
 	out := []barItem{
-		item("Enter", "open directory", "enter"), item("←", "parent", "left"),
-		item("s", "size", "s"), item("n", "name", "n"), item("r", "refresh", "r"),
+		a.bind("folderSize.open", "open directory"), a.bind("folderSize.parent", "parent"),
+		a.bind("folderSize.sortSize", "size"), a.bind("folderSize.sortName", "name"), a.bind("folderSize.retry", "refresh"),
 	}
 	if foldersize.AllocatedSizeSupported() {
-		out = append(out, item("a", "allocated sort", "a"))
+		out = append(out, a.bind("folderSize.sortAllocated", "allocated sort"))
 	}
-	out = append(out, item("?", "keys/semantics", "?"), item("Esc", "close", "esc"))
+	out = append(out, a.bind("folderSize.help", "keys/semantics"), a.bind("folderSize.close", "close"))
 	return out
 }

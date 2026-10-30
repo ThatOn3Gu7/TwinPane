@@ -39,10 +39,10 @@ func (a *App) navHints(p *panel.Panel) []barItem {
 	back, forward := p.NavDepth()
 	out := make([]barItem, 0, 2)
 	if back > 0 {
-		out = append(out, item("[", "back", "["))
+		out = append(out, a.bind("browse.back", "back"))
 	}
 	if forward > 0 {
-		out = append(out, item("]", "forward", "]"))
+		out = append(out, a.bind("browse.forward", "forward"))
 	}
 	return out
 }
@@ -53,11 +53,11 @@ func (a *App) navMenuEntries(p *panel.Panel) []menuEntry {
 	back, forward := p.NavDepth()
 	var out []menuEntry
 	if back > 0 {
-		out = append(out, menuEntry{label: "Back", detail: plural(back, "step"), key: "[",
+		out = append(out, menuEntry{label: "Back", detail: plural(back, "step"), action: "browse.back",
 			run: func() tea.Cmd { return a.navMove(p, true) }})
 	}
 	if forward > 0 {
-		out = append(out, menuEntry{label: "Forward", detail: plural(forward, "step"), key: "]",
+		out = append(out, menuEntry{label: "Forward", detail: plural(forward, "step"), action: "browse.forward",
 			run: func() tea.Cmd { return a.navMove(p, false) }})
 	}
 	return out

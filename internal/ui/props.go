@@ -669,23 +669,23 @@ func (a *App) propsMouse(ev tea.MouseEvent) tea.Cmd {
 func (a *App) propsHints() []barItem {
 	pv := a.props
 	if pv.readOnly() {
-		out := []barItem{item("Esc", "close", "esc")}
+		out := []barItem{a.bind("props.close", "close")}
 		if pv.clipped {
 			out = append(out, item("↑↓", "scroll", ""))
 		}
 		return out
 	}
-	out := []barItem{item("⏎", "apply", "enter"), item("Esc", "close", "esc")}
+	out := []barItem{a.bind("props.apply", "apply"), a.bind("props.close", "close")}
 	switch {
 	case pv.focus == pfName:
-		out = append(out, item("Tab", "next field", "tab"), item("type", "new name", ""))
+		out = append(out, a.bind("props.nextField", "next field"), item("type", "new name", ""))
 	case pv.focus >= pfCell0 && pv.focus < pfCell0+9:
-		out = append(out, item("Space", "toggle", " "), item("←↑↓→", "move", ""), item("Tab", "next", "tab"))
+		out = append(out, a.bind("props.toggle", "toggle"), item("←↑↓→", "move", ""), a.bind("props.nextField", "next"))
 	default:
 		if pv.focus == pfClose {
-			out[0] = item("⏎", "close", "enter")
+			out[0] = a.bind("props.apply", "close")
 		}
-		out = append(out, item("←→", "choose", ""), item("Tab", "next", "tab"))
+		out = append(out, item("←→", "choose", ""), a.bind("props.nextField", "next"))
 	}
 	return out
 }

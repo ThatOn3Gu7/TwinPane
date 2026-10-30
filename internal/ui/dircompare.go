@@ -942,16 +942,16 @@ func (a *App) comparisonHints() []barItem {
 		return nil
 	}
 	if c.loading {
-		return []barItem{item("Esc", "cancel", "esc")}
+		return []barItem{a.bind("compare.close", "cancel")}
 	}
 	if c.reviewing {
-		return []barItem{item("Enter/e", "approve plan…", "enter"), item("↑↓", "review", ""), item("Esc", "back", "esc")}
+		return []barItem{a.bind("comparePlan.confirm", "approve plan…"), item("↑↓", "review", ""), a.bind("comparePlan.back", "back")}
 	}
 	if c.err != nil && c.result != nil {
-		return []barItem{item("r", "retry scan", "r"), item("h", "retry content check", "h"), item("?", "keys/statuses", "?"), item("Esc", "close", "esc")}
+		return []barItem{a.bind("compare.retry", "retry scan"), a.bind("compare.hash", "retry content check"), a.bind("compare.help", "keys/statuses"), a.bind("compare.close", "close")}
 	}
 	if c.result == nil {
-		return []barItem{item("r", "retry comparison", "r"), item("?", "keys/statuses", "?"), item("Esc", "close", "esc")}
+		return []barItem{a.bind("compare.retry", "retry comparison"), a.bind("compare.help", "keys/statuses"), a.bind("compare.close", "close")}
 	}
 	filterAction := "show differences"
 	if c.differencesOnly {
@@ -963,19 +963,19 @@ func (a *App) comparisonHints() []barItem {
 	}
 	if a.width < 40 {
 		return []barItem{
-			item("l/r", "copy", ""), item("p", "plan", "p"), item("?", "help", "?"),
-			item("a", "one-sided", "a"), item("f", filterAction, "f"), item("g", gitAction, "g"),
-			item("Esc", "close", "esc"),
+			item("l/r", "copy", ""), a.bind("compare.plan", "plan"), a.bind("compare.help", "help"),
+			a.bind("compare.auto", "one-sided"), a.bind("compare.differences", filterAction), a.bind("compare.git", gitAction),
+			a.bind("compare.close", "close"),
 		}
 	}
 	out := []barItem{
-		item("l/r", "copy", ""), item("p", "review plan", "p"), item("a", "one-sided", "a"),
-		item("f", filterAction, "f"), item("g", gitAction, "g"), item("↑↓", "move", ""), item("Space", "toggle choice", " "),
+		item("l/r", "copy", ""), a.bind("compare.plan", "review plan"), a.bind("compare.auto", "one-sided"),
+		a.bind("compare.differences", filterAction), a.bind("compare.git", gitAction), item("↑↓", "move", ""), a.bind("compare.select", "toggle choice"),
 	}
 	if !c.result.ContentChecked || !c.result.Complete {
-		out = append(out, item("h", "SHA-256 check", "h"))
+		out = append(out, a.bind("compare.hash", "SHA-256 check"))
 	}
-	out = append(out, item("?", "keys/statuses", "?"), item("Esc", "close", "esc"))
+	out = append(out, a.bind("compare.help", "keys/statuses"), a.bind("compare.close", "close"))
 	return out
 }
 

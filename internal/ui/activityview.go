@@ -758,16 +758,16 @@ func (a *App) activityHints() []barItem {
 	// No "↑↓ move" chip: the list is the whole screen and the arrows are
 	// obvious, while the room it frees keeps "Esc close" visible at 100
 	// columns. Everything below is in the order a narrow terminal drops it.
-	out := []barItem{item("c", "category", "c"), item("l", "level", "l")}
+	out := []barItem{a.bind("activity.category", "category"), a.bind("activity.level", "level")}
 	if v != nil && !v.filter.Empty() {
-		out = append(out, item("x", "clear", "x"))
+		out = append(out, a.bind("activity.clear", "clear"))
 	}
 	// Closing comes before the rarer actions so even a 60-column terminal
 	// still shows the one key that always works, and the last chips are the
 	// ones a narrow terminal drops.
-	out = append(out, item("Esc", "close", "esc"), item("/", "filter", "/"),
-		item("[ ]", "session", "["), item("⏎", "details", "enter"),
-		item("r", "reload", "r"))
+	out = append(out, a.bind("activity.close", "close"), a.bind("activity.filter", "filter"),
+		a.bindAll("session", "activity.prevRun", "activity.nextRun"), a.bind("activity.details", "details"),
+		a.bind("activity.reload", "reload"))
 	return out
 }
 

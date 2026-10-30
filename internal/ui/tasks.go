@@ -1138,22 +1138,22 @@ func (a *App) taskDetailsRows(s *opSession, width int) []string {
 // own, and only a running task can be watched or cancelled.
 func (a *App) taskFooterHints() []barItem {
 	out := []barItem{
-		item("t/Esc", "close", "esc"),
+		a.bindAll("close", "tasks.close"),
 		item("↑↓", "select", ""),
 	}
 	if a.taskWatchable() {
-		out = append(out, item("⏎/w", "watch live", "enter"))
+		out = append(out, a.bind("tasks.watch", "watch live"))
 	}
 	switch e, ok := a.selectedTaskEntry(); {
 	case ok && e.kind == taskEntryRecord:
 		// read-only row: no cancel, no watch, no clear
 	case ok && e.task != nil && e.task.active():
-		out = append(out, item("c", "cancel selected", "c"))
+		out = append(out, a.bind("tasks.cancel", "cancel selected"))
 	case ok:
-		out = append(out, item("x", "clear finished", "x"))
+		out = append(out, a.bind("tasks.forget", "clear finished"))
 	}
 	if len(a.taskSectionsWithRows()) > 1 {
-		out = append(out, item("[ ]", "run", ""))
+		out = append(out, a.bindAll("run", "tasks.prevRun", "tasks.nextRun"))
 	}
 	if a.hasRecordedOps() {
 		out = append(out, item("+/-", "keep more/fewer", ""))

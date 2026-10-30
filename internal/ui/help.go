@@ -575,15 +575,15 @@ func (a *App) helpHints() []barItem {
 	hs := &a.help
 	switch {
 	case hs.typing:
-		return []barItem{item("⏎", "keep results", "enter"), item("Esc", "clear filter", "esc"), item("↑↓", "scroll", "")}
+		return []barItem{a.bind("help.confirm", "keep results"), a.bind("help.close", "clear filter"), item("↑↓", "scroll", "")}
 	case hs.filter != nil:
-		items := []barItem{item("/", "edit filter", "/"), item("Esc", "show all", "esc")}
+		items := []barItem{a.bind("help.filter", "edit filter"), a.bind("help.close", "show all")}
 		if a.helpScrollable {
 			items = append(items, item("↑↓", "scroll", ""))
 		}
 		return items
 	case a.helpScrollable:
-		return []barItem{item("/", "filter", "/"), item("↑↓", "scroll", ""), item("Esc", "close help (any other key too)", "esc")}
+		return []barItem{a.bind("help.filter", "filter"), item("↑↓", "scroll", ""), a.bind("help.close", "close help (any other key too)")}
 	}
-	return []barItem{item("/", "filter", "/"), item("Esc", "close help (any key)", "esc")}
+	return []barItem{a.bind("help.filter", "filter"), a.bind("help.close", "close help (any key)")}
 }

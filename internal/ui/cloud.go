@@ -259,7 +259,7 @@ func (a *App) refuseOnRemote(what string) {
 	if src := a.ActivePanel().Source(); src != nil {
 		name = src.Remote.Name + ":"
 	}
-	a.setStatus(what+" is not available on "+name+" — copy the item to a local panel first (c), or Ctrl+R → Local files", true)
+	a.setStatus(what+" is not available on "+name+" — copy the item to a local panel first ("+a.primaryLabel("browse.copy")+"), or "+a.label("browse.sources")+" → Local files", true)
 }
 
 // ---- copy / move with a remote ---------------------------------------------------

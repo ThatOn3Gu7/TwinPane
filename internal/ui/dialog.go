@@ -94,8 +94,11 @@ type listItem struct {
 	tip      string // muted line(s) under info (e.g. the editor's save/quit keys)
 	disabled bool
 	// phase 6 (context menu): key picks the item directly and is shown
-	// instead of its number; danger draws it in the warning colour.
+	// instead of its number; danger draws it in the warning colour. send is
+	// the canonical key when the displayed key is only a label ("^R" but
+	// "ctrl+r").
 	key    string
+	send   string
 	danger bool
 	// header marks a non-selectable group heading in a filtered list.
 	header bool
@@ -349,7 +352,7 @@ func (a *App) listKey(d *dialog, msg tea.KeyMsg) tea.Cmd {
 		}
 		if d.listKeyed() {
 			for i, it := range d.list {
-				if it.key != "" && s == it.key && !it.disabled {
+				if k := it.keyString(); k != "" && s == k && !it.disabled {
 					d.listCursor = i
 					return d.onPick(a, i)
 				}
@@ -421,6 +424,15 @@ func (a *App) filterKey(d *dialog, msg tea.KeyMsg) tea.Cmd {
 		}
 	}
 	return nil
+}
+
+// keyString is the key that picks the item: the canonical one when the
+// displayed label is only a label.
+func (it listItem) keyString() string {
+	if it.send != "" {
+		return it.send
+	}
+	return it.key
 }
 
 // listKeyed reports a list whose items have their own keys (a menu).
