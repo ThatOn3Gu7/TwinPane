@@ -54,16 +54,26 @@ them built for light terminals, again without changing the default look.
   how many keys differ, or why the file could not be used) and reloads it on
   `Enter`, without a restart, reporting the result in a notification (and in
   the activity log). There is deliberately no key editor in the interface.
+- **Every result is a notification.** Copy, move, delete, extract, compress,
+  cloud operations, renames and new files, folder-size scans, opening or
+  sharing a file with another app, bookmarks, the copied path, a finished edit,
+  cleared tasks, the focus toggle and a reload of `keybinding.json` all report
+  in the pop-up — and only there, so the same outcome is never printed twice,
+  once in the box and once, cut short, on the row underneath it. The choice
+  does not depend on the terminal's width any more: before, a message switched
+  between the box and a bare line depending on how many columns the window had.
 - **Nothing is cut off any more.** The status line is one row and silently
   truncated what did not fit — which was usually the part that explained
-  something: "… put the cursor on an item and press c", "… or M → Focus mode
-  shows one panel at full width", the name in `keybinding.json` that has to be
-  fixed, the whole reason a damaged file was not used. Such a message now moves
-  into a notification, and the row goes back to naming the entry under the
-  cursor, so the same sentence is never printed twice — once in the pop-up and
-  once, cut short, underneath it. The problems found at start-up (settings,
-  history, key bindings) arrive as one notification with a line each instead of
-  a single run-on row.
+  something: "… put the cursor on an item and press c", the name in
+  `keybinding.json` that has to be fixed, the whole reason a damaged file was
+  not used. A note too wide for the row now moves into a notification as well,
+  and the row goes back to naming the entry under the cursor. The problems
+  found at start-up (settings, history, key bindings) arrive as one
+  notification with a line each instead of a single run-on row.
+- **The box fits the screen.** It is drawn wherever the interface is drawn and
+  shrinks to three rows on a short terminal, so a result never degenerates into
+  a bare line at the bottom on a small or zoomed screen; below the interface's
+  own minimum the status row carries it.
 - **A tap unfolds a long message.** A notification still stays a corner note,
   five wrapped lines with "…", but tapping it now unfolds the whole text: the
   box widens (up to 84 columns) and grows to the height it needs, so a long
@@ -75,10 +85,11 @@ them built for light terminals, again without changing the default look.
 - The browse key map, the focus-mode toggle, the preview pane and Go to are
   bindings now instead of hard-coded key strings, and the activity log records
   the action's name rather than the old key.
-- The focus-mode toggle and the key binding reload report themselves in a
+- The focus-mode toggle and a key binding reload report themselves in a
   notification instead of the status line, because their text names the way
   back or the thing to fix, which is the part a narrow row cuts. One outcome is
-  one message: a status note only stays in the row when it fits there.
+  one message for everything else too: a note only stays in the row when it
+  fits there.
 - A notification is drawn over the Settings window and the properties card (a
   dialog still covers it and pauses its countdown), so the answer to a row
   pressed inside one of them is visible where it is looked for, and a tap lands

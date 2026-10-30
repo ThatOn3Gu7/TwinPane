@@ -117,8 +117,8 @@ missing extension (or using *(none)*) does not repeat the name.
   other filesystem errors stay in the dialog with a plain explanation, so
   nothing has to be retyped. `Esc` cancels and creates nothing.
 
-On success the panel is refreshed, the cursor moves to the new file, and the
-status line reports `Created file "notes.md"`. The dialog works with the
+On success the panel is refreshed, the cursor moves to the new file, and a
+notification reports `File created — Created file "notes.md"`. The dialog works with the
 keyboard and the mouse (tapping the menu rows, the ◂ ▸ arrows and hint items)
 and wraps its text on narrow terminals.
 
@@ -325,13 +325,14 @@ corner of the panel area rather than by a line at the bottom of the screen:
   terminal both the heading and the message are truncated or wrapped to fit.
 - **The countdown** has no row of its own: the bottom border is drawn as a
   heavy line that shrinks towards the left as the time runs out.
-- **What becomes a notification:** copy, move and delete results (including
-  background ones), archive extraction and compression, cloud file operations,
-  reviewed directory plans, renames, folder-size scans, an edit that finished,
-  the focus-mode toggle, and a reload of `keybinding.json` from its Settings
-  row (with the problems it found, if any). Each of them replaces the status
-  line for that message instead of repeating it: the outcome is reported once,
-  in the pop-up, and the row goes on showing the current folder.
+- **What becomes a notification:** every result — copy, move and delete
+  (including background ones and the ones cancelled at the confirmation),
+  archive extraction and compression, cloud file operations, reviewed
+  directory plans, renames and new files, folder-size scans, opening or sharing
+  a file with another app, bookmarks, the clipboard copy of a path, an edit
+  that finished, cleared tasks, settings being reset, the focus-mode toggle,
+  and a reload of `keybinding.json` from its Settings row (with the problems it
+  found, if any).
 - **What stays in the status line:** progress ("Checking copy paths…"),
   prompts and refusals ("nothing to copy: put the cursor on an item or select
   items with Space"), navigation notes, mode toggles and selection counts.
@@ -340,14 +341,16 @@ corner of the panel area rather than by a line at the bottom of the screen:
   notification takes them over (see below). The focus toggle is always a
   notification, because its note names the way back to the other layout, which
   is the first thing a narrow row cuts.
-- **A message longer than the row:** the status line is one row and cuts what
-  does not fit, and the cut part is usually the reason ("… put the cursor on an
-  item", "… or M → Focus mode shows one panel at full width", which line of
-  `keybinding.json` to fix). Such a message is shown in the notification
-  *instead of* the row: the row goes back to naming the folder or file under the
-  cursor, so the same sentence never appears twice and what you read is the
-  whole text rather than a clipped version of it. Short notes stay in the row
-  where they were.
+- **One message, one place — and the same place every time.** A result is
+  always the pop-up: on a wide terminal, where the sentence would have fitted
+  in the row, just as on a narrow one. Nothing is printed in both places, so
+  the row underneath the box goes back to naming the folder or file under the
+  cursor, and you never read the same sentence twice.
+- **A message longer than the row:** the row is one line and cuts what does not
+  fit, and the cut part is usually the reason ("… put the cursor on an item",
+  which line of `keybinding.json` to fix). When a *note* (guidance rather than
+  a result) is too wide for the row, it moves into a notification too, for the
+  same reason: what is shown is the whole text, not a clipped version of it.
 - **Folding out a long message:** the pop-up itself stays small — five wrapped
   lines — and marks the rest with `…`. A tap on such a notification unfolds it:
   the box grows wider (up to 84 columns) and taller, and the whole message is
@@ -379,9 +382,14 @@ corner of the panel area rather than by a line at the bottom of the screen:
   looking.
 - **No spam:** only one notification is shown at a time, a newer result
   replaces an older one, and repeating the same result restarts its countdown
-  instead of flashing. On terminals too small for a legible box (under about
-  30 columns or 10 rows) nothing is drawn; the status line and the task list
-  still report the result.
+  instead of flashing.
+- **It fits the screen:** the box is drawn wherever TwinPane itself is drawn,
+  from a phone in landscape to a wall of columns. On a short terminal it gives
+  up its message lines before it gives up itself — three rows (heading, one
+  line, countdown) are enough — so a result never degenerates into a bare line
+  at the bottom. Only below the interface's own minimum (30×7, where TwinPane
+  shows "Terminal too small") is nothing drawn; there the status row carries
+  the text, and the task list keeps the record.
 
 #### Operation history (in the Tasks screen)
 
@@ -427,7 +435,7 @@ TwinPane windows cannot corrupt it. Only operation records are added — never
 one entry per progress update — so file operations are not slowed down.
 
 A damaged history file is moved aside as `history.json.corrupt-<timestamp>`
-(never deleted), a warning is shown in the status line and a fresh history is
+(never deleted), a warning is shown in a notification and a fresh history is
 started. A file written by a newer TwinPane is shown read-only and is not
 overwritten.
 
@@ -562,7 +570,7 @@ Since the search redesign it uses the same frame as the rest of the app:
   there; if the line cannot be shown the jump still lands on the file.
 - **Copy path (`y`)** places the absolute path on the terminal clipboard with
   OSC 52 (no `xclip`/`wl-copy` needed, works over SSH and in Termux) and names
-  the path in the status line, because terminals without OSC 52 ignore the
+  the path in the notification, because terminals without OSC 52 ignore the
   sequence silently.
 - Filename mode is case-insensitive fuzzy subsequence matching over relative
   paths: `asgo` can find `src/AdvancedSearch.go`; it honors the hidden-file
@@ -1299,7 +1307,7 @@ shown in the **other panel**.
   (changed in v0.3.1, see below).
 - Refuses folders, broken links and special files. Warns before opening files
   that look binary (default: cancel). Reports a missing editor, a non-zero
-  exit status or an editor killed by a signal in the status line.
+  exit status or an editor killed by a signal in a notification.
 - There is no built-in editor.
 
 **Responsiveness and cancellation**
@@ -1485,7 +1493,7 @@ editor).
   keyboard.`
 
 The card appears the first time each editor is used in a session, and again
-after an edit in which nothing was saved. When you come back, the status line
+after an edit in which nothing was saved. When you come back, the notification
 says whether the file was saved (`Finished editing notes.txt — saved`), or
 `nothing saved (unchanged). To save in Neovim: Esc, then :w (or :wq to save
 and quit)`. Saved means the file's size or modification time changed.
@@ -1530,7 +1538,7 @@ The fix:
 **Editing: `e` and `E`**
 - `e` (`F4`) opens the targets in `$VISUAL`, else `$EDITOR`, else the first
   installed editor, with no question asked. If `$EDITOR` is set but can't be
-  found, the next editor is used and the status line says why.
+  found, the next editor is used and the notification says why.
 - `E` shows the **editors installed on this system** and lets you pick one:
   `$VISUAL`/`$EDITOR` first, then nvim, vim, nano, micro, helix, emacs (`-nw`),
   kakoune, ne, joe, jed, mg, mcedit, vi (GUI editors such as VS Code only in a

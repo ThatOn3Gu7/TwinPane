@@ -1210,23 +1210,30 @@ unseen).
   drain) and a second tap on a notification about a background task opens the
   task list on that task.
 - The box is laid out by the same helpers as the dialogs (`overlay`,
-  `fitWidth`, wrapping) and shrinks with the terminal; below about 30 columns
-  or 10 rows nothing is drawn and the status line and task list still report
-  the result.
+  `fitWidth`, wrapping) and shrinks with the terminal: it is drawn wherever the
+  interface itself is drawn (`width ≥ minWidth`, `height ≥ minHeight`) and it
+  gives up message lines before it gives up itself, so three rows — heading, one
+  line, countdown — are enough. Below that the status row carries the text.
 - Callers only build a `taskResult`; the operation code never draws.
-- `setStatusLevel` is also a producer: `noteLongStatus` moves a message into a
+- `setStatusLevel` is also a producer: `noteLongStatus` moves a *note* into a
   notification when it is wider than the status row (the row spends one cell on
   its space and two on the level's icon), because the row cuts silently and the
-  tail is often the reason. The text then lives in the pop-up only:
-  `hideStatus` clears the row (it falls back to naming the entry under the
-  cursor), but only when `noticeRect` says the pop-up can actually be drawn, so
-  a terminal too small for one keeps the text where it is. The row is not
-  touched when the pop-up already shows the same text.
-- `noteResult` is the second producer: a result that used to be a status line
-  (the keybinding reload, the focus toggle, the start-up problems) is logged
-  under the line the row would have held, shown in the notification, and taken
-  out of the row through the same `hideStatus`. Nothing is ever reported on both
-  surfaces, so one outcome is one message.
+  tail is often the reason. The text then lives in the pop-up only.
+- `noteResult` is the producer for results: the message is logged under the line
+  the row would have held, shown in the notification, and taken out of the row
+  through `hideStatus`; if no pop-up can be drawn at all (a dialog owns the
+  screen, or the terminal is below the interface's own minimum) the row keeps
+  the message, so a result is never reported nowhere. Which surface a message
+  uses is a property of the call, never of the terminal's width: a result pops
+  up on a 200-column terminal exactly as on a 34-column one. This is what
+  every result-producing call site uses — file operations (through
+  `taskResult`), extract/compress, cloud operations, renames and new files,
+  opening and sharing, bookmarks, the clipboard copy, finished edits, cleared
+  tasks, the keybinding reload and the focus toggle.
+- `View`'s `statusView` suppresses a row message that is character-for-character
+  the text the pop-up is currently showing, as a belt-and-braces guard for the
+  case where a result was written to the row while a dialog paused the pop-up:
+  when the dialog closes, the box appears and the row does not repeat it.
 - `noticeBoxWithin` caps the message at `noticeMaxBody` (five wrapped lines,
   marked with `…`) while the notice is unfocused. Once it is pinned,
   `noticeWidth` widens the box to `noticeWideWidth` when that saves lines and
@@ -1244,11 +1251,12 @@ unseen).
   would cancel or leave instead.
 
 Tests: `internal/ui/notice_test.go` (kinds, wording, wrapping, pin/resume,
-replacement, dialog pause, tiny terminals) and `notice_status_test.go` (a long
-status message popping up and leaving the row, unfolding on a tap, the
-keybinding reload and start-up problems, the note over the Settings window).
-Tests that ask "did the app report this?" use the `reported()`/`reportedText`
-helpers, which look at whichever surface carries the message.
+replacement, dialog pause, the box shrinking on small terminals) and
+`notice_status_test.go` (a result popping up on any width and appearing exactly
+once, a long note moving out of the row, unfolding on a tap, the keybinding
+reload and start-up problems, the note over the Settings window). Tests that ask
+"did the app report this?" use the `reported()`/`reportedText` helpers, which
+look at whichever surface carries the message.
 
 ## Focus mode and panel navigation history (`ui/focus.go`, `ui/nav.go`)
 
