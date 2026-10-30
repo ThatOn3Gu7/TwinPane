@@ -897,7 +897,7 @@ func TestAdvancedActionsOnVanishedResult(t *testing.T) {
 		if h.a.advancedSearch != v {
 			t.Fatalf("%q closed the search", key)
 		}
-		if st := h.status(); !strings.Contains(st, "no longer available") {
+		if st := h.reported(); !strings.Contains(st, "no longer available") {
 			t.Fatalf("%q: status %q", key, st)
 		}
 		if p := h.a.ActivePanel(); p.Path() != env.src {
@@ -906,8 +906,8 @@ func TestAdvancedActionsOnVanishedResult(t *testing.T) {
 	}
 	// inspecting and renaming report it too, without crashing
 	h.press("enter")
-	if h.a.viewer != nil || !strings.Contains(h.status(), "no longer available") {
-		t.Fatalf("inspect on a vanished file: viewer=%v status=%q", h.a.viewer, h.status())
+	if h.a.viewer != nil || !strings.Contains(h.reported(), "no longer available") {
+		t.Fatalf("inspect on a vanished file: viewer=%v reported=%q", h.a.viewer, h.reported())
 	}
 	advPick(t, h, "r")
 	if !h.dialogKind(dlgRename) {

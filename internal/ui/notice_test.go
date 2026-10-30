@@ -31,11 +31,16 @@ func noticeText(h *harness) string {
 // notification tests below check which surface carries what. The heading is
 // left out: it names the operation, while these assertions are about the
 // result message.
-func (h *harness) reported() string {
-	if n := h.a.notice; n != nil {
-		return strings.Join(append(append([]string{n.msg}, n.body...), h.status()), " | ")
+func (h *harness) reported() string { return reportedText(h.a) }
+
+// reportedText is what the app last told the user, whichever surface carries it:
+// the notification when one is up, the status row otherwise. The heading is left
+// out, because these assertions are about the message.
+func reportedText(a *App) string {
+	if n := a.notice; n != nil {
+		return strings.Join(append(append([]string{n.msg}, n.body...), a.status), " | ")
 	}
-	return h.status()
+	return a.status
 }
 
 // reportedLevel is the severity of the last report, in status-line terms.

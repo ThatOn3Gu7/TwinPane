@@ -83,26 +83,24 @@ func (a *App) reloadBindings() tea.Cmd {
 	if a.actLog != nil {
 		a.logf(activity.LevelInfo, activity.CatSettings, "keybindings.reload", "%s: %d customised", a.keybindPath, len(a.binds.Diff()))
 	}
-	// The status line keeps the summary it always had; the notification carries
-	// the detail that does not fit there. The status line is set first and the
-	// pop-up after it, so a message too long for the row is replaced by the
-	// proper heading instead of the generic one noteLongStatus gives it.
+	// The outcome goes to the notification, not to the row as well: it is a
+	// result, and the row would print the same sentence (cut short) underneath
+	// the pop-up that shows it whole. The activity log keeps the line.
 	switch {
 	case a.keybindErr != nil:
 		msg := a.keybindErr.Error()
-		a.setStatusLevel("key bindings: "+msg, lvlErr)
-		a.result(lvlErr, "Key bindings not reloaded", msg)
+		a.noteResult(lvlErr, "key bindings: "+msg, "Key bindings not reloaded", msg)
 	case len(a.keybindWarnings) > 0:
-		a.setStatusLevel("key bindings reloaded with warnings: "+strings.Join(a.keybindWarnings, " · "), lvlWarn)
-		a.result(lvlWarn, "Key bindings reloaded with problems",
-			a.keybindWarnings[0], a.keybindWarnings[1:]...)
+		joined := strings.Join(a.keybindWarnings, " · ")
+		a.noteResult(lvlWarn, "key bindings reloaded with warnings: "+joined,
+			"Key bindings reloaded with problems", a.keybindWarnings[0], a.keybindWarnings[1:]...)
 	case len(a.binds.Diff()) == 0:
-		a.setStatus("key bindings reloaded: every default in place", false)
-		a.result(lvlOK, "Key bindings reloaded", "Every default in place")
+		a.noteResult(lvlInfo, "key bindings reloaded: every default in place",
+			"Key bindings reloaded", "Every default in place")
 	default:
 		n := len(a.binds.Diff())
-		a.setStatus(fmt.Sprintf("key bindings reloaded: %d changed", n), false)
-		a.result(lvlOK, "Key bindings reloaded", fmt.Sprintf("%d of the defaults changed", n))
+		a.noteResult(lvlInfo, fmt.Sprintf("key bindings reloaded: %d changed", n),
+			"Key bindings reloaded", fmt.Sprintf("%d of the defaults changed", n))
 	}
 	return nil
 }

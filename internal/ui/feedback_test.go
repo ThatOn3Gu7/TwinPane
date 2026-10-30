@@ -306,15 +306,15 @@ func TestEditDefaultEditorSilentFallback(t *testing.T) {
 	if len(env2.execs) != 1 || env2.execs[0].args[0] != "/bin/nano" {
 		t.Fatalf("missing $EDITOR: %v", env2.execs)
 	}
-	if s := h2.status(); !strings.Contains(s, `"nvim-missing" from $EDITOR was not found`) || !strings.Contains(s, "used nano") {
-		t.Fatalf("status %q", s)
+	if s := h2.reported(); !strings.Contains(s, `"nvim-missing" from $EDITOR was not found`) || !strings.Contains(s, "used nano") {
+		t.Fatalf("report %q", s)
 	}
 	// no editor at all
 	h3, env3 := newOpsApp(t, nil, chooserEnv(nil))
 	h3.focus("a.txt")
 	h3.press("E")
-	if h3.a.dialog != nil || len(env3.execs) != 0 || !strings.Contains(h3.status(), "no editor found") {
-		t.Fatalf("no editors: %q", h3.status())
+	if h3.a.dialog != nil || len(env3.execs) != 0 || !strings.Contains(h3.reported(), "no editor found") {
+		t.Fatalf("no editors: %q", h3.reported())
 	}
 }
 

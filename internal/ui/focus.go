@@ -143,15 +143,14 @@ func (a *App) toggleFocus() tea.Cmd {
 	a.focusPrev = focusPreview{}
 	a.layout()
 	a.syncMode()
-	// The title bar already names the panel ("focus · left panel"), so the
-	// status line spends its room on the ways out; the notification says the
-	// same thing where a narrow row would have cut it.
+	// The title bar already names the panel ("focus · left panel"), and the
+	// note names the way back to the other layout. It goes to the notification
+	// only: the row would repeat it, and on a narrow terminal cut the very part
+	// that says how to get out again.
 	if a.focus {
-		a.setStatusLevel(focusOnStatus, lvlOK)
-		a.result(lvlOK, "Focus mode", focusOnDetail)
+		a.noteResult(lvlOK, focusOnStatus, "Focus mode", focusOnDetail)
 	} else {
-		a.setStatusLevel(focusOffStatus, lvlOK)
-		a.result(lvlOK, "Two panes", focusOffDetail)
+		a.noteResult(lvlOK, focusOffStatus, "Two panes", focusOffDetail)
 	}
 	return nil
 }

@@ -916,9 +916,16 @@ func TestDamagedHistoryFileKeepsRecording(t *testing.T) {
 	}
 	a := New(Options{Version: "test", StartDir: root, SettingsPath: settingsPath, HistoryPath: historyPath})
 	drain(a, a.Init())
-	st, _ := a.Status()
-	if !strings.Contains(st, "history") {
-		t.Fatalf("the damaged file was not reported: %q", st)
+	// Start-up problems are reported by the notification, not by the status row.
+	said := ""
+	if n := a.notice; n != nil {
+		said = strings.Join(append(append([]string{n.head, n.msg}, n.body...), a.status), " ")
+	}
+	if !strings.Contains(strings.ToLower(said), "history") {
+		t.Fatalf("the damaged file was not reported: %q", said)
+	}
+	if st, _ := a.Status(); st != "" {
+		t.Fatalf("the status row repeats the notification: %q", st)
 	}
 	a.recordOperation(history.Record{Op: "Copy", Status: history.StatusSuccess})
 	if len(allRecords(a.History())) != 1 {

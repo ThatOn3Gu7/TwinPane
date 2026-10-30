@@ -365,9 +365,10 @@ func New(opts Options) *App {
 	}
 	notices = append(notices, a.keybindNotices()...)
 	if len(notices) > 0 {
-		// The row shows what fits of the list; the pop-up is where the whole
-		// explanation of what did not load is read (one item per line).
-		a.setStatusLevel(strings.Join(notices, " · "), lvlWarn)
+		// One place only: the pop-up carries the whole explanation of what did
+		// not load (one item per line) and the activity log keeps the line, so
+		// the status row is left to the panels instead of repeating it.
+		a.logStatus(strings.Join(notices, " · "), lvlWarn)
 		a.notify(noticeWarn, "Startup", notices[0], notices[1:]...)
 	}
 	if a.settingsErr != nil {
@@ -524,12 +525,12 @@ func (a *App) setStatusLevel(msg string, lvl int) {
 	a.noteLongStatus(msg, lvl)
 }
 
-// noteLongStatus raises a notification for a status message that the status
-// row cannot show in full. The row is one line and cuts what does not fit, and
+// noteLongStatus moves a status message that the status row cannot show in
+// full into a notification. The row is one line and cuts what does not fit, and
 // the tail is often the part that matters ("… put the cursor on an item", "… or
 // M → Focus mode shows one panel at full width", the line of keybinding.json
-// that has to be fixed). Cutting is silent, so the same text is repeated in a
-// pop-up, where it wraps, is replaced by the next message like any result, and
+// that has to be fixed). Cutting is silent, so the whole text goes to the pop-up
+// instead, where it wraps, is replaced by the next message like any result, and
 // grows to the whole thing when tapped.
 func (a *App) noteLongStatus(msg string, lvl int) {
 	if msg == "" || a.width <= 0 || a.quitting {
@@ -543,6 +544,28 @@ func (a *App) noteLongStatus(msg string, lvl int) {
 		return // the pop-up is already showing this message whole
 	}
 	a.notify(resultKind(lvl), "", msg)
+	a.hideStatus()
+}
+
+// hideStatus takes the message out of the status row because the notification
+// now carries it: the same sentence in both places reads as two messages. It is
+// only cleared when the pop-up can actually be drawn, so on a terminal too small
+// for one the row keeps the text, which is then the only place it appears. A
+// dialog holds the row for the same reason: the pop-up waits behind it.
+func (a *App) hideStatus() {
+	if _, _, _, _, ok := a.noticeRect(); ok {
+		a.status, a.statusErr = "", false
+	}
+}
+
+// noteResult is a result that used to be written into the status row: it is
+// logged as the row would have logged it, shown in the notification, and taken
+// out of the row, so the outcome is reported once and where it can be read in
+// full.
+func (a *App) noteResult(lvl int, log, head, msg string, body ...string) {
+	a.logStatus(log, lvl)
+	a.notify(resultKind(lvl), head, msg, body...)
+	a.hideStatus()
 }
 
 // Busy reports whether any background file operation is still active.

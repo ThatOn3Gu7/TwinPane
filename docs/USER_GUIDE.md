@@ -329,20 +329,25 @@ corner of the panel area rather than by a line at the bottom of the screen:
   background ones), archive extraction and compression, cloud file operations,
   reviewed directory plans, renames, folder-size scans, an edit that finished,
   the focus-mode toggle, and a reload of `keybinding.json` from its Settings
-  row (with the problems it found, if any).
+  row (with the problems it found, if any). Each of them replaces the status
+  line for that message instead of repeating it: the outcome is reported once,
+  in the pop-up, and the row goes on showing the current folder.
 - **What stays in the status line:** progress ("Checking copy paths…"),
   prompts and refusals ("nothing to copy: put the cursor on an item or select
   items with Space"), navigation notes, mode toggles and selection counts.
   These describe what to do next rather than what just happened, so they
-  belong next to the panels. The focus toggle is the exception that does both:
-  its note names the way back to the other layout, which is the first thing cut
-  on a narrow terminal.
+  belong next to the panels — until they do not fit, in which case the
+  notification takes them over (see below). The focus toggle is always a
+  notification, because its note names the way back to the other layout, which
+  is the first thing a narrow row cuts.
 - **A message longer than the row:** the status line is one row and cuts what
   does not fit, and the cut part is usually the reason ("… put the cursor on an
   item", "… or M → Focus mode shows one panel at full width", which line of
-  `keybinding.json` to fix). When a message does not fit there, the same text
-  is repeated in the notification as well: the row keeps what it can show and
-  the pop-up carries the whole sentence.
+  `keybinding.json` to fix). Such a message is shown in the notification
+  *instead of* the row: the row goes back to naming the folder or file under the
+  cursor, so the same sentence never appears twice and what you read is the
+  whole text rather than a clipped version of it. Short notes stay in the row
+  where they were.
 - **Folding out a long message:** the pop-up itself stays small — five wrapped
   lines — and marks the rest with `…`. A tap on such a notification unfolds it:
   the box grows wider (up to 84 columns) and taller, and the whole message is
@@ -1734,9 +1739,10 @@ they have room to breathe:
 - **Keys** — **Key bindings** shows the state of `keybinding.json`: all
   defaults, how many keys differ, or why the file could not be used, with the
   path as its note. `Enter` (or `→`) reloads the file without restarting; the
-  result is reported on the status line and in the activity log. There is no
-  key editor on the screen: the file is the single source of truth, so a key
-  can never be half-changed. See
+  result arrives as a notification over the window (and in the activity log),
+  so the row underneath is not a second copy of it. There is no key editor on
+  the screen: the file is the single source of truth, so a key can never be
+  half-changed. See
   [Custom key bindings](#custom-key-bindings).
 
 **Keys on the screen:** `↑`/`↓` (or `k`/`j`) move, `←`/`→` (or `h`/`l`,
@@ -1950,19 +1956,20 @@ are.)
   and the hints once, keeping every key you set.
 - **Mistakes are warnings, never a refusal to start:** an unknown action name,
   a key TwinPane cannot use, or two actions of the same screen asking for the
-  same key are reported on the status line and in the activity log (`L`), and
-  the rest of the file still applies. The first action in the file keeps a
+  same key are reported in a notification that shows the whole list (tap it to
+  read all of it) and in the activity log (`L`), and the rest of the file still
+  applies. The first action in the file keeps a
   contested key; a key that cannot be used at all is skipped. Actions that
   must stay reachable (closing a screen, quitting) fall back to their
   defaults when a change would leave them without a key.
 - **A damaged file, or one written by a newer TwinPane, is never
-  overwritten.** TwinPane starts with the defaults, says so on the status
-  line and records it in the activity log; the file stays exactly as it was
-  so nothing is lost.
+  overwritten.** TwinPane starts with the defaults and says so in a
+  notification (tap it to read the whole reason), and records it in the activity
+  log; the file stays exactly as it was so nothing is lost.
 - **Changes are live:** the panels, help screen, hint bar, action menu,
   dialogs and every overlay read the active set, so a rebound key works and
   the old one stops. `F9` → **Keys** → `Enter` reloads the file without
-  restarting; the status line and a notification say what changed.
+  restarting; a notification says what changed.
 - The one thing a file cannot change is typing: printable keys still edit text
   fields, and the numbers `1`–`9` and the letter hotkeys inside a dialog pick
   the row they are printed next to.

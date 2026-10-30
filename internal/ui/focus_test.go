@@ -820,8 +820,8 @@ func TestFocusDestChooserMissingFolder(t *testing.T) {
 	if a.dialog != nil {
 		t.Fatal("a missing destination must not open the confirmation")
 	}
-	if s, _ := a.Status(); !strings.Contains(s, "not a folder") && !strings.Contains(s, "no such") {
-		t.Fatalf("status = %q", s)
+	if s := reportedText(a); !strings.Contains(s, "not a folder") && !strings.Contains(s, "no such") {
+		t.Fatalf("report = %q", s)
 	}
 }
 

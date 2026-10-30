@@ -501,8 +501,8 @@ func TestArchiveRefusesUnsupportedOperations(t *testing.T) {
 		if h.a.dialog != nil || h.a.bulk != nil || h.a.search != nil || h.a.editing {
 			t.Fatalf("%s opened something inside the archive", k)
 		}
-		if s, isErr := h.a.Status(); !isErr || !strings.Contains(s, "read-only archive") {
-			t.Fatalf("%s: status %q", k, s)
+		if s := h.reported(); h.reportedLevel() != lvlErr || !strings.Contains(s, "read-only archive") {
+			t.Fatalf("%s: report %q (level %d)", k, s, h.reportedLevel())
 		}
 	}
 	f := h.footer()
@@ -604,8 +604,8 @@ func TestExtractWholeArchiveFromFolderAndTraversal(t *testing.T) {
 	// not an archive: refused clearly, naming the supported formats
 	h.focus("a.txt")
 	h.press("x")
-	if h.a.dialog != nil || !strings.Contains(h.status(), "not an archive TwinPane can extract") || !strings.Contains(h.status(), "TAR.GZ") {
-		t.Fatalf("x on a text file: %q", h.status())
+	if h.a.dialog != nil || !strings.Contains(h.reported(), "not an archive TwinPane can extract") || !strings.Contains(h.reported(), "TAR.GZ") {
+		t.Fatalf("x on a text file: %q", h.reported())
 	}
 }
 

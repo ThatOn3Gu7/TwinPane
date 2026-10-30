@@ -890,8 +890,8 @@ func TestEditorTipCard(t *testing.T) {
 		t.Fatalf("Enter did not launch: %d", len(env.execs))
 	}
 	// nothing saved: the status says how to save, and the card returns
-	if st := h.status(); !strings.Contains(st, "nothing saved") || !strings.Contains(st, "Esc, then :w") {
-		t.Fatalf("status %q", st)
+	if st := h.reported(); !strings.Contains(st, "nothing saved") || !strings.Contains(st, "Esc, then :w") {
+		t.Fatalf("report %q", st)
 	}
 	h.press("e")
 	if !h.dialogKind(dlgEditTip) {

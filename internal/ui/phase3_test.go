@@ -80,8 +80,8 @@ func TestKeysIgnoredWhileEditingAndShortlyAfter(t *testing.T) {
 	quietAfterEdit = 250 * time.Millisecond
 	h.send(cb(nil))
 	h.settle()
-	if h.a.editing || !strings.HasPrefix(h.status(), "Finished editing a.txt") {
-		t.Fatalf("editing=%v status=%q", h.a.editing, h.status())
+	if h.a.editing || !strings.Contains(h.reported(), "Finished editing a.txt") {
+		t.Fatalf("editing=%v reported=%q", h.a.editing, h.reported())
 	}
 	h.press("d") // within the quiet period: dropped
 	if h.a.dialog != nil {
@@ -100,20 +100,20 @@ func TestEditorExitMessages(t *testing.T) {
 	env.execErr = &editor.ExitError{Signal: syscall.SIGKILL}
 	h.press("e")
 	h.settle()
-	if !h.a.statusErr || !strings.Contains(h.status(), "was terminated (killed): changes may not have been saved") {
-		t.Fatalf("%q", h.status())
+	if h.reportedLevel() != lvlErr || !strings.Contains(h.reported(), "was terminated (killed): changes may not have been saved") {
+		t.Fatalf("%q (level %d)", h.reported(), h.reportedLevel())
 	}
 	env.execErr = &editor.ExitError{Code: 1}
 	h.press("e")
 	h.settle()
-	if !strings.Contains(h.status(), "exited with status 1: changes may not have been saved") {
-		t.Fatalf("%q", h.status())
+	if !strings.Contains(h.reported(), "exited with status 1: changes may not have been saved") {
+		t.Fatalf("%q", h.reported())
 	}
 	// resumed after a suspend: success, with an explanation
 	env.execErr = nil
 	h.a.editorDone(editorDoneMsg{paths: []string{"/x/a.txt"}, editor: "nvim", resumed: 1})
-	if h.a.statusLevel != lvlWarn || !strings.Contains(h.status(), "suspended and has been resumed") {
-		t.Fatalf("%q", h.status())
+	if h.reportedLevel() != lvlWarn || !strings.Contains(h.reported(), "suspended and has been resumed") {
+		t.Fatalf("%q (level %d)", h.reported(), h.reportedLevel())
 	}
 }
 
@@ -131,8 +131,8 @@ func TestEditTargetsSelection(t *testing.T) {
 	if len(env.execs) != 1 || strings.Join(env.execs[0].args, " ") != want {
 		t.Fatalf("execs %+v, want %q", env.execs, want)
 	}
-	if !strings.HasPrefix(h.status(), "Finished editing 2 files") {
-		t.Fatalf("%q", h.status())
+	if !strings.Contains(h.reported(), "Finished editing 2 files") {
+		t.Fatalf("%q", h.reported())
 	}
 	// a folder in the selection: refused, nothing launched
 	h.focus("sub")
@@ -445,8 +445,8 @@ func TestBulkRenameInExternalEditor(t *testing.T) {
 	env.editFn = func(args []string) { os.WriteFile(args[len(args)-1], []byte("only-one\n"), 0o644) }
 	h.press("E")
 	h.settle()
-	if got := strings.Join(h.a.bulk.news(), ","); got != "first,second" || !strings.Contains(h.status(), "exactly 2 lines") {
-		t.Fatalf("line count: %s %q", got, h.status())
+	if got := strings.Join(h.a.bulk.news(), ","); got != "first,second" || !strings.Contains(h.reported(), "exactly 2 lines") {
+		t.Fatalf("line count: %s %q", got, h.reported())
 	}
 	// editor failure: names unchanged
 	env.editFn = func(args []string) { os.WriteFile(args[len(args)-1], []byte("x\ny\n"), 0o644) }

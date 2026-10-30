@@ -75,7 +75,10 @@ func (h *harness) openRemote(name string) {
 	h.press(key)
 	p := h.a.ActivePanel()
 	h.until("remote opened", func() bool {
-		return !p.Loading() && (p.Err() != nil || h.a.statusErr || (p.InRemote() && p.Source().Remote.Name == name))
+		// A refused login is reported by the notification (the message names the
+		// command to run), so the row's error flag is not the place to look.
+		return !p.Loading() && (p.Err() != nil || h.reportedLevel() == lvlErr ||
+			(p.InRemote() && p.Source().Remote.Name == name))
 	})
 	h.settle()
 }
@@ -627,8 +630,8 @@ exit 1
 	if p.InRemote() || p.Err() != nil {
 		t.Fatal("a refused login must leave the panel where it was")
 	}
-	st := h.status()
-	if !h.a.statusErr || !strings.Contains(st, "rclone config reconnect drive:") || strings.Count(st, "reconnect") != 1 {
-		t.Fatalf("auth status: %q", st)
+	st := h.reported()
+	if h.reportedLevel() != lvlErr || !strings.Contains(st, "rclone config reconnect drive:") || strings.Count(st, "reconnect") != 1 {
+		t.Fatalf("auth report: %q (level %d)", st, h.reportedLevel())
 	}
 }

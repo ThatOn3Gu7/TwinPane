@@ -52,17 +52,18 @@ them built for light terminals, again without changing the default look.
   once.
 - **Settings → Keys.** A row that names the file and its state (all defaults,
   how many keys differ, or why the file could not be used) and reloads it on
-  `Enter`, without a restart, reporting the result on the status line, in a
-  notification and in the activity log. There is deliberately no key editor in
-  the interface.
+  `Enter`, without a restart, reporting the result in a notification (and in
+  the activity log). There is deliberately no key editor in the interface.
 - **Nothing is cut off any more.** The status line is one row and silently
   truncated what did not fit — which was usually the part that explained
   something: "… put the cursor on an item and press c", "… or M → Focus mode
   shows one panel at full width", the name in `keybinding.json` that has to be
-  fixed, the whole reason a damaged file was not used. Such a message is now
-  raised in a notification as well, and the problems found at start-up
-  (settings, history, key bindings) arrive as one notification with a line
-  each instead of a single run-on row.
+  fixed, the whole reason a damaged file was not used. Such a message now moves
+  into a notification, and the row goes back to naming the entry under the
+  cursor, so the same sentence is never printed twice — once in the pop-up and
+  once, cut short, underneath it. The problems found at start-up (settings,
+  history, key bindings) arrive as one notification with a line each instead of
+  a single run-on row.
 - **A tap unfolds a long message.** A notification still stays a corner note,
   five wrapped lines with "…", but tapping it now unfolds the whole text: the
   box widens (up to 84 columns) and grows to the height it needs, so a long
@@ -75,8 +76,9 @@ them built for light terminals, again without changing the default look.
   bindings now instead of hard-coded key strings, and the activity log records
   the action's name rather than the old key.
 - The focus-mode toggle and the key binding reload report themselves in a
-  notification as well as in the status line, because their text names the way
-  back or the thing to fix, which is the part a narrow row cuts.
+  notification instead of the status line, because their text names the way
+  back or the thing to fix, which is the part a narrow row cuts. One outcome is
+  one message: a status note only stays in the row when it fits there.
 - A notification is drawn over the Settings window and the properties card (a
   dialog still covers it and pauses its countdown), so the answer to a row
   pressed inside one of them is visible where it is looked for, and a tap lands

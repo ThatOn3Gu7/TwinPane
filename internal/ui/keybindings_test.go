@@ -135,9 +135,13 @@ func TestKeybindingFileLoadAndReload(t *testing.T) {
 	if got := h.a.binds.Primary("browse.move"); got != "v" {
 		t.Fatalf("after reload move = %q, want v", got)
 	}
-	if !strings.Contains(lastLine(h.view()), "key bindings reloaded") &&
-		!strings.Contains(h.status(), "key bindings reloaded") {
-		t.Fatalf("reload is not reported: status %q", h.status())
+	// The reload reports itself in the notification, and not a second time in
+	// the status row underneath it.
+	if n := h.a.notice; n == nil || !strings.HasPrefix(n.head, "Key bindings reloaded") {
+		t.Fatalf("reload is not reported in a notification: %+v", n)
+	}
+	if strings.Contains(strings.ToLower(h.status()), "key bindings") {
+		t.Fatalf("the status row repeats the notification: %q", h.status())
 	}
 }
 

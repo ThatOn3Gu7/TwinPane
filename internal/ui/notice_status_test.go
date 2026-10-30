@@ -38,9 +38,12 @@ func TestLongStatusMessagePopsUp(t *testing.T) {
 	if n.kind != noticeErr {
 		t.Fatalf("kind = %v, want the error kind", n.kind)
 	}
-	// The row still carries what fits, so the two surfaces agree.
-	if !strings.HasPrefix(h.a.status, "cannot rename here") {
-		t.Fatalf("status = %q", h.a.status)
+	// The row does not repeat it: one message, one place.
+	if h.a.status != "" {
+		t.Fatalf("the row repeats the message: %q", h.a.status)
+	}
+	if !strings.Contains(ansi.Strip(h.view()), "cannot rename here") {
+		t.Fatalf("the message is on neither surface:\n%s", h.view())
 	}
 }
 
@@ -176,8 +179,12 @@ func TestKeybindingReloadIsANotification(t *testing.T) {
 	if n := h.a.notice; n == nil || n.head != "Key bindings reloaded" || !strings.Contains(n.msg, "1") {
 		t.Fatalf("reload did not report itself: %+v", n)
 	}
-	if !strings.Contains(h.status(), "key bindings reloaded") {
-		t.Fatalf("the status line lost its summary: %q", h.status())
+	// Only the pop-up says it: the row is not a second copy of the result.
+	if h.status() != "" {
+		t.Fatalf("the status row repeats the notification: %q", h.status())
+	}
+	if !strings.Contains(ansi.Strip(h.view()), "1 of the defaults changed") {
+		t.Fatalf("the reload result is not on screen:\n%s", h.view())
 	}
 
 	// A file with an action TwinPane does not know is reported, with the name
@@ -215,8 +222,8 @@ func TestDamagedKeybindingFilePopsUpAtStartup(t *testing.T) {
 	if !strings.Contains(text, "key bindings") {
 		t.Fatalf("the pop-up does not say what failed: %+v", n)
 	}
-	if !strings.Contains(h.status(), "key bindings") {
-		t.Fatalf("the status line lost the summary: %q", h.status())
+	if h.status() != "" {
+		t.Fatalf("the status row repeats the notification: %q", h.status())
 	}
 }
 

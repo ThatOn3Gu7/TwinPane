@@ -329,7 +329,9 @@ func (a *App) syncNotice(cmd tea.Cmd) tea.Cmd {
 // must not run out there either; a focused notification waits for the user to
 // release it.
 func (a *App) noticePaused() bool {
-	if a.dialog != nil || a.editing {
+	if a.dialog != nil || a.editing || a.width <= 0 {
+		// Nothing is drawn over a dialog, and before the first size message
+		// there is no corner to draw in: the time must not run out unseen.
 		return true
 	}
 	return a.notice != nil && a.notice.pinned

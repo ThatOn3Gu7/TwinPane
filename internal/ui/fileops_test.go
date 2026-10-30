@@ -692,8 +692,8 @@ func TestEditMissingEditor(t *testing.T) {
 	h, env := newOpsApp(t, nil, edEnv)
 	h.focus("a.txt")
 	h.press("e")
-	if !h.a.statusErr || !strings.Contains(h.status(), `"nonexistent-ed" from $EDITOR was not found`) || len(env.execs) != 0 {
-		t.Fatalf("status %q", h.status())
+	if h.reportedLevel() != lvlErr || !strings.Contains(h.reported(), `"nonexistent-ed" from $EDITOR was not found`) || len(env.execs) != 0 {
+		t.Fatalf("report %q", h.reported())
 	}
 }
 

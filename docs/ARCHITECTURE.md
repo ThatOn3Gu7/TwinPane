@@ -1214,13 +1214,19 @@ unseen).
   or 10 rows nothing is drawn and the status line and task list still report
   the result.
 - Callers only build a `taskResult`; the operation code never draws.
-- `setStatusLevel` is also a producer: `noteLongStatus` raises a notification
-  when the message is wider than the status row (the row spends one cell on
+- `setStatusLevel` is also a producer: `noteLongStatus` moves a message into a
+  notification when it is wider than the status row (the row spends one cell on
   its space and two on the level's icon), because the row cuts silently and the
-  tail is often the reason. The pop-up is not duplicated when it already shows
-  that text, and callers that report a result themselves (the keybinding
-  reload, the focus toggle) set the status line first and the notification
-  second, so the proper heading wins over the generic one.
+  tail is often the reason. The text then lives in the pop-up only:
+  `hideStatus` clears the row (it falls back to naming the entry under the
+  cursor), but only when `noticeRect` says the pop-up can actually be drawn, so
+  a terminal too small for one keeps the text where it is. The row is not
+  touched when the pop-up already shows the same text.
+- `noteResult` is the second producer: a result that used to be a status line
+  (the keybinding reload, the focus toggle, the start-up problems) is logged
+  under the line the row would have held, shown in the notification, and taken
+  out of the row through the same `hideStatus`. Nothing is ever reported on both
+  surfaces, so one outcome is one message.
 - `noticeBoxWithin` caps the message at `noticeMaxBody` (five wrapped lines,
   marked with `…`) while the notice is unfocused. Once it is pinned,
   `noticeWidth` widens the box to `noticeWideWidth` when that saves lines and
@@ -1239,8 +1245,10 @@ unseen).
 
 Tests: `internal/ui/notice_test.go` (kinds, wording, wrapping, pin/resume,
 replacement, dialog pause, tiny terminals) and `notice_status_test.go` (a long
-status message popping up, unfolding on a tap, the keybinding reload and
-start-up problems, the note over the Settings window).
+status message popping up and leaving the row, unfolding on a tap, the
+keybinding reload and start-up problems, the note over the Settings window).
+Tests that ask "did the app report this?" use the `reported()`/`reportedText`
+helpers, which look at whichever surface carries the message.
 
 ## Focus mode and panel navigation history (`ui/focus.go`, `ui/nav.go`)
 

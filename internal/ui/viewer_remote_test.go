@@ -293,12 +293,12 @@ func TestRemotePreviewOversizeRefusedBeforeTransfer(t *testing.T) { // SIMULATED
 	if h.a.viewer != nil {
 		t.Fatal("a file beyond the preview limit must not open")
 	}
-	s := h.status()
+	s := h.reported()
 	if !strings.Contains(s, "at most") || !strings.Contains(s, "copy") {
 		t.Fatalf("the refusal must explain the limit and the way out: %q", s)
 	}
-	if h.a.statusLevel != lvlWarn {
-		t.Fatalf("the refusal is a warning, level %v", h.a.statusLevel)
+	if h.reportedLevel() != lvlWarn {
+		t.Fatalf("the refusal is a warning, level %v", h.reportedLevel())
 	}
 	if b, _ := os.ReadFile(log); len(b) != 0 {
 		t.Fatalf("the file was transferred anyway: %q", b)

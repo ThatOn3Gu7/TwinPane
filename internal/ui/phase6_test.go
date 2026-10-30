@@ -351,12 +351,12 @@ func TestCompressAwkwardNames(t *testing.T) {
 func TestBookmarksAddOpenRenameRemove(t *testing.T) {
 	h, env, _ := p4App(t, nil)
 	h.press("B")
-	if !strings.Contains(h.status(), "bookmarked") {
-		t.Fatalf("status %q", h.status())
+	if !strings.Contains(h.reported(), "bookmarked") {
+		t.Fatalf("report %q", h.reported())
 	}
 	h.press("B")
-	if !strings.Contains(h.status(), "already bookmarked") {
-		t.Fatalf("duplicate: %q", h.status())
+	if !strings.Contains(h.reported(), "already bookmarked") {
+		t.Fatalf("duplicate: %q", h.reported())
 	}
 	// the file is written (atomically, JSON)
 	b, err := os.ReadFile(env.bmPath)
@@ -450,8 +450,8 @@ func TestBookmarkRefusedInsideArchive(t *testing.T) {
 	h.press("enter")
 	h.until("in archive", func() bool { return h.a.ActivePanel().InArchive() })
 	h.press("B")
-	if !strings.Contains(h.status(), "cannot be bookmarked") {
-		t.Fatalf("status %q", h.status())
+	if !strings.Contains(h.reported(), "cannot be bookmarked") {
+		t.Fatalf("report %q", h.reported())
 	}
 	if _, err := os.Stat(env.bmPath); err == nil {
 		t.Fatal("bookmarks file written")
@@ -501,7 +501,7 @@ func TestOpenInDefaultAppOnTermux(t *testing.T) {
 	if got := env.launched()[0]; !reflect.DeepEqual(got, want) {
 		t.Fatalf("argv %q, want %q", got, want)
 	}
-	h.until("status", func() bool { return strings.Contains(h.status(), "handed") })
+	h.until("status", func() bool { return strings.Contains(h.reported(), "handed") })
 	if h.a.viewer != nil {
 		t.Fatal("the viewer opened too")
 	}
@@ -529,8 +529,8 @@ func TestOpenWithoutOpener(t *testing.T) {
 	h.settle()
 	h.focus("photo.png")
 	h.press("o")
-	if s := h.status(); !strings.Contains(s, "cannot open") || !strings.Contains(s, "DISPLAY") {
-		t.Fatalf("status %q", s)
+	if s := h.reported(); !strings.Contains(s, "cannot open") || !strings.Contains(s, "DISPLAY") {
+		t.Fatalf("report %q", s)
 	}
 	h.press("enter") // no opener: as before (the viewer)
 	if h.a.viewer == nil {
