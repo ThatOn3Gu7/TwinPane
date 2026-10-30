@@ -29,6 +29,7 @@ cmd/twinpane ──► internal/ui ──► internal/panel ──► internal/f
 | `cloud` | Phase 9: rclone remotes. `Detect`, `Client.Remotes`/`List`/`Stat`/`Mkdir`/`Rename`/`Delete`/`Transfer`, the `Path` type (`remote:path` or local), and `Error` with an `ErrKind` that explains failures (not installed, login, network, missing, exists, unsupported, locked config, cancelled). Starts rclone through `proc`, never a shell. | stdlib, `proc`, `ops` (transfer types) |
 | `foldersize` | On-demand local recursive scan: apparent and allocated totals, bounded largest-entry samples, mount/volume boundaries, identity-based duplicate avoidance, cancellation and batched progress. Does not import UI or modify files. | stdlib, `storage`, platform syscalls (`x/sys/unix` on Unix) |
 | `settings` | `settings.json`: one versioned record of every durable preference (startup folders, sort, notifications, theme, editor, mouse, viewer, compression, history retention, activity log). `Save` refuses to overwrite a damaged or newer file; `Normalized` forces out-of-range values back to defaults. | stdlib, `bookmarks` (config dir) |
+| `keybinding` | `keybinding.json`: the registry of every action (name, section, default keys, help text and compact label), the key parser that turns `ctrl+l`/`alt+left` into canonical `tea.KeyMsg` strings, and the loader that merges overrides, warns about unknown names, unusable keys and duplicates inside one section, and never overwrites a damaged or newer file. `Set` answers `Matches`/`Primary`/`Label` for the interface. | stdlib, `bookmarks` (config dir) |
 | `history` | Operation history (`history.json`): one session per launch, newest-first operations, statuses including `interrupted`, retention pruning that never drops the running session, atomic replacement and `corrupt-<timestamp>` recovery. Read-only helpers feed the Tasks screen. | stdlib, `bookmarks` (config dir) |
 | `activity` | The activity log: an append-only NDJSON store (`Log`), the redactor, the rotation/age policy, entry decoding with malformed-line recovery, and the category/level/query filters the viewer reuses. | stdlib, `bookmarks` (config dir) |
 | `dircompare` | Directory comparison: the two-folder scan, entry kinds, optional SHA-256 verification of matching files, and the copy-only sync plan (never a deletion). No UI imports. | stdlib, `fsys` |
@@ -653,6 +654,38 @@ Four new packages with no UI dependency. The TUI code lives in four
   `renderDialog`), and `settingsBody(inner)` lays rows out at the window's
   inner width with a blank line between sections. The command passes the path through
   `Options.SettingsPath` so tests can use an isolated file.
+
+### Key bindings (`internal/keybinding`, `ui/keybindings.go`)
+- `Actions()` is the registry: every key TwinPane uses, in file order, grouped
+  by section (`browse`, `dialog`, `list`, `filterList`, `input`, `viewer`,
+  `search`, `searchList`, `advanced`, `tasks`, `activity`, `props`,
+  `bulkRename`, `help`, `settings`, `compare`, `comparePlan`, `folderSize`,
+  `live`). Each entry keeps its defaults, a description and the compact label
+  the help screen shows while the action is unchanged (`c/F5`); a changed
+  action is labelled from its real keys instead, so a label never names a key
+  that no longer works. `Essential` actions fall back to their defaults when a
+  change would leave them without a key, and `Shadow` marks the few actions
+  whose keys intentionally repeat inside a section (`compare.retry`,
+  `props.apply`/`props.press`/`props.toggle`), where dispatch order decides.
+- `Parse` accepts a single character, a named key (`enter`, `pgup`, `f5`, …)
+  or a `ctrl+`/`alt+`/`shift+` combination and returns the canonical
+  `tea.KeyMsg` string (`ctrl+i` is `tab`, `ctrl+m` is `enter`; letters are
+  case-sensitive). `New(custom)` resolves the defaults against the overrides:
+  a missing action keeps its default, `[]` disables it, unusable keys are
+  skipped with a warning, and one key belongs to one action per section (the
+  first in registry/file order keeps it).
+- `Load` reads the shared configuration folder (`bookmarks.ConfigDir`, so
+  `$TWINPANE_CONFIG_DIR` applies), writes the complete default file when it is
+  missing (0600, atomic), appends actions a newer version added without
+  touching existing values, and reports a damaged or newer file as a
+  `*CorruptError` without rewriting it. `Options.KeybindingPath` and
+  `Options.Bindings` override the file (tests, embedders).
+- The UI builds its `KeyMap` (browse help sections) from the set, and every
+  overlay asks `App.is(action, msg)`; hint chips, the action menu and dialog
+  rows that re-send a shortcut take the configured key and label, so a tap
+  synthesises the key that is actually bound. `reloadBindings` re-reads the
+  file for the Settings **Keys** row and reports the result on the status line
+  and in the activity log.
 
 ### Operation history (`internal/history`, `ui/history.go`, `ui/historyview.go`)
 - `history.json` sits next to `settings.json` (same config directory) and holds

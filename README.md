@@ -656,16 +656,32 @@ including those of the viewer, dialogs, search and bulk rename.
 / `TWINPANE_LOG_MODE` / `TWINPANE_LOG_SIZE` / `TWINPANE_LOG_DAYS` (the activity
 log, same as the `--log*` flags),
 `TWINPANE_NO_MOUSE=1` (same as `--no-mouse`), `TWINPANE_CONFIG_DIR` (an
-absolute path for `settings.json`, `bookmarks.json`, `history.json` and
-`activity.jsonl`; default `~/.config/twinpane`, on macOS
-`~/Library/Application Support/twinpane`).
+absolute path for `settings.json`, `bookmarks.json`, `history.json`,
+`keybinding.json` and `activity.jsonl`; default `~/.config/twinpane`, on
+macOS `~/Library/Application Support/twinpane`).
+
+**Key bindings:** every key in the tables above — the panels, the viewer,
+search, Advanced Search, tasks, the activity log, Properties, bulk rename,
+help, Settings, folder sizes, the directory comparison, the dialogs and the
+text fields — can be changed in `keybinding.json` in the configuration
+directory. The file is created on first start with every action and its
+defaults; a list replaces an action's keys, `[]` turns it off, and an action
+you leave out keeps its default. Unknown names, keys it cannot use and two
+actions of one screen asking for the same key are reported on the status line
+(and in the activity log) while the rest of the file still applies; a damaged
+file is never overwritten. Changes are live — the help screen, the hint bar,
+the menus and every overlay follow the file at once — and `F9` → **Keys** →
+`Enter` reloads it without restarting. The
+[user guide](docs/USER_GUIDE.md#custom-key-bindings) has the key names and the
+whole format.
 
 **Settings:** `F9`, `Ctrl+S` or `M` → **Settings…** open a floating
 preferences window over the panes — the directory behind stays visible —
 (startup folders and starting panel, hidden files, default sort,
 notification corner/duration, theme presets, preferred editor and tips,
 mouse, viewer wrap/line numbers, compression defaults, operation-history
-retention, and the activity log's mode and retention). Preferences are
+retention, and the activity log's mode and retention), plus **Keys** for the
+key-binding file's state and a reload without a restart. Preferences are
 stored atomically in `settings.json` in the configuration directory; the
 flags above and `TWINPANE_NO_MOUSE` keep overriding them for the session,
 and a damaged file is reported on the screen with `r` to reset it.
@@ -808,6 +824,7 @@ TwinPane/
 │   ├── search/            filename search with fd, find or built in
 │   ├── bookmarks/         bookmark file
 │   ├── settings/          settings.json: every durable preference
+│   ├── keybinding/        keybinding.json: every key, its defaults and the reader
 │   ├── history/           operation history (history.json)
 │   ├── activity/          activity log: redaction, filters, append-only store
 │   ├── cloud/             rclone remotes: listing, transfers, previews

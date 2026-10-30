@@ -1705,6 +1705,13 @@ they have room to breathe:
   **Rotate at** (64 KiB–16 MiB, default 1 MiB) and **Delete rotated after**
   (1–365 days, default 30). The mode applies at once; the size and age limits
   apply to the next start. See [Activity log (`L`)](#activity-log-l).
+- **Keys** — **Key bindings** shows the state of `keybinding.json`: all
+  defaults, how many keys differ, or why the file could not be used, with the
+  path as its note. `Enter` (or `→`) reloads the file without restarting; the
+  result is reported on the status line and in the activity log. There is no
+  key editor on the screen: the file is the single source of truth, so a key
+  can never be half-changed. See
+  [Custom key bindings](#custom-key-bindings).
 
 **Keys on the screen:** `↑`/`↓` (or `k`/`j`) move, `←`/`→` (or `h`/`l`,
 `Space`, `Enter`) change a value — the text rows open a one-line input —
@@ -1844,7 +1851,8 @@ applying.
 [--log-days N] [--no-log]`. `TWINPANE_NO_MOUSE=1` works like `--no-mouse`;
 `TWINPANE_LOG`, `TWINPANE_LOG_MODE`, `TWINPANE_LOG_SIZE` and
 `TWINPANE_LOG_DAYS` work like the `--log*` flags, and `TWINPANE_CONFIG_DIR`
-moves `settings.json`, `bookmarks.json`, `history.json` and `activity.jsonl`.
+moves `settings.json`, `bookmarks.json`, `history.json`, `keybinding.json`
+and `activity.jsonl`.
 
 **Search box:** type to filter, `↑`/`↓` `PgUp`/`PgDn` move, `Enter` jumps to the
 item, `F4` edits, `Tab` switches between the text field and the result list.
@@ -1866,6 +1874,61 @@ the cursor moves, including with the wheel and a tap, and draws a slim
 indicator on its right border; short lists draw none. Text fields support
 `←` `→` `Home` `End` `Backspace` `Delete` `Ctrl+U` `Ctrl+K` `Ctrl+W` and
 paste.
+
+## Custom key bindings
+
+Every key TwinPane uses is written out in `keybinding.json` in the
+configuration folder, next to `settings.json` (`~/.config/twinpane` on Linux
+and Termux, `~/Library/Application Support/twinpane` on macOS;
+`TWINPANE_CONFIG_DIR` moves all of them). The file is created on first start
+with every action and its defaults, grouped by the screen it belongs to, so
+you can read the complete key map in one place:
+
+```json
+{
+  "version": 1,
+  "bindings": {
+    "browse.copy": ["y", "f5"],
+    "browse.quit": ["q", "f10"],
+    "viewer.wrap": ["w"]
+  }
+}
+```
+
+- **Names** are the ones in the file: `browse.*` for the panels, then
+  `dialog`, `list`, `filterList`, `input`, `viewer`, `search`,
+  `searchList`, `advanced`, `tasks`, `activity`, `props`, `bulkRename`,
+  `help`, `settings`, `compare`, `comparePlan`, `folderSize` and `live`.
+- **Keys** are single characters (`y`), named keys (`up`, `down`, `left`,
+  `right`, `home`, `end`, `pgup`, `pgdown`, `enter`, `tab`, `shift+tab`,
+  `esc`, `space`, `backspace`, `delete`, `insert`), the function keys
+  `f1`–`f20`, and `ctrl+`, `alt+` and `shift+` combinations (`ctrl+l`,
+  `alt+left`, `shift+tab`). Upper and lower case are different keys, so `d`
+  and `D` stay apart.
+- **A list replaces** the defaults for that action (put the key you want
+  first: that is the one the hint bar shows and a tap sends). **`[]` turns
+  the action off.** An action you leave out keeps its default, so a short
+  file with a few changes is fine.
+- **Defaults for new actions** are added when a new version has keys the file
+  does not mention; every value you set is kept.
+- **Mistakes are warnings, never a refusal to start:** an unknown action name,
+  a key TwinPane cannot use, or two actions of the same screen asking for the
+  same key are reported on the status line and in the activity log (`L`), and
+  the rest of the file still applies. The first action in the file keeps a
+  contested key; a key that cannot be used at all is skipped. Actions that
+  must stay reachable (closing a screen, quitting) fall back to their
+  defaults when a change would leave them without a key.
+- **A damaged file, or one written by a newer TwinPane, is never
+  overwritten.** TwinPane starts with the defaults, says so on the status
+  line and records it in the activity log; the file stays exactly as it was
+  so nothing is lost.
+- **Changes are live:** the panels, help screen, hint bar, action menu,
+  dialogs and every overlay read the active set, so a rebound key works and
+  the old one stops. `F9` → **Keys** → `Enter` reloads the file without
+  restarting; the status line says what changed.
+- The one thing a file cannot change is typing: printable keys still edit text
+  fields, and the numbers `1`–`9` and the letter hotkeys inside a dialog pick
+  the row they are printed next to.
 
 ## Building, installing and project layout
 
