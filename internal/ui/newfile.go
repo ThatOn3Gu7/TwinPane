@@ -89,7 +89,7 @@ func (a *App) beginNewFile() tea.Cmd {
 		hint("Type a name with or without an extension (notes.md or notes). The chosen format replaces an existing extension instead of adding a second one."),
 	}
 	st.dlg = d
-	d.input, d.inputLabel = newLineInput(""), "File name:"
+	d.input, d.inputLabel = a.newInput(""), "File name:"
 	d.selectors = []*selector{{
 		label: "Format",
 		value: func() string {
@@ -146,7 +146,7 @@ func (a *App) openFormatPicker(st *newFileState) {
 	}
 	d := &dialog{kind: dlgFormat, title: "Format", width: 54, plainRows: true}
 	st.pick = d
-	d.filter = newLineInput("")
+	d.filter = a.newInput("")
 	d.filterLabel = "Search formats, or type a custom extension:"
 	d.onFilter = func(a *App) { st.fillFormatPicker(false) }
 	d.footer = "Enter choose · ↑↓ move · Esc back"

@@ -271,6 +271,7 @@ var actions = []Action{
 	{Name: "props.nextField", Section: SecProps, Keys: []string{"tab"}, Desc: "next field"},
 	{Name: "props.prevField", Section: SecProps, Keys: []string{"shift+tab"}, Desc: "previous field"},
 	{Name: "props.apply", Section: SecProps, Keys: []string{"enter"}, Desc: "apply the changes", Shadow: true},
+	{Name: "props.press", Section: SecProps, Keys: []string{"enter", " "}, Desc: "press the focused button", Shadow: true},
 	{Name: "props.toggle", Section: SecProps, Keys: []string{" ", "x"}, Desc: "toggle a permission", Shadow: true},
 	{Name: "props.left", Section: SecProps, Keys: []string{"left", "h"}, Desc: "move left"},
 	{Name: "props.right", Section: SecProps, Keys: []string{"right", "l"}, Desc: "move right"},

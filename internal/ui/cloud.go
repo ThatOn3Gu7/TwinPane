@@ -407,7 +407,7 @@ func (a *App) beginMkdir() tea.Cmd {
 	where := panelDir(p)
 	d := &dialog{kind: dlgMkdir, title: "New folder"}
 	d.body = []dline{text("In:"), path(where.Display())}
-	d.input, d.inputLabel = newLineInput(""), "Folder name:"
+	d.input, d.inputLabel = a.newInput(""), "Folder name:"
 	d.footer = "Enter create · Esc cancel"
 	d.onSubmit = func(a *App, v string) tea.Cmd {
 		if p.InRemote() {
@@ -544,7 +544,7 @@ func (a *App) renameRemote(targets []fsys.Entry) tea.Cmd {
 	loc := cloudPath(p, e.Path)
 	client := p.Source().Client
 	old := e.Name
-	in := newLineInput(old)
+	in := a.newInput(old)
 	if ext := filepath.Ext(old); !e.IsDir && ext != "" && ext != old {
 		in.SetCursor(len([]rune(old)) - len([]rune(ext)))
 	}
@@ -620,7 +620,7 @@ func (a *App) beginCloudDelete() tea.Cmd {
 	}
 	d.onEsc = cancelDel
 	if dirs > 0 || len(targets) > 1 {
-		d.input = newLineInput("")
+		d.input = a.newInput("")
 		d.inputLabel = `Type "delete" and press Enter to confirm:`
 		d.footer = "Esc (or Enter with an empty field) cancels"
 		d.onSubmit = func(a *App, v string) tea.Cmd {

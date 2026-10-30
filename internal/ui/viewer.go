@@ -345,12 +345,11 @@ func (a *App) viewerGeometry(h int) {
 
 func (a *App) viewerKey(msg tea.KeyMsg) tea.Cmd {
 	v := a.viewer
-	s := msg.String()
 	if msg.Type == tea.KeyRunes && len(msg.Runes) > 1 {
 		// a burst (key repeat, typeahead): only repeat scrolling keys
 		r := msg.Runes[0]
 		if r != 'j' && r != 'k' {
-			s = string(r)
+			msg = tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}}
 		} else {
 			for range msg.Runes {
 				a.viewerKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
@@ -358,17 +357,17 @@ func (a *App) viewerKey(msg tea.KeyMsg) tea.Cmd {
 			return nil
 		}
 	}
-	switch s {
-	case "ctrl+c":
+	switch {
+	case a.is("browse.interrupt", msg):
 		a.quitting = true
 		return tea.Quit
-	case "esc", "q", "f3", "f10", "v", "backspace":
+	case a.is("viewer.close", msg):
 		a.closeViewer()
 		return nil
-	case "?", "f1":
+	case a.is("viewer.help", msg):
 		a.openHelp()
 		return nil
-	case "e", "f4":
+	case a.is("viewer.edit", msg):
 		if v.fromAdvanced {
 			a.setStatus("Advanced Search inspection is read-only", true)
 			return nil
@@ -393,20 +392,20 @@ func (a *App) viewerKey(msg tea.KeyMsg) tea.Cmd {
 	}
 	a.setStatus("", false)
 	page := max(1, v.rows-1)
-	switch s {
-	case "down", "j", "enter":
+	switch {
+	case a.is("viewer.scrollDown", msg):
 		v.scrollDown(1)
-	case "up", "k":
+	case a.is("viewer.scrollUp", msg):
 		v.scrollUp(1)
-	case "pgdown", "ctrl+f", " ", "ctrl+d":
+	case a.is("viewer.pageDown", msg):
 		v.scrollDown(page)
-	case "pgup", "ctrl+b", "ctrl+u":
+	case a.is("viewer.pageUp", msg):
 		v.scrollUp(page)
-	case "home", "g":
+	case a.is("viewer.top", msg):
 		v.top, v.sub, v.xoff = 0, 0, 0
-	case "end", "G":
+	case a.is("viewer.bottom", msg):
 		v.top, v.sub = v.endPos()
-	case "right", "l":
+	case a.is("viewer.right", msg):
 		if !v.wrap {
 			// never further than needed to show the end of the widest
 			// line on screen
@@ -416,22 +415,22 @@ func (a *App) viewerKey(msg tea.KeyMsg) tea.Cmd {
 			}
 			v.xoff = min(v.xoff+max(4, v.textW/2), max(0, widest-v.textW+1))
 		}
-	case "left", "h":
+	case a.is("viewer.left", msg):
 		if !v.wrap {
 			v.xoff = max(0, v.xoff-max(4, v.textW/2))
 		}
-	case "w":
+	case a.is("viewer.wrap", msg):
 		v.wrap = !v.wrap
 		v.sub, v.xoff = 0, 0
 		a.setStatus(map[bool]string{true: "line wrapping on", false: "line wrapping off: ←/→ scroll sideways"}[v.wrap], false)
-	case "#":
+	case a.is("viewer.numbers", msg):
 		v.numbers = !v.numbers
 		v.sub = 0
-	case "/":
+	case a.is("viewer.find", msg):
 		a.viewerFindDialog()
-	case "n":
+	case a.is("viewer.nextMatch", msg):
 		a.viewerNextMatch(1)
-	case "N":
+	case a.is("viewer.prevMatch", msg):
 		a.viewerNextMatch(-1)
 	}
 	return nil

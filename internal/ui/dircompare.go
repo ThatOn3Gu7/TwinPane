@@ -235,9 +235,8 @@ func (a *App) comparisonKey(msg tea.KeyMsg) tea.Cmd {
 	if c == nil {
 		return nil
 	}
-	s := msg.String()
 	if c.loading {
-		if s == "esc" || s == "ctrl+c" {
+		if a.is("compare.close", msg) {
 			if c.cancel != nil {
 				c.cancel()
 			}
@@ -254,35 +253,35 @@ func (a *App) comparisonKey(msg tea.KeyMsg) tea.Cmd {
 	if c.reviewing {
 		return a.comparisonPlanKey(msg)
 	}
-	if s == "esc" || s == "ctrl+c" || s == "q" {
+	if a.is("compare.close", msg) {
 		a.comparison = nil
 		a.setStatus("", false)
 		return nil
 	}
 	if c.err != nil {
-		switch s {
-		case "r":
+		switch {
+		case a.is("compare.retry", msg):
 			return a.startComparisonScan(false)
-		case "h":
+		case a.is("compare.hash", msg):
 			return a.startComparisonScan(true)
 		default:
 			return nil
 		}
 	}
 	if c.result == nil {
-		if s == "r" {
+		if a.is("compare.retry", msg) {
 			return a.startComparisonScan(false)
 		}
 		return nil
 	}
-	switch s {
-	case "?":
+	switch {
+	case a.is("compare.help", msg):
 		a.openHelp()
 		return nil
-	case "f":
+	case a.is("compare.differences", msg):
 		a.toggleComparisonDifferences()
 		return nil
-	case "g":
+	case a.is("compare.git", msg):
 		hash := c.result.ContentChecked
 		c.includeGitDirectories = !c.includeGitDirectories
 		c.choices = map[string]dircompare.Direction{}
@@ -293,35 +292,35 @@ func (a *App) comparisonKey(msg tea.KeyMsg) tea.Cmd {
 	entries := visibleComparisonEntries(c)
 	if len(entries) > 0 {
 		switch {
-		case a.keys.Up.Matches(msg):
+		case a.is("compare.up", msg):
 			c.cursor = max(0, c.cursor-1)
-		case a.keys.Down.Matches(msg):
+		case a.is("compare.down", msg):
 			c.cursor = min(len(entries)-1, c.cursor+1)
-		case a.keys.PageUp.Matches(msg):
+		case a.is("compare.pageUp", msg):
 			c.cursor = max(0, c.cursor-max(1, a.comparisonListRows(a.height-3)))
-		case a.keys.PageDown.Matches(msg):
+		case a.is("compare.pageDown", msg):
 			c.cursor = min(len(entries)-1, c.cursor+max(1, a.comparisonListRows(a.height-3)))
-		case a.keys.Top.Matches(msg):
+		case a.is("compare.top", msg):
 			c.cursor = 0
-		case a.keys.Bottom.Matches(msg):
+		case a.is("compare.bottom", msg):
 			c.cursor = len(entries) - 1
-		case a.keys.Select.Matches(msg):
+		case a.is("compare.select", msg):
 			a.toggleComparisonChoice(entries[c.cursor])
-		case s == "l":
+		case a.is("compare.leftToRight", msg):
 			a.proposeComparisonCopy(entries[c.cursor], dircompare.LeftToRight)
-		case s == "r":
+		case a.is("compare.rightToLeft", msg):
 			a.proposeComparisonCopy(entries[c.cursor], dircompare.RightToLeft)
 		}
 	}
-	switch s {
-	case "a":
+	switch {
+	case a.is("compare.auto", msg):
 		a.proposeOneSidedEntries()
-	case "u":
+	case a.is("compare.clear", msg):
 		c.choices = map[string]dircompare.Direction{}
 		a.setStatusLevel("Cleared proposed copy actions", lvlInfo)
-	case "h":
+	case a.is("compare.hash", msg):
 		return a.startComparisonScan(true)
-	case "p":
+	case a.is("compare.plan", msg):
 		a.reviewComparisonPlan()
 	}
 	a.keepComparisonCursorVisible()
@@ -416,8 +415,7 @@ func (a *App) comparisonPlanKey(msg tea.KeyMsg) tea.Cmd {
 	if c == nil {
 		return nil
 	}
-	s := msg.String()
-	if s == "esc" || s == "backspace" {
+	if a.is("comparePlan.back", msg) {
 		c.reviewing = false
 		c.plan = dircompare.Plan{}
 		return nil
@@ -428,15 +426,15 @@ func (a *App) comparisonPlanKey(msg tea.KeyMsg) tea.Cmd {
 		return nil
 	}
 	switch {
-	case a.keys.Up.Matches(msg):
+	case a.is("comparePlan.up", msg):
 		c.planCursor = max(0, c.planCursor-1)
-	case a.keys.Down.Matches(msg):
+	case a.is("comparePlan.down", msg):
 		c.planCursor = min(len(actions)-1, c.planCursor+1)
-	case a.keys.PageUp.Matches(msg):
+	case a.is("comparePlan.pageUp", msg):
 		c.planCursor = max(0, c.planCursor-max(1, a.comparisonPlanRows(a.height-3)))
-	case a.keys.PageDown.Matches(msg):
+	case a.is("comparePlan.pageDown", msg):
 		c.planCursor = min(len(actions)-1, c.planCursor+max(1, a.comparisonPlanRows(a.height-3)))
-	case s == "enter" || s == "e":
+	case a.is("comparePlan.confirm", msg):
 		return a.confirmComparisonPlan()
 	}
 	a.keepPlanCursorVisible()

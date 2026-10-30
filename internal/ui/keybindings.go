@@ -133,6 +133,16 @@ func (a *App) is(action string, msg tea.KeyMsg) bool {
 	return a.binds != nil && a.binds.Matches(action, msg)
 }
 
+// isAny reports whether msg means one of the named actions.
+func (a *App) isAny(msg tea.KeyMsg, actions ...string) bool {
+	for _, action := range actions {
+		if a.is(action, msg) {
+			return true
+		}
+	}
+	return false
+}
+
 // label is the display label of an action ("c/F5").
 func (a *App) label(action string) string {
 	if a.binds == nil {

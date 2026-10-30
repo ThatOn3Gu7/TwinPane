@@ -399,9 +399,8 @@ func (a *App) folderSizeKey(msg tea.KeyMsg) tea.Cmd {
 	if v == nil {
 		return nil
 	}
-	s := msg.String()
 	if v.loading {
-		if s == "esc" || s == "ctrl+c" || s == "q" {
+		if a.is("folderSize.close", msg) {
 			if v.cancelling {
 				// The scan checks cancellation between batched reads, but an
 				// in-flight filesystem call can itself take time. Let the user
@@ -417,52 +416,52 @@ func (a *App) folderSizeKey(msg tea.KeyMsg) tea.Cmd {
 		}
 		return nil
 	}
-	if s == "esc" || s == "ctrl+c" || s == "q" {
+	if a.is("folderSize.close", msg) {
 		a.folderSize = nil
 		a.setStatus("", false)
 		return nil
 	}
-	if s == "?" {
+	if a.is("folderSize.help", msg) {
 		a.openHelp()
 		return nil
 	}
 	if v.result == nil || v.root == nil {
-		if s == "r" {
+		if a.is("folderSize.retry", msg) {
 			return a.refreshFolderSize()
 		}
 		return nil
 	}
 	rows := folderSizeRows(v)
 	switch {
-	case a.keys.Up.Matches(msg):
+	case a.is("folderSize.up", msg):
 		v.cursor = max(0, v.cursor-1)
-	case a.keys.Down.Matches(msg):
+	case a.is("folderSize.down", msg):
 		v.cursor = min(max(0, len(rows)-1), v.cursor+1)
-	case a.keys.PageUp.Matches(msg):
+	case a.is("folderSize.pageUp", msg):
 		v.cursor = max(0, v.cursor-max(1, a.folderSizeListRows(a.height-3)))
-	case a.keys.PageDown.Matches(msg):
+	case a.is("folderSize.pageDown", msg):
 		v.cursor = min(max(0, len(rows)-1), v.cursor+max(1, a.folderSizeListRows(a.height-3)))
-	case a.keys.Top.Matches(msg):
+	case a.is("folderSize.top", msg):
 		v.cursor = 0
-	case a.keys.Bottom.Matches(msg):
+	case a.is("folderSize.bottom", msg):
 		v.cursor = max(0, len(rows)-1)
-	case a.keys.Open.Matches(msg):
+	case a.is("folderSize.open", msg):
 		a.openFolderSizeRow(rows)
-	case a.keys.Parent.Matches(msg):
+	case a.is("folderSize.parent", msg):
 		if v.current.Parent != nil {
 			v.current = v.current.Parent
 			v.cursor, v.offset = 0, 0
 			v.rows, v.rowsFor = nil, nil
 		}
-	case s == "s":
+	case a.is("folderSize.sortSize", msg):
 		v.sortMode, v.sortAlloc = folderSizeBySize, false
 		v.rowsFor = nil
 		v.cursor, v.offset = 0, 0
-	case s == "n":
+	case a.is("folderSize.sortName", msg):
 		v.sortMode, v.sortAlloc = folderSizeByName, false
 		v.rowsFor = nil
 		v.cursor, v.offset = 0, 0
-	case s == "a":
+	case a.is("folderSize.sortAllocated", msg):
 		if !foldersize.AllocatedSizeSupported() {
 			a.setStatusLevel("Allocated-size estimates are unavailable on this platform; sort by apparent size instead", lvlWarn)
 		} else {
@@ -470,7 +469,7 @@ func (a *App) folderSizeKey(msg tea.KeyMsg) tea.Cmd {
 			v.rowsFor = nil
 			v.cursor, v.offset = 0, 0
 		}
-	case s == "r":
+	case a.is("folderSize.retry", msg):
 		return a.refreshFolderSize()
 	}
 	a.keepFolderSizeCursorVisible()

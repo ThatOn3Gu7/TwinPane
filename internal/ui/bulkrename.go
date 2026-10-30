@@ -112,53 +112,54 @@ func (a *App) bulkKey(msg tea.KeyMsg) tea.Cmd {
 		}
 		var cmd tea.Cmd
 		for i, r := range msg.Runes {
-			if i > 0 && (r != 'j' && r != 'k' || a.bulk != b || a.dialog != nil) {
+			one := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}}
+			if i > 0 && (!a.isAny(one, "bulkRename.down", "bulkRename.up") || a.bulk != b || a.dialog != nil) {
 				break
 			}
-			cmd = a.bulkKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+			cmd = a.bulkKey(one)
 		}
 		return cmd
 	}
 	rows := a.bulkRows()
-	switch msg.String() {
-	case "ctrl+c":
+	switch {
+	case a.is("browse.interrupt", msg):
 		a.bulk = nil
 		a.quitting = true
 		return tea.Quit
-	case "esc", "q":
+	case a.is("bulkRename.cancel", msg):
 		a.bulk = nil
 		a.setStatus("bulk rename canceled: nothing was renamed", false)
 		return nil
-	case "up", "k":
+	case a.is("bulkRename.up", msg):
 		b.cursor--
-	case "down", "j":
+	case a.is("bulkRename.down", msg):
 		b.cursor++
-	case "pgup", "ctrl+b":
+	case a.is("bulkRename.pageUp", msg):
 		b.cursor -= rows
-	case "pgdown", "ctrl+f":
+	case a.is("bulkRename.pageDown", msg):
 		b.cursor += rows
-	case "home", "g":
+	case a.is("bulkRename.first", msg):
 		b.cursor = 0
-	case "end", "G":
+	case a.is("bulkRename.last", msg):
 		b.cursor = len(b.items) - 1
-	case "enter", "r", "f2":
+	case a.is("bulkRename.editRow", msg):
 		a.bulkEditRow()
-	case "f":
+	case a.is("bulkRename.find", msg):
 		a.bulkFind()
-	case "n":
+	case a.is("bulkRename.pattern", msg):
 		a.bulkTemplate()
-	case "L":
+	case a.is("bulkRename.lower", msg):
 		b.setNews(ops.LowerNames(b.news()))
 		a.setStatus("lower-cased all new names", false)
-	case "U":
+	case a.is("bulkRename.upper", msg):
 		b.setNews(ops.UpperNames(b.news()))
 		a.setStatus("upper-cased all new names", false)
-	case "R":
+	case a.is("bulkRename.reset", msg):
 		b.setNews(b.olds())
 		a.setStatus("all new names reset to the current names", false)
-	case "E":
+	case a.is("bulkRename.editAll", msg):
 		return a.bulkEditor()
-	case "a":
+	case a.is("bulkRename.apply", msg):
 		a.bulkConfirm()
 	}
 	b.clamp(rows)
@@ -187,7 +188,7 @@ func (b *bulkRename) clamp(rows int) {
 func (a *App) bulkPrompt(title string, body []dline, label, initial string, cursor int,
 	toggles []*inputToggle, submit func(a *App, v string) error) {
 	d := &dialog{kind: dlgBulkEdit, title: title, body: body, width: 70}
-	d.input, d.inputLabel = newLineInput(initial), label
+	d.input, d.inputLabel = a.newInput(initial), label
 	if cursor >= 0 {
 		d.input.SetCursor(cursor)
 	} else {

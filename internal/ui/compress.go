@@ -57,8 +57,8 @@ func (st *compressState) defaultPath(f compress.Format) string {
 }
 
 // newCompressPathInput starts archive names immediately before the extension.
-func newCompressPathInput(path string, f compress.Format) *lineInput {
-	in := newLineInput(path)
+func (a *App) newCompressPathInput(path string, f compress.Format) *lineInput {
+	in := a.newInput(path)
 	if f.Kind == compress.Archive {
 		in.SetCursor(len(in.runes) - len([]rune(f.Ext)))
 	}
@@ -114,7 +114,7 @@ func (a *App) beginZip() tea.Cmd {
 		hint("Default output folder: "+shortPath(st.outDir)+". Archive names start at the extension; single-file formats keep the source name. Edit the path to choose another folder."),
 		hint("Folders are added with all their contents; symbolic links are stored as links. The new file is never added to itself, and an existing file is not replaced without asking."))
 	st.auto = st.defaultPath(st.cur().Format)
-	d.input = newCompressPathInput(st.auto, st.cur().Format)
+	d.input = a.newCompressPathInput(st.auto, st.cur().Format)
 	a.compressLabel(d, st)
 	d.footer = "Enter create · Esc cancel · ↑↓ format · PgUp/PgDn level"
 	d.selectors = []*selector{
@@ -255,7 +255,7 @@ func (a *App) compressFormat(d *dialog, st *compressState, delta int) {
 		nv = v[:len(v)-len(from.Ext)] + to.Ext
 	}
 	if nv != v {
-		d.input = newCompressPathInput(nv, to)
+		d.input = a.newCompressPathInput(nv, to)
 	}
 	a.compressLabel(d, st)
 }

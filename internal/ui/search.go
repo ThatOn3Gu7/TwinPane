@@ -182,7 +182,6 @@ func (sv *searchView) queryChanged() {
 
 func (a *App) searchKey(msg tea.KeyMsg) tea.Cmd {
 	sv := a.search
-	s := msg.String()
 	rows := a.searchRows()
 	defer func() {
 		if a.search == sv {
@@ -190,34 +189,34 @@ func (a *App) searchKey(msg tea.KeyMsg) tea.Cmd {
 		}
 	}()
 	// keys that work the same in the text field and in the list
-	switch s {
-	case "ctrl+c":
+	switch {
+	case a.is("browse.interrupt", msg):
 		a.stopSearch()
 		a.quitting = true
 		return tea.Quit
-	case "esc":
+	case a.is("search.close", msg):
 		a.stopSearch()
 		return nil
-	case "ctrl+g":
+	case a.is("search.advanced", msg):
 		return a.beginAdvancedSearchFromQuick()
-	case "enter":
+	case a.is("search.jump", msg):
 		return a.searchJump()
-	case "tab", "shift+tab":
+	case a.is("search.toggleFocus", msg):
 		sv.list = !sv.list
 		return nil
-	case "up", "ctrl+p":
+	case a.is("search.up", msg):
 		sv.cursor--
 		return nil
-	case "down", "ctrl+n":
+	case a.is("search.down", msg):
 		sv.cursor++
 		return nil
-	case "pgup":
+	case a.is("search.pageUp", msg):
 		sv.cursor -= rows
 		return nil
-	case "pgdown":
+	case a.is("search.pageDown", msg):
 		sv.cursor += rows
 		return nil
-	case "f4":
+	case a.is("search.edit", msg):
 		return a.searchEdit(false)
 	}
 	if !sv.list {
@@ -231,31 +230,32 @@ func (a *App) searchKey(msg tea.KeyMsg) tea.Cmd {
 		return nil
 	}
 	if msg.Type == tea.KeyRunes && len(msg.Runes) > 1 {
-		// a burst (key repeat, typeahead): only j/k repeat
+		// a burst (key repeat, typeahead): only the movement keys repeat
 		if msg.Alt {
 			return nil
 		}
 		var cmd tea.Cmd
 		for i, r := range msg.Runes {
-			if i > 0 && (r != 'j' && r != 'k' || a.search != sv || a.dialog != nil) {
+			one := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}}
+			if i > 0 && (!a.isAny(one, "searchList.down", "searchList.up") || a.search != sv || a.dialog != nil) {
 				break
 			}
-			cmd = a.searchKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+			cmd = a.searchKey(one)
 		}
 		return cmd
 	}
-	switch s {
-	case "k":
+	switch {
+	case a.is("searchList.up", msg):
 		sv.cursor--
-	case "j":
+	case a.is("searchList.down", msg):
 		sv.cursor++
-	case "home", "g":
+	case a.is("searchList.first", msg):
 		sv.cursor = 0
-	case "end", "G":
+	case a.is("searchList.last", msg):
 		sv.cursor = len(sv.matches) - 1
-	case "right", "l":
+	case a.is("searchList.open", msg):
 		return a.searchJump()
-	case " ", "insert":
+	case a.is("searchList.select", msg):
 		if p := sv.currentPath(); p != "" {
 			if sv.marks[p] {
 				delete(sv.marks, p)
@@ -264,15 +264,15 @@ func (a *App) searchKey(msg tea.KeyMsg) tea.Cmd {
 			}
 			sv.cursor++
 		}
-	case "e":
+	case a.is("searchList.edit", msg):
 		return a.searchEdit(false)
-	case "E":
+	case a.is("searchList.editWith", msg):
 		return a.searchEdit(true)
-	case "q":
+	case a.is("searchList.close", msg):
 		a.stopSearch()
-	case "/", "i":
+	case a.is("searchList.back", msg):
 		sv.list = false
-	case "backspace":
+	case a.is("searchList.backspace", msg):
 		sv.list = false
 		if sv.input.Update(msg) {
 			sv.queryChanged()

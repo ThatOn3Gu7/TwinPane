@@ -457,7 +457,7 @@ func (a *App) clearHelpFilter() {
 // startHelpFilter puts the keyboard focus on the filter field.
 func (a *App) startHelpFilter() {
 	if a.help.filter == nil {
-		a.help.filter = newLineInput("")
+		a.help.filter = a.newInput("")
 	}
 	a.help.typing = true
 }
@@ -481,25 +481,24 @@ func (a *App) syncHelpLayout() {
 func (a *App) helpKey(msg tea.KeyMsg) tea.Cmd {
 	a.syncHelpLayout()
 	hs := &a.help
-	s := msg.String()
 	if hs.typing {
-		switch s {
-		case "esc":
+		switch {
+		case a.is("help.close", msg):
 			a.clearHelpFilter()
-		case "enter":
+		case a.is("help.confirm", msg):
 			hs.typing = false
 			if strings.TrimSpace(hs.filter.Value()) == "" {
 				a.clearHelpFilter()
 			}
-		case "up":
+		case a.is("help.up", msg):
 			a.helpScroll--
-		case "down":
+		case a.is("help.down", msg):
 			a.helpScroll++
-		case "pgup":
+		case a.is("help.pageUp", msg):
 			a.helpScroll -= a.helpPage()
-		case "pgdown":
+		case a.is("help.pageDown", msg):
 			a.helpScroll += a.helpPage()
-		case "backspace", "ctrl+h":
+		case msg.String() == "backspace" || msg.String() == "ctrl+h":
 			if hs.filter.Value() == "" {
 				a.clearHelpFilter() // Backspace on an empty field leaves it
 				return nil
@@ -515,33 +514,33 @@ func (a *App) helpKey(msg tea.KeyMsg) tea.Cmd {
 		return nil
 	}
 	switch {
-	case s == "/":
+	case a.is("help.filter", msg):
 		a.startHelpFilter()
 		return nil
-	case s == "esc" && hs.filter != nil:
+	case a.is("help.close", msg) && hs.filter != nil:
 		a.clearHelpFilter() // the first Esc clears the filter, the next closes
 		return nil
 	}
 	// The scroll keys scroll when there is more to see; any other key
 	// closes the help.
 	if a.helpScrollable {
-		switch s {
-		case "up", "k":
+		switch {
+		case a.is("help.up", msg):
 			a.helpScroll--
 			return nil
-		case "down", "j":
+		case a.is("help.down", msg):
 			a.helpScroll++
 			return nil
-		case "pgup", "ctrl+b":
+		case a.is("help.pageUp", msg):
 			a.helpScroll -= a.helpPage()
 			return nil
-		case "pgdown", "ctrl+f", " ":
+		case a.is("help.pageDown", msg):
 			a.helpScroll += a.helpPage()
 			return nil
-		case "home", "g":
+		case a.is("help.first", msg):
 			a.helpScroll = 0
 			return nil
-		case "end", "G":
+		case a.is("help.last", msg):
 			a.helpScroll = 1 << 20 // clamped by helpView
 			return nil
 		}

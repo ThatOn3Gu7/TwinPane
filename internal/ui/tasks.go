@@ -296,31 +296,31 @@ func (a *App) closeTasks() {
 }
 
 func (a *App) taskViewKey(msg tea.KeyMsg) tea.Cmd {
-	switch msg.String() {
-	case "esc", "t":
+	switch {
+	case a.is("tasks.close", msg):
 		a.closeTasks()
 		a.setStatus("", false)
-	case "up", "k":
+	case a.is("tasks.up", msg):
 		a.moveTaskSelection(-1)
-	case "down", "j":
+	case a.is("tasks.down", msg):
 		a.moveTaskSelection(1)
-	case "[":
+	case a.is("tasks.prevRun", msg):
 		a.jumpTaskRun(false) // the previous (older) run section
-	case "]":
+	case a.is("tasks.nextRun", msg):
 		a.jumpTaskRun(true) // the next (newer) run section
-	case "pgup", "ctrl+b":
+	case a.is("tasks.pageUp", msg):
 		a.tasks.detailOffset = max(0, a.tasks.detailOffset-5)
-	case "pgdown", "ctrl+f":
+	case a.is("tasks.pageDown", msg):
 		a.tasks.detailOffset += 5
-	case "enter", "w":
+	case a.is("tasks.watch", msg):
 		return a.watchSelectedTask() // live.go
-	case "c", "ctrl+c":
+	case a.is("tasks.cancel", msg):
 		return a.cancelSelectedEntry()
-	case "x":
+	case a.is("tasks.forget", msg):
 		return a.clearFinishedEntries()
-	case "+", "=":
+	case a.is("tasks.moreRuns", msg):
 		a.changeHistoryRetention(1)
-	case "-", "_":
+	case a.is("tasks.fewerRuns", msg):
 		a.changeHistoryRetention(-1)
 	}
 	return nil

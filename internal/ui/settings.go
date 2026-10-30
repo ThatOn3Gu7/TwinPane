@@ -72,6 +72,7 @@ const (
 	rowActivity
 	rowActivitySize
 	rowActivityDays
+	rowKeybindings
 )
 
 // settingsRow is one preference in the list. group is printed as a section
@@ -139,6 +140,9 @@ func (a *App) settingsRows() []settingsRow {
 			value: fmt.Sprintf("%d KiB", a.actMaxKiB), after: "keeps 3 older files"},
 		{id: rowActivityDays, label: "Delete rotated after",
 			value: plural(a.actKeepDays, "day")},
+
+		{id: rowKeybindings, group: "Keys", label: "Key bindings",
+			value: a.bindingsSummary(), after: a.bindingsDetail() + " · Enter reloads"},
 	}
 	return rows
 }
@@ -262,34 +266,33 @@ func (a *App) settingsKey(msg tea.KeyMsg) tea.Cmd {
 	if a.settingsScr.sel >= len(rows) {
 		a.settingsScr.sel = len(rows) - 1
 	}
-	s := msg.String()
 	page := a.settingsScr.viewport
 	if page < 1 {
 		page = 1
 	}
-	switch s {
-	case "esc", "f9", "ctrl+s":
+	switch {
+	case a.is("settings.close", msg):
 		return a.closeSettings()
-	case "up", "k":
+	case a.is("settings.up", msg):
 		a.settingsScr.sel--
-	case "down", "j":
+	case a.is("settings.down", msg):
 		a.settingsScr.sel++
-	case "pgup":
+	case a.is("settings.pageUp", msg):
 		a.settingsScr.sel -= page
-	case "pgdown":
+	case a.is("settings.pageDown", msg):
 		a.settingsScr.sel += page
-	case "home", "g":
+	case a.is("settings.first", msg):
 		a.settingsScr.sel = 0
-	case "end", "G":
+	case a.is("settings.last", msg):
 		a.settingsScr.sel = len(rows) - 1
-	case "left", "h":
+	case a.is("settings.prev", msg):
 		return a.settingsAdjust(rows, -1)
-	case "right", "l", " ", "enter":
+	case a.is("settings.next", msg):
 		return a.settingsAdjust(rows, +1)
-	case "?":
+	case a.is("settings.help", msg):
 		a.openHelp()
 		return nil
-	case "r":
+	case a.is("settings.reset", msg):
 		return a.settingsResetConfirm()
 	}
 	if a.settingsScr.sel < 0 {
@@ -380,6 +383,10 @@ func (a *App) settingsAdjust(rows []settingsRow, delta int) tea.Cmd {
 			li = 0
 		}
 		a.formatLevels[f.ID] = li
+	case rowKeybindings:
+		// A change in either direction reloads the file: the row has no
+		// value to cycle, only the deliberate "read it again" action.
+		return a.reloadBindings()
 	case rowActivity:
 		// The log is written by the same process that edits this preference,
 		// so the new mode takes effect at once.

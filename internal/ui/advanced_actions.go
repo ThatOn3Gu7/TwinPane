@@ -297,7 +297,7 @@ func (a *App) advancedTransfer(t advancedTarget, kind ops.Kind) tea.Cmd {
 // renamed entry (the query and the other results stay as they are).
 func (a *App) renameAdvancedResult(t advancedTarget) tea.Cmd {
 	dir, old := t.parent(), t.name
-	in := newLineInput(old)
+	in := a.newInput(old)
 	if ext := filepath.Ext(old); !t.isDir && ext != "" && ext != old {
 		in.SetCursor(len([]rune(old)) - len([]rune(ext))) // cursor before the extension
 	}

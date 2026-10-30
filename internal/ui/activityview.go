@@ -304,47 +304,47 @@ func (a *App) activityKey(msg tea.KeyMsg) tea.Cmd {
 		return a.activityTypingKey(msg)
 	}
 	page := max(1, v.listH-1)
-	switch msg.String() {
-	case "esc", "L", "q":
+	switch {
+	case a.is("activity.close", msg):
 		return a.closeActivityView()
-	case "up", "k":
+	case a.is("activity.up", msg):
 		v.sel--
-	case "down", "j":
+	case a.is("activity.down", msg):
 		v.sel++
-	case "pgup", "ctrl+b":
+	case a.is("activity.pageUp", msg):
 		v.sel -= page
-	case "pgdown", "ctrl+f":
+	case a.is("activity.pageDown", msg):
 		v.sel += page
-	case "home", "g":
+	case a.is("activity.first", msg):
 		v.sel = 0
-	case "end", "G":
+	case a.is("activity.last", msg):
 		v.sel = len(v.rows) - 1
-	case "c":
+	case a.is("activity.category", msg):
 		v.catSel = v.catSel.Next(1)
 		v.rebuild()
 		a.setStatus("activity: "+v.catSel.Label(), false)
-	case "l":
+	case a.is("activity.level", msg):
 		v.levelSel = v.levelSel.Next(1)
 		v.rebuild()
 		a.setStatus("activity: "+v.levelSel.Label(), false)
-	case "[":
+	case a.is("activity.prevRun", msg):
 		a.activityJumpRun(-1)
-	case "]":
+	case a.is("activity.nextRun", msg):
 		a.activityJumpRun(+1)
-	case "enter", " ":
+	case a.is("activity.details", msg):
 		v.detail = !v.detail
-	case "/":
+	case a.is("activity.filter", msg):
 		v.typing = true
 		v.typed = v.query
-	case "x":
+	case a.is("activity.clear", msg):
 		v.query, v.typed = "", ""
 		v.catSel, v.levelSel = activity.FilterAll, activity.LevelsAll
 		v.rebuild()
 		a.setStatus("activity: all entries", false)
-	case "r":
+	case a.is("activity.reload", msg):
 		v.reload(a)
 		a.setStatus("activity: reloaded", false)
-	case "?":
+	case a.is("activity.help", msg):
 		a.openHelp()
 	}
 	a.activityNormalize()

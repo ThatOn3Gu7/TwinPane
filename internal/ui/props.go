@@ -161,30 +161,29 @@ func (a *App) closeProps() {
 
 func (a *App) propsKey(msg tea.KeyMsg) tea.Cmd {
 	pv := a.props
-	s := msg.String()
-	switch s {
-	case "ctrl+c":
+	switch {
+	case a.is("browse.interrupt", msg):
 		a.quitting = true
 		return tea.Quit
-	case "esc":
+	case a.is("props.close", msg):
 		a.closeProps()
 		return nil
-	case "tab":
+	case a.is("props.nextField", msg):
 		pv.cycle(1)
 		return nil
-	case "shift+tab":
+	case a.is("props.prevField", msg):
 		pv.cycle(-1)
 		return nil
 	}
 	switch {
 	case pv.focus == pfName && !pv.readOnly():
-		switch s {
-		case "enter":
+		switch {
+		case a.is("props.apply", msg):
 			return a.propsApply()
-		case "down":
+		case a.is("props.down", msg):
 			pv.cycle(1)
 			return nil
-		case "up":
+		case a.is("props.up", msg):
 			return nil
 		}
 		if pv.name.Update(msg) {
@@ -194,27 +193,27 @@ func (a *App) propsKey(msg tea.KeyMsg) tea.Cmd {
 	case pv.focus >= pfCell0 && pv.focus < pfCell0+9:
 		cell := pv.focus - pfCell0
 		r, c := cell/3, cell%3
-		switch s {
-		case " ", "x":
+		switch {
+		case a.is("props.toggle", msg):
 			pv.perm ^= permBit(cell)
 			pv.msg = ""
-		case "enter":
+		case a.is("props.apply", msg):
 			return a.propsApply()
-		case "left", "h":
+		case a.is("props.left", msg):
 			if c > 0 {
 				pv.focus--
 			}
-		case "right", "l":
+		case a.is("props.right", msg):
 			if c < 2 {
 				pv.focus++
 			}
-		case "up", "k":
+		case a.is("props.up", msg):
 			if r > 0 {
 				pv.focus -= 3
 			} else {
 				pv.focus = pfName
 			}
-		case "down", "j":
+		case a.is("props.down", msg):
 			if r < 2 {
 				pv.focus += 3
 			} else {
@@ -223,14 +222,14 @@ func (a *App) propsKey(msg tea.KeyMsg) tea.Cmd {
 		}
 		return nil
 	default: // buttons
-		switch s {
-		case "enter", " ":
+		switch {
+		case a.is("props.press", msg):
 			if pv.focus == pfApply {
 				return a.propsApply()
 			}
 			a.closeProps()
 			return nil
-		case "left", "right", "h", "l":
+		case a.is("props.left", msg), a.is("props.right", msg):
 			if !pv.readOnly() {
 				if pv.focus == pfApply {
 					pv.focus = pfClose
@@ -238,7 +237,7 @@ func (a *App) propsKey(msg tea.KeyMsg) tea.Cmd {
 					pv.focus = pfApply
 				}
 			}
-		case "up", "k":
+		case a.is("props.up", msg):
 			if !pv.readOnly() {
 				if pv.info.ChmodOK {
 					pv.focus = pfCell0 + 6
@@ -248,11 +247,11 @@ func (a *App) propsKey(msg tea.KeyMsg) tea.Cmd {
 			} else {
 				pv.scroll--
 			}
-		case "down", "j":
+		case a.is("props.down", msg):
 			if pv.readOnly() {
 				pv.scroll++
 			}
-		case "q":
+		case a.is("props.closeReadOnly", msg):
 			if pv.readOnly() {
 				a.closeProps()
 			}

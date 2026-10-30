@@ -842,7 +842,7 @@ func (a *App) deleteDialog(s *opSession, plan ops.DeletePlan) {
 	}
 	d.onEsc = cancelDel
 	if typed {
-		d.input = newLineInput("")
+		d.input = a.newInput("")
 		d.inputLabel = `Type "delete" and press Enter to confirm:`
 		d.footer = "Esc (or Enter with an empty field) cancels"
 		d.onSubmit = func(a *App, v string) tea.Cmd {
@@ -972,7 +972,7 @@ func (a *App) renameOne(e fsys.Entry) tea.Cmd {
 	p := a.ActivePanel()
 	other := a.panels[1-a.active]
 	dir, old := p.Path(), e.Name
-	in := newLineInput(old)
+	in := a.newInput(old)
 	if ext := filepath.Ext(old); !e.IsDir && ext != "" && ext != old {
 		in.SetCursor(len([]rune(old)) - len([]rune(ext))) // cursor before the extension
 	}

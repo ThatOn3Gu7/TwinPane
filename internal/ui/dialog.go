@@ -231,7 +231,7 @@ func (d *dialog) cancel(a *App) tea.Cmd {
 func (a *App) dialogKey(msg tea.KeyMsg) tea.Cmd {
 	d := a.dialog
 	s := msg.String()
-	if s == "esc" || s == "ctrl+c" {
+	if a.is("dialog.cancel", msg) {
 		return d.cancel(a)
 	}
 	for _, sel := range d.selectors {
@@ -250,7 +250,7 @@ func (a *App) dialogKey(msg tea.KeyMsg) tea.Cmd {
 		return a.filterKey(d, msg)
 	}
 	if d.input != nil {
-		if s == "enter" {
+		if a.is("dialog.confirm", msg) {
 			return d.onSubmit(a, d.input.Value())
 		}
 		for _, t := range d.inToggles {
@@ -271,32 +271,32 @@ func (a *App) dialogKey(msg tea.KeyMsg) tea.Cmd {
 	if d.list != nil {
 		return a.listKey(d, msg)
 	}
-	switch s {
-	case "enter":
+	switch {
+	case a.is("dialog.confirm", msg):
 		if len(d.buttons) > 0 {
 			return d.buttons[d.focus].run(a)
 		}
 		return d.cancel(a)
-	case "tab", "right":
+	case a.is("dialog.next", msg):
 		if n := len(d.buttons); n > 0 {
 			d.focus = (d.focus + 1) % n
 		}
 		return nil
-	case "shift+tab", "left":
+	case a.is("dialog.prev", msg):
 		if n := len(d.buttons); n > 0 {
 			d.focus = (d.focus + n - 1) % n
 		}
 		return nil
-	case "up", "k":
+	case a.is("dialog.scrollUp", msg):
 		d.scroll--
 		return nil
-	case "down", "j":
+	case a.is("dialog.scrollDown", msg):
 		d.scroll++
 		return nil
-	case "pgup":
+	case a.is("dialog.pageUp", msg):
 		d.scroll -= 10
 		return nil
-	case "pgdown", " ":
+	case a.is("dialog.pageDown", msg):
 		d.scroll += 10
 		return nil
 	}
@@ -326,25 +326,25 @@ func (a *App) listKey(d *dialog, msg tea.KeyMsg) tea.Cmd {
 			}
 		}
 	}
-	s := msg.String()
-	switch s {
-	case "up", "k", "shift+tab", "ctrl+p":
+	switch {
+	case a.is("list.up", msg):
 		move(-1)
-	case "down", "j", "tab", "ctrl+n":
+	case a.is("list.down", msg):
 		move(1)
-	case "home", "g":
+	case a.is("list.first", msg):
 		d.listCursor = n - 1
 		move(1)
-	case "end", "G":
+	case a.is("list.last", msg):
 		d.listCursor = 0
 		move(-1)
-	case "enter", "right", "l":
+	case a.is("list.open", msg):
 		if n > 0 && !d.list[d.listCursor].disabled {
 			return d.onPick(a, d.listCursor)
 		}
-	case "q":
+	case a.is("list.close", msg):
 		return d.cancel(a)
 	default:
+		s := msg.String()
 		for _, act := range d.listActions {
 			if s == act.key && (!act.needItem || n > 0) {
 				return act.run(a, d.listCursor)
@@ -386,32 +386,32 @@ func (a *App) filterKey(d *dialog, msg tea.KeyMsg) tea.Cmd {
 			}
 		}
 	}
-	switch msg.String() {
-	case "up", "ctrl+p":
+	switch {
+	case a.is("filterList.up", msg):
 		move(-1)
 		return nil
-	case "down", "ctrl+n", "tab":
+	case a.is("filterList.down", msg):
 		move(1)
 		return nil
-	case "pgup":
+	case a.is("filterList.pageUp", msg):
 		for i := 0; i < 8; i++ {
 			move(-1)
 		}
 		return nil
-	case "pgdown":
+	case a.is("filterList.pageDown", msg):
 		for i := 0; i < 8; i++ {
 			move(1)
 		}
 		return nil
-	case "home":
+	case a.is("filterList.first", msg):
 		d.listCursor = n - 1
 		move(1)
 		return nil
-	case "end":
+	case a.is("filterList.last", msg):
 		d.listCursor = 0
 		move(-1)
 		return nil
-	case "enter":
+	case a.is("filterList.pick", msg):
 		if n > 0 && !d.list[d.listCursor].disabled {
 			return d.onPick(a, d.listCursor)
 		}

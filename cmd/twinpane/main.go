@@ -12,6 +12,7 @@ import (
 	"github.com/ThatOn3Gu7/TwinPane/internal/activity"
 	"github.com/ThatOn3Gu7/TwinPane/internal/editor"
 	"github.com/ThatOn3Gu7/TwinPane/internal/history"
+	"github.com/ThatOn3Gu7/TwinPane/internal/keybinding"
 	"github.com/ThatOn3Gu7/TwinPane/internal/settings"
 	"github.com/ThatOn3Gu7/TwinPane/internal/ui"
 )
@@ -72,6 +73,12 @@ func main() {
 		opts.HistoryPathError = histErr.Error()
 	} else {
 		opts.HistoryPath = histPath
+	}
+	bindPath, bindErr := keybinding.DefaultPath()
+	if bindErr != nil {
+		opts.KeybindingPathError = bindErr.Error()
+	} else {
+		opts.KeybindingPath = bindPath
 	}
 	// The activity log: a file next to settings.json unless --log/TWINPANE_LOG
 	// says otherwise. --no-log and --log-mode off both mean "write nothing".

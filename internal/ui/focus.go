@@ -445,7 +445,7 @@ func (a *App) openGoTo() tea.Cmd {
 		text("A local folder (/home/me or ~/notes) or a remote location (box:photos)."),
 		path(cur),
 	}
-	d.input, d.inputLabel = newLineInput(cur), "Path:"
+	d.input, d.inputLabel = a.newInput(cur), "Path:"
 	d.footer = "Enter go · Esc cancel"
 	d.onSubmit = func(a *App, v string) tea.Cmd { return a.goToPath(v) }
 	a.dialog = d

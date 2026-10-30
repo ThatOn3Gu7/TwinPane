@@ -7,6 +7,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/mattn/go-runewidth"
 
+	"github.com/ThatOn3Gu7/TwinPane/internal/keybinding"
 	"github.com/ThatOn3Gu7/TwinPane/internal/theme"
 )
 
@@ -16,11 +17,30 @@ import (
 type lineInput struct {
 	runes []rune
 	pos   int // cursor position in runes
+	// binds is the active key binding set (nil keeps the defaults). The
+	// editing keys (the input section of keybinding.json) are looked up
+	// here, so a rebound cursor key works in every text field.
+	binds *keybinding.Set
 }
 
 func newLineInput(s string) *lineInput {
 	r := []rune(s)
 	return &lineInput{runes: r, pos: len(r)}
+}
+
+// newInput is the App-bound constructor: the field follows keybinding.json.
+func (a *App) newInput(s string) *lineInput {
+	in := newLineInput(s)
+	in.binds = a.binds
+	return in
+}
+
+// matches reports whether msg means the named input action.
+func (in *lineInput) matches(action string, msg tea.KeyMsg) bool {
+	if in.binds != nil {
+		return in.binds.Matches(action, msg)
+	}
+	return keybinding.Default().Matches(action, msg)
 }
 
 func (in *lineInput) Value() string { return string(in.runes) }
@@ -62,30 +82,30 @@ func (in *lineInput) Update(msg tea.KeyMsg) bool {
 		in.insert(msg.Runes)
 		return true
 	}
-	switch msg.String() {
-	case "backspace", "ctrl+h":
+	switch {
+	case in.matches("input.backspace", msg):
 		if in.pos > 0 {
 			in.runes = append(in.runes[:in.pos-1], in.runes[in.pos:]...)
 			in.pos--
 		}
-	case "delete", "ctrl+d":
+	case in.matches("input.delete", msg):
 		if in.pos < len(in.runes) {
 			in.runes = append(in.runes[:in.pos], in.runes[in.pos+1:]...)
 		}
-	case "left", "ctrl+b":
+	case in.matches("input.left", msg):
 		in.SetCursor(in.pos - 1)
-	case "right", "ctrl+f":
+	case in.matches("input.right", msg):
 		in.SetCursor(in.pos + 1)
-	case "home", "ctrl+a":
+	case in.matches("input.home", msg):
 		in.pos = 0
-	case "end", "ctrl+e":
+	case in.matches("input.end", msg):
 		in.pos = len(in.runes)
-	case "ctrl+u":
+	case in.matches("input.deleteToStart", msg):
 		in.runes = append([]rune(nil), in.runes[in.pos:]...)
 		in.pos = 0
-	case "ctrl+k":
+	case in.matches("input.deleteToEnd", msg):
 		in.runes = in.runes[:in.pos]
-	case "ctrl+w", "alt+backspace":
+	case in.matches("input.deleteWord", msg):
 		i := in.pos
 		for i > 0 && in.runes[i-1] == ' ' {
 			i--

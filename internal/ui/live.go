@@ -95,8 +95,8 @@ func (a *App) liveKey(msg tea.KeyMsg) tea.Cmd {
 		a.live = nil
 		return nil
 	}
-	switch msg.String() {
-	case "esc", "q":
+	switch {
+	case a.is("live.close", msg):
 		// Leaving does not stop anything: the task keeps running and says so
 		// in the notification instead of pretending it was cancelled.
 		running := s.active()
@@ -105,27 +105,27 @@ func (a *App) liveKey(msg tea.KeyMsg) tea.Cmd {
 			a.setStatusLevel(s.summary, taskLevel(s))
 		}
 		return cmd
-	case "t":
+	case a.is("live.tasks", msg):
 		a.live = nil
 		a.openTasks()
 		return nil
-	case "c", "ctrl+c":
+	case a.is("live.cancel", msg):
 		if !s.active() {
 			a.setStatusLevel("This task has already finished", lvlInfo)
 			return nil
 		}
 		a.cancelTask(s.id)
 		return nil
-	case "up", "k", "pgup", "ctrl+b":
+	case a.is("live.up", msg):
 		a.live.scroll = max(0, a.live.scroll-1)
 		return nil
-	case "down", "j", "pgdown", "ctrl+f":
+	case a.is("live.down", msg):
 		a.live.scroll++
 		return nil
-	case "?":
+	case a.is("live.help", msg):
 		a.openHelp()
 		return nil
-	case "enter":
+	case a.is("live.confirm", msg):
 		if !s.active() {
 			return a.closeLive(false)
 		}

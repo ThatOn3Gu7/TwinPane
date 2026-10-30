@@ -301,7 +301,7 @@ func (a *App) beginExtract(all bool) tea.Cmd {
 	d.body = append(d.body, blank(),
 		hint("Default destination is the source archive's folder; whole archives use a same-named subfolder. Edit the path to choose another folder. Missing folders are created, and existing files are never overwritten without asking."),
 		hint("Unsafe paths and symbolic links in archives are never extracted."))
-	d.input = newLineInput(defDest)
+	d.input = a.newInput(defDest)
 	d.inputLabel = verb + " into folder:"
 	d.footer = "Enter " + strings.ToLower(verb) + " · Esc cancel"
 	srcIdx := a.active

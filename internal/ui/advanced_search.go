@@ -142,7 +142,7 @@ func (a *App) beginAdvancedSearch(root string, panelIndex int, query string, sho
 	ctx, cancel := context.WithCancel(context.Background())
 	sv := &advancedSearchView{
 		id: a.advancedSeq, panel: panelIndex, root: root, showHidden: showHidden,
-		mode: advancedFilenameMode, input: newLineInput(query), indexing: true,
+		mode: advancedFilenameMode, input: a.newInput(query), indexing: true,
 		ctx: ctx, cancel: cancel, events: make(chan advancedSearchEvent, 16), started: a.now(),
 	}
 	a.advancedSearch = sv
@@ -494,42 +494,42 @@ func (a *App) advancedSearchKey(msg tea.KeyMsg) tea.Cmd {
 	if v == nil {
 		return nil
 	}
-	switch msg.String() {
-	case "ctrl+c":
+	switch {
+	case a.is("browse.interrupt", msg):
 		a.closeAdvancedSearch()
 		a.quitting = true
 		return tea.Quit
-	case "esc":
+	case a.is("advanced.close", msg):
 		a.closeAdvancedSearch()
 		return nil
-	case "ctrl+t":
+	case a.is("advanced.mode", msg):
 		a.toggleAdvancedSearchMode()
 		return nil
-	case "ctrl+a":
+	case a.is("advanced.actions", msg):
 		// The only action shortcut: a contextual menu, so every printable
 		// key still belongs to the query. Home still moves the field cursor.
 		return a.openAdvancedActions()
-	case "?", "f1":
+	case a.is("advanced.help", msg):
 		a.openHelp()
 		return nil
-	case "enter":
+	case a.is("advanced.open", msg):
 		return a.inspectAdvancedResult()
-	case "up", "ctrl+p":
+	case a.is("advanced.up", msg):
 		a.moveAdvancedCursor(-1)
 		return nil
-	case "down", "ctrl+n":
+	case a.is("advanced.down", msg):
 		a.moveAdvancedCursor(1)
 		return nil
-	case "pgup":
+	case a.is("advanced.pageUp", msg):
 		a.moveAdvancedCursor(-a.advancedSearchResultRows())
 		return nil
-	case "pgdown":
+	case a.is("advanced.pageDown", msg):
 		a.moveAdvancedCursor(a.advancedSearchResultRows())
 		return nil
-	case "home":
+	case a.is("advanced.first", msg):
 		a.setAdvancedCursor(0)
 		return nil
-	case "end":
+	case a.is("advanced.last", msg):
 		a.setAdvancedCursor(a.advancedResultCount() - 1)
 		return nil
 	}
