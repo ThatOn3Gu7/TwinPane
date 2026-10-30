@@ -1686,7 +1686,13 @@ they have room to breathe:
 - **Notifications** — the corner the pop-up uses (bottom-right by default)
   and how long it stays (2–10 seconds). New notifications follow the values
   immediately; the current one keeps its place.
-- **Appearance** — theme presets: `default`, `green`, `amber`. The choice
+- **Appearance** — theme presets: `default`, `green`, `amber`, `violet`,
+  `cyan`, `rose`, `sand`, `mono`, `light`, `daylight` and `plum`. The first
+  eight are dark like the default; `light`, `daylight` and `plum` are built for
+  a light terminal background and swap the greys for dark text, pale borders
+  and deeper success/warning/error colours. A preset chooses only its accent
+  (borders, directories, badges) and its cursor colour, so every theme keeps
+  the default's layout and the meaning of the outcome colours, and the choice
   repaints the whole UI at once.
 - **Editor & viewer** — the preferred editor command (empty: `$VISUAL`,
   `$EDITOR`, then the first detected editor; a value TwinPane cannot parse
@@ -2064,6 +2070,6 @@ including the end-to-end test scripts, are in
 - Storage overview (`i`): one filesystem at a time (the active panel's, plus
   the other panel's if different); it is separate from the recursive local
   folder-size analysis (`A`). There is no list of all mounts.
-- Not included: configurable keys, themes of your own (Settings → *Appearance*
-  offers `default`, `green` and `amber`), or folder-size analysis of cloud
-  remotes and archive contents.
+- Not included: themes of your own (Settings → *Appearance* offers eleven
+  presets, the last three for light terminals), or folder-size analysis of
+  cloud remotes and archive contents.

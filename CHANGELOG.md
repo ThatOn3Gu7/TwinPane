@@ -13,6 +13,8 @@ Every key TwinPane uses is now listed in `keybinding.json` and can be changed
 there — the panels, the overlays, the menus, the dialogs and the text fields.
 Defaults do not move: an untouched installation behaves exactly as before, and
 a missing file is written with the complete default list on first start.
+Settings → *Appearance* also grew from three theme presets to eleven, three of
+them built for light terminals, again without changing the default look.
 
 ### Added
 - **Custom key bindings.** `keybinding.json` lives next to `settings.json`
@@ -39,6 +41,15 @@ a missing file is written with the complete default list on first start.
   overlays and text fields all read the active set, so a rebound key works and
   the old key stops; labels are drawn from the same set, and a hint or menu row
   tapped on a touch screen sends the configured key.
+- **More themes.** Settings → *Appearance* cycles through eleven presets
+  instead of three: `default`, `green`, `amber`, `violet`, `cyan`, `rose`,
+  `sand`, `mono`, `light`, `daylight` and `plum`. The first eight are dark
+  themes like the original; the last three are built for a light terminal, with
+  dark text, soft borders and deeper outcome colours so nothing disappears on a
+  white background. A preset now only chooses its accent and cursor colour, so
+  every theme keeps the same greys and outcome colours, the default is
+  pixel-for-pixel what it was, and the choice still repaints the whole UI at
+  once.
 - **Settings → Keys.** A row that names the file and its state (all defaults,
   how many keys differ, or why the file could not be used) and reloads it on
   `Enter`, without a restart, reporting the result on the status line and in
@@ -48,6 +59,11 @@ a missing file is written with the complete default list on first start.
 - The browse key map, the focus-mode toggle, the preview pane and Go to are
   bindings now instead of hard-coded key strings, and the activity log records
   the action's name rather than the old key.
+- A theme preset now only picks its accent and cursor colour; the greys,
+  borders and outcome colours come from a shared scheme, so one preset cannot
+  end up unreadable on the background it was meant for. The path a dialog
+  shows takes the preset's cursor colour, so it is no longer blue in `green`
+  and `amber`; `default` is unchanged.
 - The help screen, hint bar and action menu take their labels from the active
   file; the defaults (`c/F5`, `m/F6`, `Esc`, `^L`, `Space`, `PgUp`, …) are
   unchanged.

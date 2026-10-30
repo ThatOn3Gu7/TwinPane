@@ -655,6 +655,28 @@ Four new packages with no UI dependency. The TUI code lives in four
   inner width with a blank line between sections. The command passes the path through
   `Options.SettingsPath` so tests can use an isolated file.
 
+### Theme presets (`internal/theme`)
+- `Theme` holds every Lip Gloss style. `build` fills it from a `scheme` — the
+  greys and the outcome colours (text, soft, muted, dim, faint, edge, lineNo,
+  selected, input, button, chip, backdrop, ok/warn/err/link/exec and the
+  `on…` foregrounds that sit on a filled surface) — plus a `palette` for what
+  a preset actually chooses: the accent and the cursor colour. `darkScheme`
+  is the historic look (`scheme.light` false), `lightScheme` is for a light
+  terminal: dark text on the terminal background, pale borders and deeper
+  green/amber/red. A `Theme` built as a literal still works:
+  `SelectedRow` falls back to `darkScheme` when no scheme was recorded.
+- `presets` is the only list: name, palette and which scheme. `PresetNames`
+  returns it in settings order (the Settings row cycles through it),
+  `Preset(name)`/`Default()` build one, and an unknown or empty name is
+  reported so `ui` can fall back to `Default()`.
+- `theme_test.go` holds the presets to it: names are unique and `default`
+  stays first, every preset builds, the default keeps the original accent and
+  greys, every preset's text, muted text, accent, chip, cursor row, path bar,
+  text field, button, selection and outcome colours clear a WCAG contrast
+  ratio against the background it assumes, light presets really use
+  `lightScheme`, and `SelectedRow` keeps marked rows readable. Adding a theme
+  is one line in `presets` plus that test staying green.
+
 ### Key bindings (`internal/keybinding`, `ui/keybindings.go`)
 - `Actions()` is the registry: every key TwinPane uses, in file order, grouped
   by section (`browse`, `dialog`, `list`, `filterList`, `input`, `viewer`,
@@ -1254,8 +1276,12 @@ and conflict prompts still apply per item.
   `search.ParseQuery`.
 - **Preview pane**: `textview` has no UI dependency and could feed a
   one-panel preview.
-- **Keys / themes**: `ui.KeyMap` and `theme.Theme` are plain structs, ready to
-  be loaded from a config file.
+- **Keys / themes**: `ui.KeyMap` is built from `keybinding.json` and every
+  overlay dispatches through it, so a new action only needs a registry entry.
+  `theme.Theme` is still a plain struct and `theme.presets` is the only list of
+  presets; a user-supplied theme would need a loader in `internal/theme` next
+  to it (the scheme/palette split already carries the values a file would
+  set).
 
 ## Testing
 

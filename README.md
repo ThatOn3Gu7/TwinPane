@@ -265,8 +265,9 @@ The [user guide](docs/USER_GUIDE.md) describes every feature in detail.
 - `--no-mouse` turns touch and mouse input off, so the terminal can select
   text normally.
 
-Not included: configurable keys, themes of your own (there are three presets),
-and editing archives in place.
+Not included: themes of your own (eleven presets ship instead — `default`,
+`green`, `amber`, `violet`, `cyan`, `rose`, `sand`, `mono`, and `light`,
+`daylight`, `plum` for light terminals) and editing archives in place.
 
 ### New in v0.10.0
 
