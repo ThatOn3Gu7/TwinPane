@@ -148,8 +148,8 @@ func TestFolderSizeHelpAndSelectionErrors(t *testing.T) {
 	h.focus("a.txt")
 	h.press("space")
 	h.press("A")
-	if h.a.folderSize != nil || !strings.Contains(h.status(), "Select a directory") {
-		t.Fatalf("file selection should be refused, overlay=%v status=%q", h.a.folderSize, h.status())
+	if h.a.folderSize != nil || !strings.Contains(h.reported(), "Select a directory") {
+		t.Fatalf("file selection should be refused, overlay=%v reported=%q", h.a.folderSize, h.reported())
 	}
 	h.press("u")
 	h.press("A")

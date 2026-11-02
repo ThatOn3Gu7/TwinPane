@@ -1184,8 +1184,8 @@ func TestAdvancedActionContentMoveAndDeletePruneMatches(t *testing.T) {
 	if h.a.dialog != nil {
 		t.Fatalf("Ctrl+A on an empty list opened %+v", h.a.dialog)
 	}
-	if st := h.status(); h.a.statusLevel != lvlWarn || !strings.Contains(st, "No content match selected") {
-		t.Fatalf("status %q level %v", st, h.a.statusLevel)
+	if st := h.reported(); h.reportedLevel() != lvlWarn || !strings.Contains(st, "No content match selected") {
+		t.Fatalf("reported %q level %v", st, h.reportedLevel())
 	}
 	if h.a.advancedSearch != v {
 		t.Fatal("the refused action closed the search")

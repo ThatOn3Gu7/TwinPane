@@ -72,7 +72,7 @@ func (a *App) openProps() tea.Cmd {
 		}
 	}
 	if !ok {
-		a.setStatus("no item: put the cursor on a file or folder for its properties", true)
+		a.noteStatus(lvlErr, "no item: put the cursor on a file or folder for its properties")
 		return nil
 	}
 	pv := &propsView{panel: a.active, openedAt: a.now(), focus: pfClose}
@@ -81,7 +81,7 @@ func (a *App) openProps() tea.Cmd {
 		inner, ok := arc.InnerOf(e.Path)
 		ent, found := arc.Lookup(inner)
 		if !ok || !found {
-			a.setStatus("cannot read this archive entry", true)
+			a.noteStatus(lvlErr, "cannot read this archive entry")
 			return nil
 		}
 		pv.arc, pv.arcEntry, pv.arcName = arc, ent, e.Name
@@ -90,14 +90,14 @@ func (a *App) openProps() tea.Cmd {
 	}
 	in, err := fileinfo.Stat(e.Path)
 	if err != nil {
-		a.setStatus("cannot read the properties: "+errText(err), true)
+		a.noteStatus(lvlErr, "cannot read the properties: "+errText(err))
 		return nil
 	}
 	pv.info = in
 	pv.reset()
 	pv.focus = pfName
 	a.props = pv
-	a.setStatus("", false)
+	a.setStatusRow("", lvlInfo)
 	return nil
 }
 
@@ -155,7 +155,7 @@ func (a *App) closeProps() {
 	pv := a.props
 	a.props = nil
 	if pv != nil && pv.dirty() {
-		a.setStatusLevel("Properties closed — the unapplied changes were discarded", lvlWarn)
+		a.noteStatus(lvlWarn, "Properties closed — the unapplied changes were discarded")
 	}
 }
 

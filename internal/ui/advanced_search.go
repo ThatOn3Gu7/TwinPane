@@ -113,7 +113,7 @@ func (a *App) beginAdvancedSearchFromQuick() tea.Cmd {
 	}
 	p := a.panels[sv.panel]
 	if p.InRemote() {
-		a.setStatusLevel("Advanced Search is local-only; the live filename search remains open", lvlWarn)
+		a.noteStatus(lvlWarn, "Advanced Search is local-only; the live filename search remains open")
 		return nil
 	}
 	root, panelIndex, query, showHidden := sv.root, sv.panel, sv.input.Value(), sv.hidden
@@ -123,16 +123,16 @@ func (a *App) beginAdvancedSearchFromQuick() tea.Cmd {
 
 func (a *App) beginAdvancedSearch(root string, panelIndex int, query string, showHidden bool) tea.Cmd {
 	if panelIndex < 0 || panelIndex > 1 || root == "" {
-		a.setStatusLevel("Advanced Search needs a local folder", lvlWarn)
+		a.noteStatus(lvlWarn, "Advanced Search needs a local folder")
 		return nil
 	}
 	p := a.panels[panelIndex]
 	if p.InArchive() {
-		a.setStatusLevel("Advanced Search searches local folders; leave the archive first", lvlWarn)
+		a.noteStatus(lvlWarn, "Advanced Search searches local folders; leave the archive first")
 		return nil
 	}
 	if p.InRemote() {
-		a.setStatusLevel("Advanced Search is local-only", lvlWarn)
+		a.noteStatus(lvlWarn, "Advanced Search is local-only")
 		return nil
 	}
 	if a.advancedSearch != nil {
@@ -147,7 +147,7 @@ func (a *App) beginAdvancedSearch(root string, panelIndex int, query string, sho
 	}
 	a.advancedSearch = sv
 	a.showHelp = false
-	a.setStatus("", false)
+	a.setStatusRow("", lvlInfo)
 	a.startAdvancedIndex(sv)
 	if query != "" {
 		a.scheduleFilenameFilter(true, "")
@@ -407,7 +407,7 @@ func (a *App) toggleAdvancedSearchMode() {
 		v.previewSyntax = nil
 		v.previewIsDir, v.previewLoading = false, false
 		a.startAdvancedContentSearch(query, "")
-		a.setStatus("content search · exact .git folders skipped", false)
+		a.setStatusRow("content search · exact .git folders skipped", lvlInfo)
 		return
 	}
 	if v.contentCancel != nil {
@@ -420,7 +420,7 @@ func (a *App) toggleAdvancedSearchMode() {
 		a.scheduleFilenameFilter(true, "")
 	}
 	a.refreshAdvancedPreview()
-	a.setStatus("filename search · fuzzy path matching", false)
+	a.setStatusRow("filename search · fuzzy path matching", lvlInfo)
 }
 
 func (v *advancedSearchView) currentResultPath() string {
@@ -486,7 +486,7 @@ func (a *App) closeAdvancedSearch() {
 	}
 	v.cancel()
 	a.advancedSearch = nil
-	a.setStatus("", false)
+	a.setStatusRow("", lvlInfo)
 }
 
 func (a *App) advancedSearchKey(msg tea.KeyMsg) tea.Cmd {
@@ -660,7 +660,7 @@ func (a *App) inspectAdvancedResult() tea.Cmd {
 	path, query, line := "", "", 0
 	if v.mode == advancedFilenameMode {
 		if v.cursor < 0 || v.cursor >= len(v.filenameResults) {
-			a.setStatusLevel("No result to inspect", lvlWarn)
+			a.noteStatus(lvlWarn, "No result to inspect")
 			return nil
 		}
 		index := v.filenameResults[v.cursor]
@@ -680,7 +680,7 @@ func (a *App) inspectAdvancedResult() tea.Cmd {
 		path = entry.Path
 	} else {
 		if v.cursor < 0 || v.cursor >= len(v.contentResults) {
-			a.setStatusLevel("No content match to inspect", lvlWarn)
+			a.noteStatus(lvlWarn, "No content match to inspect")
 			return nil
 		}
 		result := v.contentResults[v.cursor]
@@ -690,7 +690,7 @@ func (a *App) inspectAdvancedResult() tea.Cmd {
 		}
 	}
 	if _, err := os.Lstat(path); err != nil {
-		a.setStatusLevel(fmt.Sprintf("%s is no longer available: %s", fsys.SanitizeName(filepath.Base(path)), err), lvlWarn)
+		a.noteStatus(lvlWarn, fmt.Sprintf("%s is no longer available: %s", fsys.SanitizeName(filepath.Base(path)), err))
 		return nil
 	}
 	return a.openAdvancedViewer(path, query, line)

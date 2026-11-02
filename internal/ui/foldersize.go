@@ -125,28 +125,28 @@ func (a *App) beginFolderSize() tea.Cmd {
 	p := a.ActivePanel()
 	switch {
 	case p.InArchive():
-		a.setStatusLevel("Folder-size analysis is local-only; leave the archive first", lvlWarn)
+		a.noteStatus(lvlWarn, "Folder-size analysis is local-only; leave the archive first")
 		return nil
 	case p.InRemote():
 		a.refuseOnRemote("Folder-size analysis")
 		return nil
 	case p.Loading():
-		a.setStatusLevel("Wait for the active panel to finish loading before scanning folder sizes", lvlWarn)
+		a.noteStatus(lvlWarn, "Wait for the active panel to finish loading before scanning folder sizes")
 		return nil
 	case p.Err() != nil:
-		a.setStatusLevel("Refresh the active panel before scanning folder sizes: "+p.Err().Error(), lvlWarn)
+		a.noteStatus(lvlWarn, "Refresh the active panel before scanning folder sizes: "+p.Err().Error())
 		return nil
 	case p.Path() == "":
-		a.setStatusLevel("The active panel has no local directory to scan", lvlWarn)
+		a.noteStatus(lvlWarn, "The active panel has no local directory to scan")
 		return nil
 	case a.busy():
-		a.setStatusLevel("Wait for active file operations to finish before scanning folder sizes", lvlWarn)
+		a.noteStatus(lvlWarn, "Wait for active file operations to finish before scanning folder sizes")
 		return nil
 	}
 
 	root, label, reason := folderSizeTarget(p)
 	if reason != "" {
-		a.setStatusLevel(reason, lvlWarn)
+		a.noteStatus(lvlWarn, reason)
 		return nil
 	}
 	a.folderSizeSeq++
@@ -158,7 +158,7 @@ func (a *App) beginFolderSize() tea.Cmd {
 	}
 	a.tasks.showing = false
 	a.showHelp = false
-	a.setStatusLevel("Scanning folder sizes…", lvlInfo)
+	a.setStatusRow("Scanning folder sizes…", lvlInfo)
 	return a.startFolderSizeScan()
 }
 
@@ -215,7 +215,7 @@ func (a *App) startFolderSizeScan() tea.Cmd {
 	v.rows, v.rowsFor = nil, nil
 	events := v.events
 	rootPath := v.rootPath
-	a.setStatusLevel("Scanning folder sizes…", lvlInfo)
+	a.setStatusRow("Scanning folder sizes…", lvlInfo)
 	go func() {
 		result := foldersize.Scan(ctx, rootPath, foldersize.Options{}, func(progress foldersize.Progress) {
 			publishFolderSizeEvent(events, folderSizeEvent{id: id, progress: progress})
@@ -281,16 +281,16 @@ func (a *App) folderSizeEvent(msg folderSizeEventMsg) tea.Cmd {
 	switch result.Status {
 	case foldersize.StatusComplete:
 		a.result(lvlOK, "Scan completed", "Folder-size scan complete")
-		a.setStatus("", false)
+		a.setStatusRow("", lvlInfo)
 	case foldersize.StatusPartial:
 		a.result(lvlWarn, "Scan partially completed", "Folder-size scan is partial", "totals are lower bounds")
-		a.setStatus("", false)
+		a.setStatusRow("", lvlInfo)
 	case foldersize.StatusCancelled:
 		a.result(lvlWarn, "Scan cancelled", "Folder-size scan cancelled", "accumulated totals are incomplete")
-		a.setStatus("", false)
+		a.setStatusRow("", lvlInfo)
 	case foldersize.StatusFailed:
 		a.result(lvlErr, "Scan failed", "Folder-size scan failed", result.Error)
-		a.setStatus("", false)
+		a.setStatusRow("", lvlInfo)
 	}
 	return nil
 }
@@ -411,14 +411,14 @@ func (a *App) folderSizeKey(msg tea.KeyMsg) tea.Cmd {
 			if v.cancel != nil {
 				v.cancelling = true
 				v.cancel()
-				a.setStatusLevel("Stopping folder-size scan…", lvlWarn)
+				a.setStatusRow("Stopping folder-size scan…", lvlWarn)
 			}
 		}
 		return nil
 	}
 	if a.is("folderSize.close", msg) {
 		a.folderSize = nil
-		a.setStatus("", false)
+		a.setStatusRow("", lvlInfo)
 		return nil
 	}
 	if a.is("folderSize.help", msg) {
@@ -463,7 +463,7 @@ func (a *App) folderSizeKey(msg tea.KeyMsg) tea.Cmd {
 		v.cursor, v.offset = 0, 0
 	case a.is("folderSize.sortAllocated", msg):
 		if !foldersize.AllocatedSizeSupported() {
-			a.setStatusLevel("Allocated-size estimates are unavailable on this platform; sort by apparent size instead", lvlWarn)
+			a.noteStatus(lvlWarn, "Allocated-size estimates are unavailable on this platform; sort by apparent size instead")
 		} else {
 			v.sortMode, v.sortAlloc = folderSizeBySize, true
 			v.rowsFor = nil
@@ -487,13 +487,13 @@ func (a *App) openFolderSizeRow(rows []folderSizeRow) {
 	}
 	switch row.directory.Status {
 	case foldersize.StatusBoundarySkipped:
-		a.setStatusLevel(row.directory.FirstError+": "+row.directory.Path, lvlWarn)
+		a.noteStatus(lvlWarn, row.directory.FirstError+": "+row.directory.Path)
 		return
 	case foldersize.StatusDuplicateSkipped:
-		a.setStatusLevel("This directory was skipped because its identity was already scanned", lvlWarn)
+		a.noteStatus(lvlWarn, "This directory was skipped because its identity was already scanned")
 		return
 	case foldersize.StatusFailed:
-		a.setStatusLevel(row.directory.FirstError, lvlErr)
+		a.noteStatus(lvlErr, row.directory.FirstError)
 		return
 	}
 	v.current = row.directory

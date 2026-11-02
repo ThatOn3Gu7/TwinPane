@@ -67,7 +67,7 @@ func (a *App) keybindNotices() []string {
 // the result on the status line and in the activity log.
 func (a *App) reloadBindings() tea.Cmd {
 	if a.opts.Bindings != nil || a.opts.KeybindingPath == "" {
-		a.setStatusLevel("key bindings are not loaded from a file in this session", lvlWarn)
+		a.noteStatus(lvlWarn, "key bindings are not loaded from a file in this session")
 		return nil
 	}
 	loaded := keybinding.Load(a.opts.KeybindingPath)

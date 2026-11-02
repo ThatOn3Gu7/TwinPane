@@ -65,10 +65,10 @@ func TestBackForwardKeysAndHints(t *testing.T) {
 	if p.Path() != start {
 		t.Fatalf("a step into the past: %s", p.Path())
 	}
-	if st := h.status(); st == "" {
+	if st := h.reported(); st == "" {
 		t.Fatal("an unavailable step must be explained")
 	}
-	if h.a.statusLevel != lvlWarn {
+	if h.reportedLevel() != lvlWarn {
 		t.Fatalf("status level %v", h.a.statusLevel)
 	}
 }

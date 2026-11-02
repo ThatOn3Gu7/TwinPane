@@ -260,8 +260,8 @@ func TestRemotePreviewViewerIsReadOnly(t *testing.T) { // SIMULATED
 	if len(env.execs) != 0 {
 		t.Fatalf("an external editor was started for a remote file: %v", env.execs)
 	}
-	if s := h.status(); !strings.Contains(s, "read-only") {
-		t.Fatalf("status after e: %q", s)
+	if s := h.reported(); !strings.Contains(s, "read-only") {
+		t.Fatalf("reported after e: %q", s)
 	}
 	h.press("esc")
 	if h.a.viewer != nil {

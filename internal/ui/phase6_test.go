@@ -592,16 +592,16 @@ func TestOpenRefusedForFoldersAndArchives(t *testing.T) {
 	termux(env)
 	h.focus("sub")
 	h.press("o")
-	if !strings.Contains(h.status(), "folder") {
-		t.Fatalf("o on a folder: %q", h.status())
+	if !strings.Contains(h.reported(), "folder") {
+		t.Fatalf("o on a folder: %q", h.reported())
 	}
 	h.focus("t.zip")
 	h.press("enter") // ZIP archives are still browsed
 	h.until("in archive", func() bool { return h.a.ActivePanel().InArchive() })
 	h.press("down")
 	h.press("o")
-	if !strings.Contains(h.status(), "extract it first") {
-		t.Fatalf("o in an archive: %q", h.status())
+	if !strings.Contains(h.reported(), "extract it first") {
+		t.Fatalf("o in an archive: %q", h.reported())
 	}
 	h.press("O")
 	if h.a.dialog != nil {

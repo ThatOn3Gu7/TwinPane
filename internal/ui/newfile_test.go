@@ -497,8 +497,8 @@ func TestNewFileAndFolderInsideArchiveAreRefused(t *testing.T) {
 	if h.a.dialog != nil {
 		t.Fatal("no folder dialog inside a read-only archive")
 	}
-	if s, isErr := h.a.Status(); !isErr || !strings.Contains(s, "read-only archive") {
-		t.Fatalf("status %q", s)
+	if s, isErr := reportedText(h.a), reportedErr(h.a); !isErr || !strings.Contains(s, "read-only archive") {
+		t.Fatalf("reported %q", s)
 	}
 }
 

@@ -354,7 +354,7 @@ func (a *App) panelMouse(ev tea.MouseEvent) tea.Cmd {
 		if a.active != i {
 			a.active = i
 		}
-		a.setStatus("", false)
+		a.setStatusRow("", lvlInfo)
 		switch hit.Kind {
 		case panel.HitRow:
 			p.SetCursor(hit.Index)

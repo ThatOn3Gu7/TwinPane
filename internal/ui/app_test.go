@@ -29,7 +29,7 @@ func drain(a *App, cmd tea.Cmd) (quit bool) {
 		return quit
 	case tea.QuitMsg:
 		return true
-	case nil, spinTickMsg, compressPulseMsg:
+	case nil, spinTickMsg, compressPulseMsg, noticeTickMsg:
 		// Spinner frames are dropped: drain runs commands one at a time,
 		// so a load queued behind the tick would never finish and the
 		// spinner would reschedule itself forever. (The real runtime runs
@@ -187,7 +187,7 @@ func TestOpenFileShowsStatus(t *testing.T) {
 	if a.viewer != nil || a.ActivePanel().Cursor() != cur {
 		t.Fatal("Esc did not return to the panel")
 	}
-	a.setStatus("x", false)
+	a.setStatusRow("x", lvlInfo)
 	press(a, "k") // any key clears status
 	if s, _ := a.Status(); s != "" {
 		t.Fatalf("status not cleared: %q", s)
@@ -203,9 +203,9 @@ func TestInaccessibleDirectoryReportsError(t *testing.T) {
 	os.Chmod(locked, 0)
 	defer os.Chmod(locked, 0o755)
 	press(a, "j", "j", "j", "enter")
-	s, isErr := a.Status()
+	s, isErr := reportedText(a), reportedErr(a)
 	if !isErr || !strings.Contains(s, "permission denied") {
-		t.Fatalf("status = %q err=%v", s, isErr)
+		t.Fatalf("reported = %q err=%v", s, isErr)
 	}
 	if a.Panel(0).Path() != home {
 		t.Fatal("panel should stay put")

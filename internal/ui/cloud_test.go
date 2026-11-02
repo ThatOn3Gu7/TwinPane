@@ -362,7 +362,7 @@ func TestCloudGatingAndErrorState(t *testing.T) { // REAL rclone
 	h.openRemote("box")
 	h.focus("notes.md")
 	for _, k := range []string{"e", "z", "P", "/", "B", "i"} {
-		h.a.setStatus("", false)
+		h.a.setStatusRow("", lvlInfo)
 		h.press(k)
 		if h.a.dialog != nil || h.a.viewer != nil || h.a.search != nil || len(env.execs) != 0 {
 			t.Fatalf("%q must not act on a remote file", k)
@@ -562,7 +562,7 @@ exit 1
 	if p.InRemote() || p.Path() != env.src || p.Err() != nil {
 		t.Fatalf("a cancelled listing must leave the panel where it was: %s remote=%v err=%v", p.Path(), p.InRemote(), p.Err())
 	}
-	if st := h.status(); !strings.Contains(st, "cancelled") {
+	if st := h.reported(); !strings.Contains(st, "cancelled") {
 		t.Fatalf("status: %q", st)
 	}
 }

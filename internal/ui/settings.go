@@ -530,7 +530,7 @@ func (a *App) settingsResetApply() tea.Cmd {
 	if a.settingsPath != "" {
 		if err := settings.Reset(a.settingsPath, p); err != nil {
 			a.settingsErr = err
-			a.setStatusLevel("settings not reset: "+errText(err), lvlWarn)
+			a.setStatusRow("settings not reset: "+errText(err), lvlWarn)
 			return cmd
 		}
 	}

@@ -89,7 +89,7 @@ func (a *App) beginSearch() tea.Cmd {
 		}()
 		search.Index(ctx, root, search.IndexOptions{ShowHidden: hidden, Backends: backends}, ch)
 	}()
-	a.setStatus("", false)
+	a.setStatusRow("", lvlInfo)
 	return sv.listen()
 }
 
@@ -316,13 +316,13 @@ func (a *App) searchJump() tea.Cmd {
 	}
 	e := sv.entries[sv.matches[sv.cursor]]
 	if _, err := os.Lstat(e.Path); err != nil {
-		a.setStatus(fmt.Sprintf("%s no longer exists", fsys.SanitizeName(e.Rel)), true)
+		a.noteStatus(lvlErr, fmt.Sprintf("%s no longer exists", fsys.SanitizeName(e.Rel)))
 		return nil
 	}
 	a.stopSearch()
 	a.active = sv.panel
 	p := a.panels[sv.panel]
-	a.setStatusLevel("found "+fsys.SanitizeName(e.Rel), lvlOK)
+	a.setStatusRow("found "+fsys.SanitizeName(e.Rel), lvlOK)
 	return p.Load(filepath.Dir(e.Path), filepath.Base(e.Path), panel.LoadNavigate)
 }
 
@@ -342,7 +342,7 @@ func (a *App) searchEdit(choose bool) tea.Cmd {
 		}
 	}
 	if len(paths) == 0 {
-		a.setStatus("nothing to edit: no result highlighted", true)
+		a.noteStatus(lvlErr, "nothing to edit: no result highlighted")
 		return nil
 	}
 	return a.editPaths(paths, choose)

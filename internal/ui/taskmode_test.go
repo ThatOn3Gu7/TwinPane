@@ -302,8 +302,8 @@ func TestWatchingAFinishedTaskIsRefused(t *testing.T) {
 	if h.a.live != nil {
 		t.Fatal("a finished task has no progress to watch")
 	}
-	if !strings.Contains(h.status(), "finished") {
-		t.Errorf("status = %q", h.status())
+	if !strings.Contains(h.reported(), "finished") {
+		t.Errorf("reported = %q", h.reported())
 	}
 }
 

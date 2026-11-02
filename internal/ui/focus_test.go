@@ -207,8 +207,8 @@ func TestFocusModeWithoutRoomForPreview(t *testing.T) {
 		t.Fatalf("narrow focus panel width = %d, want 84", got)
 	}
 	press(a, "p") // must explain, not crash
-	if a.statusLevel != lvlWarn {
-		t.Fatalf("status level = %v, want a warning", a.statusLevel)
+	if reportedLevel(a) != lvlWarn {
+		t.Fatalf("level = %v, want a warning", reportedLevel(a))
 	}
 	if !a.FocusMode() {
 		t.Fatal("a failed preview toggle left focus mode")

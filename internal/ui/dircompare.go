@@ -103,9 +103,9 @@ func (a *App) toggleComparisonDifferences() {
 	c.offset = 0
 	a.keepComparisonCursorVisible()
 	if c.differencesOnly {
-		a.setStatusLevel(fmt.Sprintf("Differences-only filter: %d rows; proposed matches stay visible", len(after)), lvlInfo)
+		a.setStatusRow(fmt.Sprintf("Differences-only filter: %d rows; proposed matches stay visible", len(after)), lvlInfo)
 	} else {
-		a.setStatusLevel(fmt.Sprintf("Showing all %d comparison rows", len(after)), lvlInfo)
+		a.setStatusRow(fmt.Sprintf("Showing all %d comparison rows", len(after)), lvlInfo)
 	}
 }
 
@@ -150,18 +150,18 @@ func (a *App) canComparePanels() bool { return a.compareEligibility() == "" && !
 
 func (a *App) beginDirectoryCompare() tea.Cmd {
 	if reason := a.compareEligibility(); reason != "" {
-		a.setStatusLevel(reason, lvlWarn)
+		a.noteStatus(lvlWarn, reason)
 		return nil
 	}
 	if a.busy() {
-		a.setStatusLevel("Wait for active file operations to finish before comparing directories", lvlWarn)
+		a.noteStatus(lvlWarn, "Wait for active file operations to finish before comparing directories")
 		return nil
 	}
 	left, right := a.panels[0].Path(), a.panels[1].Path()
 	a.comparison = &comparisonView{leftPath: left, rightPath: right, choices: map[string]dircompare.Direction{}}
 	a.tasks.showing = false
 	a.showHelp = false
-	a.setStatusLevel("Comparing local directories…", lvlInfo)
+	a.setStatusRow("Comparing local directories…", lvlInfo)
 	return a.startComparisonScan(false)
 }
 
@@ -180,9 +180,9 @@ func (a *App) startComparisonScan(hash bool) tea.Cmd {
 	c.loading, c.hashing, c.cancelling = true, hash, false
 	c.err = nil
 	if hash {
-		a.setStatusLevel("Checking file contents with SHA-256…", lvlInfo)
+		a.setStatusRow("Checking file contents with SHA-256…", lvlInfo)
 	} else {
-		a.setStatusLevel("Comparing local directories…", lvlInfo)
+		a.setStatusRow("Comparing local directories…", lvlInfo)
 	}
 	left, right := c.leftPath, c.rightPath
 	includeGitDirectories := c.includeGitDirectories
@@ -205,9 +205,9 @@ func (a *App) comparisonDone(msg compareDoneMsg) {
 		c.err = msg.err
 		if errors.Is(msg.err, context.Canceled) {
 			c.err = nil
-			a.setStatusLevel("Content comparison cancelled; the metadata comparison is unchanged", lvlWarn)
+			a.noteStatus(lvlWarn, "Content comparison cancelled; the metadata comparison is unchanged")
 		} else {
-			a.setStatusLevel("Cannot compare directories: "+errText(msg.err), lvlErr)
+			a.noteStatus(lvlErr, "Cannot compare directories: "+errText(msg.err))
 		}
 		return
 	}
@@ -220,13 +220,13 @@ func (a *App) comparisonDone(msg compareDoneMsg) {
 	}
 	a.keepComparisonCursorVisible()
 	if !result.Complete {
-		a.setStatusLevel("Comparison is incomplete; synchronization planning is disabled", lvlWarn)
+		a.noteStatus(lvlWarn, "Comparison is incomplete; synchronization planning is disabled")
 	} else if !result.CanSync {
-		a.setStatusLevel(result.SyncNote, lvlWarn)
+		a.noteStatus(lvlWarn, result.SyncNote)
 	} else if result.ContentChecked {
-		a.setStatusLevel("Content comparison complete", lvlOK)
+		a.noteStatus(lvlOK, "Content comparison complete")
 	} else {
-		a.setStatusLevel("Metadata comparison complete; press h to hash matching files", lvlOK)
+		a.noteStatus(lvlOK, "Metadata comparison complete; press h to hash matching files")
 	}
 }
 
@@ -242,10 +242,10 @@ func (a *App) comparisonKey(msg tea.KeyMsg) tea.Cmd {
 			}
 			if c.result == nil || !c.hashing {
 				a.comparison = nil
-				a.setStatusLevel("Directory comparison cancelled", lvlWarn)
+				a.noteStatus(lvlWarn, "Directory comparison cancelled")
 			} else {
 				c.cancelling = true
-				a.setStatusLevel("Stopping content comparison…", lvlWarn)
+				a.setStatusRow("Stopping content comparison…", lvlWarn)
 			}
 		}
 		return nil
@@ -255,7 +255,7 @@ func (a *App) comparisonKey(msg tea.KeyMsg) tea.Cmd {
 	}
 	if a.is("compare.close", msg) {
 		a.comparison = nil
-		a.setStatus("", false)
+		a.setStatusRow("", lvlInfo)
 		return nil
 	}
 	if c.err != nil {
@@ -317,7 +317,7 @@ func (a *App) comparisonKey(msg tea.KeyMsg) tea.Cmd {
 		a.proposeOneSidedEntries()
 	case a.is("compare.clear", msg):
 		c.choices = map[string]dircompare.Direction{}
-		a.setStatusLevel("Cleared proposed copy actions", lvlInfo)
+		a.noteStatus(lvlInfo, "Cleared proposed copy actions")
 	case a.is("compare.hash", msg):
 		return a.startComparisonScan(true)
 	case a.is("compare.plan", msg):
@@ -331,7 +331,7 @@ func (a *App) toggleComparisonChoice(entry dircompare.Entry) {
 	c := a.comparison
 	if _, exists := c.choices[entry.Rel]; exists {
 		delete(c.choices, entry.Rel)
-		a.setStatusLevel("Removed proposal for "+fsys.SanitizeName(entry.Rel), lvlInfo)
+		a.noteStatus(lvlInfo, "Removed proposal for "+fsys.SanitizeName(entry.Rel))
 		return
 	}
 	switch entry.Status {
@@ -340,7 +340,7 @@ func (a *App) toggleComparisonChoice(entry dircompare.Entry) {
 	case dircompare.StatusRightOnly:
 		a.proposeComparisonCopy(entry, dircompare.RightToLeft)
 	default:
-		a.setStatusLevel("Choose l (left → right) or r (right → left) for this entry", lvlWarn)
+		a.setStatusRow("Choose l (left → right) or r (right → left) for this entry", lvlWarn)
 	}
 }
 
@@ -350,16 +350,16 @@ func (a *App) proposeComparisonCopy(entry dircompare.Entry, direction dircompare
 		return
 	}
 	if err := dircompare.CanCopy(*c.result, entry.Rel, direction); err != nil {
-		a.setStatusLevel(errText(err), lvlWarn)
+		a.noteStatus(lvlWarn, errText(err))
 		return
 	}
 	if old, exists := c.choices[entry.Rel]; exists && old == direction {
 		delete(c.choices, entry.Rel)
-		a.setStatusLevel("Removed proposal for "+fsys.SanitizeName(entry.Rel), lvlInfo)
+		a.noteStatus(lvlInfo, "Removed proposal for "+fsys.SanitizeName(entry.Rel))
 		return
 	}
 	c.choices[entry.Rel] = direction
-	a.setStatusLevel(fmt.Sprintf("Proposed copy %s: %s", direction, fsys.SanitizeName(entry.Rel)), lvlOK)
+	a.noteStatus(lvlOK, fmt.Sprintf("Proposed copy %s: %s", direction, fsys.SanitizeName(entry.Rel)))
 }
 
 func (a *App) proposeOneSidedEntries() {
@@ -368,7 +368,7 @@ func (a *App) proposeOneSidedEntries() {
 		return
 	}
 	if !c.result.Complete || !c.result.CanSync {
-		a.setStatusLevel("A complete comparison of non-overlapping local directories is required before planning", lvlWarn)
+		a.noteStatus(lvlWarn, "A complete comparison of non-overlapping local directories is required before planning")
 		return
 	}
 	added := 0
@@ -388,7 +388,7 @@ func (a *App) proposeOneSidedEntries() {
 			added++
 		}
 	}
-	a.setStatusLevel(fmt.Sprintf("Proposed %d one-sided entries; review all actions before execution", added), lvlInfo)
+	a.noteStatus(lvlInfo, fmt.Sprintf("Proposed %d one-sided entries; review all actions before execution", added))
 }
 
 func (a *App) reviewComparisonPlan() {
@@ -402,12 +402,12 @@ func (a *App) reviewComparisonPlan() {
 	}
 	plan, err := dircompare.BuildPlan(*c.result, choices)
 	if err != nil {
-		a.setStatusLevel(errText(err), lvlWarn)
+		a.noteStatus(lvlWarn, errText(err))
 		return
 	}
 	c.plan, c.reviewing = plan, true
 	c.planCursor, c.planOffset = 0, 0
-	a.setStatusLevel("Review the exact actions and overwrite count before execution", lvlInfo)
+	a.setStatusRow("Review the exact actions and overwrite count before execution", lvlInfo)
 }
 
 func (a *App) comparisonPlanKey(msg tea.KeyMsg) tea.Cmd {
@@ -463,7 +463,7 @@ func (a *App) confirmComparisonPlan() tea.Cmd {
 	}
 	cancel := func(a *App) tea.Cmd {
 		a.dialog = nil
-		a.setStatusLevel("Reviewed plan not executed", lvlWarn)
+		a.noteStatus(lvlWarn, "Reviewed plan not executed")
 		return nil
 	}
 	d.buttons = []button{
@@ -500,7 +500,7 @@ func (a *App) executeComparisonPlan(plan dircompare.Plan) tea.Cmd {
 	s.prog = ops.Progress{Phase: "validating", TotalItems: plan.Totals().Actions}
 	a.comparison = nil
 	a.tasks.showing = true
-	a.setStatusLevel("Executing the reviewed directory plan…", lvlInfo)
+	a.setStatusRow("Executing the reviewed directory plan…", lvlInfo)
 	hooks := a.hooks(ctx, s)
 	go func() {
 		result := dircompare.Execute(ctx, plan, dircompare.ExecutionHooks{Operation: hooks})
@@ -563,7 +563,7 @@ func (a *App) finishSync(s *opSession, execution dircompare.Execution, plan dirc
 	}
 	a.finishTask(s, state, summary, details...)
 	a.taskResult(s, level, heading, summary, detailsBody(details)...)
-	a.setStatus("", false)
+	a.setStatusRow("", lvlInfo)
 
 	left, right := plan.Roots()
 	var cmds []tea.Cmd

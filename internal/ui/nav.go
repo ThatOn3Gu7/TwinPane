@@ -21,14 +21,14 @@ func (a *App) navMove(p *panel.Panel, back bool) tea.Cmd {
 	}
 	r := move()
 	if !r.OK {
-		a.setStatusLevel(r.Note, lvlWarn)
+		a.noteStatus(lvlWarn, r.Note)
 		return nil
 	}
 	if r.Note != "" {
 		// some dead entries were skipped: say so instead of pretending
-		a.setStatusLevel(r.Note, lvlWarn)
+		a.noteStatus(lvlWarn, r.Note)
 	} else {
-		a.setStatusLevel(dir+" to "+r.Label, lvlOK)
+		a.setStatusRow(dir+" to "+r.Label, lvlOK)
 	}
 	return r.Cmd
 }

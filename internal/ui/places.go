@@ -45,11 +45,11 @@ func (a *App) bookmarkStore() (*bookmarks.Store, error) {
 func (a *App) bookmarkHere() tea.Cmd {
 	p := a.ActivePanel()
 	if p.InArchive() {
-		a.setStatus("folders inside a read-only archive cannot be bookmarked: bookmark the folder that contains it (Esc leaves the archive)", true)
+		a.noteStatus(lvlErr, "folders inside a read-only archive cannot be bookmarked: bookmark the folder that contains it (Esc leaves the archive)")
 		return nil
 	}
 	if p.InRemote() {
-		a.setStatus("bookmarks are for local folders — folders on a remote cannot be bookmarked", true)
+		a.noteStatus(lvlErr, "bookmarks are for local folders — folders on a remote cannot be bookmarked")
 		return nil
 	}
 	dir := p.Path()
@@ -58,7 +58,7 @@ func (a *App) bookmarkHere() tea.Cmd {
 	}
 	s, err := a.bookmarkStore()
 	if err != nil {
-		a.setStatus("bookmarks: "+errText(err), true)
+		a.noteStatus(lvlErr, "bookmarks: "+errText(err))
 		return nil
 	}
 	bm, err := s.Add(dir, "")
@@ -82,7 +82,7 @@ func (a *App) bookmarkHere() tea.Cmd {
 func (a *App) unbookmarkHere() tea.Cmd {
 	s, err := a.bookmarkStore()
 	if err != nil {
-		a.setStatus("bookmarks: "+errText(err), true)
+		a.noteStatus(lvlErr, "bookmarks: "+errText(err))
 		return nil
 	}
 	dir := a.ActivePanel().Path()
@@ -172,7 +172,7 @@ func (a *App) openBookmarks(cursor int, errLine string) tea.Cmd {
 		switch st, err := bookmarks.Check(bm.Path); st {
 		case bookmarks.OK:
 			a.dialog = nil
-			a.setStatus(fmt.Sprintf("bookmark %q", bm.Name), false)
+			a.setStatusRow(fmt.Sprintf("bookmark %q", bm.Name), lvlInfo)
 			if p := a.ActivePanel(); p.InRemote() {
 				return p.GoLocal(bm.Path, "") // back to local files
 			}

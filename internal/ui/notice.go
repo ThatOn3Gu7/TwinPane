@@ -31,30 +31,36 @@ import (
 //
 // Which messages become notifications, and which stay in the status line:
 //
-//   - notifications report finished actions (results): a file operation, an
-//     archive extract or compress, a cloud operation, a rename, a bookmark, an
-//     open/share, a finished edit, a folder-size scan, a directory plan, and
-//     the reload of keybinding.json;
-//   - the status line keeps everything that is not a result: progress
-//     ("Checking copy…"), prompts and refusals ("nothing to copy: put the
-//     cursor on an item"), navigation notes, mode toggles and selection
-//     counts. Those are context for what to do next, and they belong next to
-//     the panels, not in a pop-up.
+//   - the pop-up reports every message that is an answer to something that
+//     happened: a file operation, an archive extract or compress, a cloud
+//     operation, a rename, a new file, a bookmark, an open/share, a finished
+//     edit, a folder-size scan, a directory plan, a cleared task list, the
+//     reload of keybinding.json, the focus toggle, and every refusal or failure
+//     ("nothing to copy: put the cursor on an item", "Google Drive: no such
+//     host"). All of them go through noteStatus;
+//   - the status line keeps state that is read while working and changes all the
+//     time: progress ("Checking copy…", "Scanning folder sizes…"), mode and
+//     state notes ("sort by name", "hidden: shown", "preview pane on"),
+//     navigation ("back to /home/me", "found src/main.go"), filter labels and
+//     selection counts. All of them go through setStatusRow.
 //
-// A message is never shown on both surfaces: a result goes to the pop-up and
-// the row goes back to naming the entry under the cursor (hideStatus), because
-// reading the same sentence twice — once cut short underneath the box — is
-// worse than either alone. The choice does not depend on the terminal's size:
-// a result pops up on a wide screen just as on a narrow one, and the box
-// shrinks to three rows before it gives up. Only when the screen cannot hold a
-// legible box at all (the "terminal too small" screen, or three rows short)
-// does the row keep the text, and then it is the only place it appears.
+// The split is compile-enforced: setStatus/setStatusLevel no longer exist, so a
+// new message has to pick a surface by calling one of the two. A message that
+// is a result is never written in the row, and the row is never a second copy of
+// the pop-up: one outcome is one message, wherever the user happens to look.
+// Retrying a failing action therefore replaces the box rather than leaving the
+// previous attempt under it — the bug that made two attempts read as three
+// messages.
 //
-// The status line is one row, so a message can be longer than the room it has.
-// Rather than cutting the sentence the user needs — a refusal that says why, a
-// warning that names the line of keybinding.json to fix — the same message is
-// raised as a notification as well: the row keeps what fits, and the pop-up
-// carries the whole text (see noteLongStatus).
+// The choice does not depend on the terminal's size: a result pops up on a wide
+// screen just as on a narrow one, and the box shrinks to three rows before it
+// gives up. Only when the screen cannot hold a legible box at all (the
+// "terminal too small" screen, or a dialog, which draws above everything) does
+// the row keep the text, and then it is the only place it appears.
+//
+// The row is one line and cuts silently, so a *row* message that is wider than
+// the row is raised in a notification instead (noteLongStatus): the whole text
+// is worth more than the row's leftover cells.
 //
 // Only one notification is shown at a time and a newer result replaces an older
 // one, so a burst of operations cannot stack up; repeating the very same result
@@ -538,7 +544,9 @@ func (a *App) noticeRect() (x, y, w, h int, ok bool) {
 	if a.width < minWidth || a.height < minHeight {
 		return 0, 0, 0, 0, false // the "terminal too small" screen owns the view
 	}
-	areaH := a.height - 3 // title + status + hint rows belong to the chrome
+	// title + status + hint rows belong to the chrome, and a screen that keeps
+	// its own instructions at the bottom of its body keeps those too.
+	areaH := a.height - 3 - a.noticeReservedRows()
 	if areaH < 4 {
 		// Three rows are the smallest box worth drawing (a heading, one line
 		// and the countdown); below that the status line carries the message.
@@ -558,6 +566,18 @@ func (a *App) noticeRect() (x, y, w, h int, ok bool) {
 		x, y = 1, 1
 	}
 	return x, y, w, len(box), true
+}
+
+// noticeReservedRows is how many rows at the bottom of the content area belong
+// to the screen itself and have to stay readable under a pop-up. The bulk
+// rename screen closes with the row under the cursor, its key hints and the
+// "nothing is renamed until you confirm" line, and a notification that covered
+// them would hide the one thing that screen asks the user to remember.
+func (a *App) noticeReservedRows() int {
+	if a.bulk != nil {
+		return 3
+	}
+	return 0
 }
 
 // noticeVisible reports whether anything is drawn on the screen that a

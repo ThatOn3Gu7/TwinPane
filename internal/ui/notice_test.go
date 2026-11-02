@@ -44,8 +44,12 @@ func reportedText(a *App) string {
 }
 
 // reportedLevel is the severity of the last report, in status-line terms.
-func (h *harness) reportedLevel() int {
-	if n := h.a.notice; n != nil {
+func (h *harness) reportedLevel() int { return reportedLevel(h.a) }
+
+// reportedLevel reads the severity of the last report off whichever surface
+// carries it.
+func reportedLevel(a *App) int {
+	if n := a.notice; n != nil {
 		switch n.kind {
 		case noticeOK:
 			return lvlOK
@@ -56,7 +60,12 @@ func (h *harness) reportedLevel() int {
 		}
 		return lvlInfo
 	}
-	return h.a.statusLevel
+	return a.statusLevel
+}
+
+// reportedErr reports whether the last message was an error, on either surface.
+func reportedErr(a *App) bool {
+	return a.statusErr || (a.notice != nil && a.notice.kind == noticeErr)
 }
 
 // tick advances the notification countdown by one frame.
@@ -189,19 +198,24 @@ func TestFailedResultIsAnErrorNotification(t *testing.T) {
 	}
 }
 
-func TestStatusLineKeepsProgressAndGuidance(t *testing.T) {
+func TestStatusLineKeepsStateAndGuidance(t *testing.T) {
 	h, _ := newOpsApp(t, nil, nil)
-	// A refusal is guidance for the next key, not a result: status line.
+	// A refused action is an answer to a key press like any other result: it is
+	// delivered in the pop-up and taken out of the row, not left as bare text.
 	h.focus("..")
 	h.a.ActivePanel().ClearSelection()
 	h.press("c")
-	if h.a.notice != nil {
-		t.Fatalf("a refusal must not become a notification: %q", noticeText(h))
+	if h.a.notice == nil {
+		t.Fatalf("a refusal must be reported in the pop-up: %q", h.status())
 	}
-	if st := h.status(); st == "" {
-		t.Fatal("a refusal belongs in the status line")
+	if !strings.Contains(h.reported(), "nothing to copy") {
+		t.Fatalf("the pop-up lost the refusal: %q", h.reported())
 	}
-	// So does a mode toggle.
+	if h.a.status != "" {
+		t.Fatalf("the row repeats it: %q", h.a.status)
+	}
+	// A mode toggle is state, not an outcome: it stays next to the panels.
+	h.a.notice = nil
 	h.press("h")
 	if h.a.notice != nil {
 		t.Errorf("a mode toggle must not become a notification: %q", noticeText(h))

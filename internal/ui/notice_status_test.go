@@ -15,19 +15,15 @@ import (
 // what happens to the tail: it is repeated in a notification, and a tap on that
 // notification unfolds the whole text.
 
-// TestLongStatusMessagePopsUp: a message the row cannot show becomes a
-// notification as well; one that fits stays where it is.
-func TestLongStatusMessagePopsUp(t *testing.T) {
+// TestAResultIsNeverCutOff: a result is reported whole in the pop-up, whether
+// or not the sentence would have fitted the row, because the row cuts silently
+// and the tail is usually the reason.
+func TestAResultIsNeverCutOff(t *testing.T) {
 	h, _ := newOpsApp(t, nil, nil)
 	h.send(tea.WindowSizeMsg{Width: 40, Height: 20})
 
-	h.a.setStatusLevel("short note", lvlOK)
-	if h.a.notice != nil {
-		t.Fatalf("a message that fits the row must not pop up: %q", noticeText(h))
-	}
-
 	long := "cannot rename here: the file is a symbolic link pointing outside this folder — use P to look at it, or C to copy it to the other panel first"
-	h.a.setStatusLevel(long, lvlErr)
+	h.a.noteStatus(lvlErr, long)
 	n := h.a.notice
 	if n == nil {
 		t.Fatalf("a message the row cuts must pop up:\n%s", h.view())
@@ -47,21 +43,25 @@ func TestLongStatusMessagePopsUp(t *testing.T) {
 	}
 }
 
-// TestQuietStatusMessagesStillFit: progress text is short by construction, so
-// the common case must not raise pop-ups on every frame.
-func TestQuietStatusMessagesStillFit(t *testing.T) {
+// TestRowMessagesNeverPopUp: the row carries state, progress and navigation,
+// which are read while working and change all the time — none of them may
+// raise a pop-up, or the corner would be permanently occupied.
+func TestRowMessagesNeverPopUp(t *testing.T) {
 	h, _ := newOpsApp(t, nil, nil)
 	h.send(tea.WindowSizeMsg{Width: 100, Height: 30})
 	for _, msg := range []string{
 		"Checking copy…",
-		"nothing to copy: put the cursor on an item",
 		"sort by name (a-z, directories first)",
-		"key bindings reloaded: every default in place",
+		"hidden: shown",
+		"back to /home/me/proj",
 	} {
 		h.a.notice = nil
-		h.a.setStatusLevel(msg, lvlInfo)
+		h.a.setStatusRow(msg, lvlInfo)
 		if h.a.notice != nil {
-			t.Errorf("%q fits a 100-wide row and must stay there", msg)
+			t.Errorf("%q is row text and must not pop up", msg)
+		}
+		if h.a.status != msg {
+			t.Errorf("%q did not reach the row: %q", msg, h.a.status)
 		}
 	}
 }
@@ -337,5 +337,68 @@ func TestRowNeverRepeatsThePendingPopup(t *testing.T) {
 	h.a.dismissNotice()
 	if v := ansi.Strip(h.view()); !strings.Contains(v, msg) {
 		t.Fatalf("the message vanished with the pop-up:\n%s", v)
+	}
+}
+
+// TestRepeatedResultsStayInTheBox is the drive-without-a-network case: the same
+// action is retried a few times in a row, and every attempt fails. The first
+// failure raises the pop-up, so the second must replace it — not slip into the
+// row underneath it, which is how one attempt used to be reported twice and two
+// attempts three times.
+func TestRepeatedResultsStayInTheBox(t *testing.T) {
+	h, _ := newOpsApp(t, nil, nil)
+	h.send(tea.WindowSizeMsg{Width: 60, Height: 22})
+	first := "Google Drive: dial tcp: lookup NO_SUCH_HOST"
+	second := "Google Drive: listing cancelled 1 — the panel stays where it was"
+	for _, msg := range []string{first, second, second, first, second} {
+		h.a.noteStatus(lvlErr, msg)
+		if h.a.status != "" {
+			t.Fatalf("%q leaked into the row: %q", msg, h.a.status)
+		}
+		if h.a.notice == nil || h.a.notice.msg != msg {
+			t.Fatalf("the pop-up does not carry the latest failure %q: %s", msg, noticeText(h))
+		}
+	}
+	// The sentence appears once: in the box. Counting the whole sentence is no
+	// good — the box wraps it — so a single unsplittable token is counted.
+	if got := strings.Count(ansi.Strip(h.view()), "cancelled 1"); got != 1 {
+		t.Fatalf("the last failure is printed %d times:\n%s", got, h.view())
+	}
+}
+
+// TestEveryAttemptIsReportedOnceAtEveryWidth: the reported bug came back at two
+// sizes (a phone zoomed out, and the same phone upright), so the invariant is
+// checked on both.
+func TestEveryAttemptIsReportedOnceAtEveryWidth(t *testing.T) {
+	for _, size := range [][2]int{{120, 34}, {60, 24}, {40, 12}, {30, 9}} {
+		h, _ := newOpsApp(t, nil, nil)
+		h.send(tea.WindowSizeMsg{Width: size[0], Height: size[1]})
+		for i := 0; i < 3; i++ {
+			h.a.noteStatus(lvlErr, "Google Drive: no route to host")
+			if h.a.status != "" {
+				t.Fatalf("%dx%d: attempt %d leaked into the row: %q", size[0], size[1], i+1, h.a.status)
+			}
+		}
+		if h.a.notice == nil {
+			t.Fatalf("%dx%d: three failures and no pop-up", size[0], size[1])
+		}
+	}
+}
+
+// TestHistoryRetentionIsReportedInTheBox: the number of runs the history keeps
+// is a result like any other, so it is delivered in the pop-up. It used to be
+// the example of a message left as bare text at the bottom.
+func TestHistoryRetentionIsReportedInTheBox(t *testing.T) {
+	h, _ := newOpsApp(t, nil, nil)
+	h.send(tea.WindowSizeMsg{Width: 60, Height: 22})
+	if h.a.history == nil {
+		t.Skip("no history store in this session")
+	}
+	h.a.changeHistoryRetention(1)
+	if h.a.status != "" {
+		t.Fatalf("the retention message leaked into the row: %q", h.a.status)
+	}
+	if h.a.notice == nil || !strings.Contains(h.a.notice.msg, "History keeps") {
+		t.Fatalf("the retention message is not in the pop-up: %s", noticeText(h))
 	}
 }

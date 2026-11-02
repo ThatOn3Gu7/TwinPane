@@ -201,8 +201,8 @@ func TestSearchEditResults(t *testing.T) {
 	}
 	h.typeText("deep", false)
 	h.press("tab", "e")
-	if !strings.Contains(h.status(), "deep is a folder") || len(env.execs) != 2 {
-		t.Fatalf("folder: %q", h.status())
+	if !strings.Contains(h.reported(), "deep is a folder") || len(env.execs) != 2 {
+		t.Fatalf("folder: %q", h.reported())
 	}
 	// typing in the list goes back to the text field
 	h.typeText("x", false)
@@ -284,8 +284,8 @@ func TestEditorChooser(t *testing.T) {
 	// folders are refused before the chooser opens
 	h.focus("sub")
 	h.press("E")
-	if h.a.dialog != nil || !strings.Contains(h.status(), "sub is a folder") {
-		t.Fatalf("folder: %q", h.status())
+	if h.a.dialog != nil || !strings.Contains(h.reported(), "sub is a folder") {
+		t.Fatalf("folder: %q", h.reported())
 	}
 }
 

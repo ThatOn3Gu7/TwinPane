@@ -38,19 +38,19 @@ const remotePreviewFile = "preview"
 func (a *App) openRemoteViewer(p *panel.Panel, e fsys.Entry) tea.Cmd {
 	src := p.Source()
 	if src == nil || src.Client == nil {
-		a.setStatus("cannot read "+fsys.SanitizeName(e.Name)+": the remote is not available", true)
+		a.noteStatus(lvlErr, "cannot read "+fsys.SanitizeName(e.Name)+": the remote is not available")
 		return nil
 	}
 	loc, ok := cloud.Parse(e.Path)
 	if !ok {
-		a.setStatus("cannot read "+fsys.SanitizeName(e.Name)+": not a remote path", true)
+		a.noteStatus(lvlErr, "cannot read "+fsys.SanitizeName(e.Name)+": not a remote path")
 		return nil
 	}
 	// Refuse before transferring anything when the provider told us the size
 	// and it is beyond what the viewer shows.
 	if max := textview.Defaults.MaxBytes; e.Size > max {
-		a.setStatusLevel(fmt.Sprintf("%s is %s: the preview shows at most %s — copy it to a local panel (c) to read all of it",
-			fsys.SanitizeName(e.Name), fsys.HumanSize(e.Size), fsys.HumanSize(max)), lvlWarn)
+		a.noteStatus(lvlWarn, fmt.Sprintf("%s is %s: the preview shows at most %s — copy it to a local panel (c) to read all of it",
+			fsys.SanitizeName(e.Name), fsys.HumanSize(e.Size), fsys.HumanSize(max)))
 		return nil
 	}
 	a.opSeq++
@@ -61,7 +61,7 @@ func (a *App) openRemoteViewer(p *panel.Panel, e fsys.Entry) tea.Cmd {
 		remote: true, remoteLoc: loc, remoteSize: e.Size, loadCancel: cancel,
 	}
 	a.viewer = v
-	a.setStatus("reading "+fsys.SanitizeName(e.Name)+" from "+src.Remote.Name+":…", false)
+	a.setStatusRow("reading "+fsys.SanitizeName(e.Name)+" from "+src.Remote.Name+":…", lvlInfo)
 	seq, client, size := v.seq, src.Client, e.Size
 	return func() tea.Msg {
 		doc, err := stageRemotePreview(ctx, client, loc, size, textview.Defaults.MaxBytes)

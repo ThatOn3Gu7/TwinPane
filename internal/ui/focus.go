@@ -161,8 +161,8 @@ func (a *App) togglePreview() tea.Cmd {
 		return nil
 	}
 	if !a.focusPreviewAvail() {
-		a.setStatusLevel(fmt.Sprintf("the preview pane needs at least %d×%d — v opens the read-only viewer full width instead",
-			focusPreviewMinWidth, focusPreviewMinHeight), lvlWarn)
+		a.noteStatus(lvlWarn, fmt.Sprintf("the preview pane needs at least %d×%d — v opens the read-only viewer full width instead",
+			focusPreviewMinWidth, focusPreviewMinHeight))
 		return nil
 	}
 	a.focusPreview = !a.focusPreview
@@ -170,9 +170,9 @@ func (a *App) togglePreview() tea.Cmd {
 	a.layout()
 	a.syncMode()
 	if a.focusPreview {
-		a.setStatusLevel("preview pane on (p hides it)", lvlOK)
+		a.setStatusRow("preview pane on (p hides it)", lvlOK)
 	} else {
-		a.setStatusLevel("preview pane off (p shows it, v opens the viewer)", lvlOK)
+		a.setStatusRow("preview pane off (p shows it, v opens the viewer)", lvlOK)
 	}
 	return nil
 }
@@ -499,7 +499,7 @@ func (a *App) goToPath(raw string) tea.Cmd {
 		focus, s = filepath.Base(s), filepath.Dir(s)
 	}
 	a.dialog = nil
-	a.setStatus("", false)
+	a.setStatusRow("", lvlInfo)
 	return p.Load(s, focus, panel.LoadNavigate)
 }
 
@@ -517,7 +517,7 @@ func (a *App) goToRemote(loc cloud.Path) tea.Cmd {
 		src = &panel.RemoteSource{Client: c, Remote: cloud.Remote{Name: loc.Remote}}
 	}
 	a.dialog = nil
-	a.setStatus("opening "+fsys.SanitizeName(loc.Display())+"… (Esc cancels)", false)
+	a.setStatusRow("opening "+fsys.SanitizeName(loc.Display())+"… (Esc cancels)", lvlInfo)
 	return p.OpenRemoteAt(src, loc, "")
 }
 

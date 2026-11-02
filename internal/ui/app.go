@@ -483,20 +483,20 @@ func (a *App) currentPrefs() settings.Preferences {
 func (a *App) savePrefs(feedback bool) {
 	if a.settingsPath == "" {
 		if feedback {
-			a.setStatus("settings are not persisted in this session", false)
+			a.setStatusRow("settings are not persisted in this session", lvlInfo)
 		}
 		return
 	}
 	if err := settings.Save(a.settingsPath, a.currentPrefs()); err != nil {
 		a.settingsErr = err
 		if feedback {
-			a.setStatusLevel("settings not saved: "+errText(err), lvlWarn)
+			a.setStatusRow("settings not saved: "+errText(err), lvlWarn)
 		}
 		return
 	}
 	a.settingsErr = nil
 	if feedback {
-		a.setStatus("settings saved", false)
+		a.setStatusRow("settings saved", lvlInfo)
 	}
 }
 
@@ -509,15 +509,17 @@ func (a *App) HelpVisible() bool         { return a.showHelp }
 func (a *App) ShowHidden() bool          { return a.showHidden }
 func (a *App) History() *history.Store   { return a.history }
 
-func (a *App) setStatus(msg string, isErr bool) {
-	lvl := lvlInfo
-	if isErr {
-		lvl = lvlErr
-	}
-	a.setStatusLevel(msg, lvl)
-}
-
-func (a *App) setStatusLevel(msg string, lvl int) {
+// setStatusRow writes a message into the status row and nowhere else. It is for
+// what belongs next to the panels and is not an outcome: progress ("Checking
+// copy paths…"), prompts ("press y to confirm"), mode and state notes ("sort by
+// name", "hidden: shown"), navigation ("back to /home/me"), counts and filter
+// labels. Everything that reports *what happened* goes through noteStatus
+// instead, so the two surfaces cannot be confused: the row is a place you look
+// at while working, the pop-up is a place a result is delivered.
+//
+// The row is one line, so a message too wide for it is moved into a pop-up by
+// noteLongStatus rather than being cut silently.
+func (a *App) setStatusRow(msg string, lvl int) {
 	a.status, a.statusErr, a.statusLevel = msg, lvl == lvlErr, lvl
 	// Warnings and errors end up here, which makes this the one place that
 	// needs to know about them (see activity.go).
@@ -540,9 +542,10 @@ func (a *App) noteLongStatus(msg string, lvl int) {
 	if ansi.StringWidth(msg)+3 <= a.width {
 		return
 	}
-	if n := a.notice; n != nil && n.msg == msg {
-		return // the pop-up is already showing this message whole
-	}
+	// notify() keeps a pop-up that already shows this very text (a repeated
+	// message only restarts its countdown), and the row is cleared either way:
+	// leaving the sentence there next to the box is the duplicate this whole
+	// path exists to prevent.
 	a.notify(resultKind(lvl), "", msg)
 	a.hideStatus()
 }
@@ -571,6 +574,17 @@ func (a *App) noteResult(lvl int, log, head, msg string, body ...string) {
 	if _, _, _, _, ok := a.noticeRect(); !ok {
 		a.setStatusOnly(msg, lvl)
 	}
+}
+
+// noteStatus reports a message that is a result — something happened, whether
+// the user asked for it or not: an operation finished or failed, a folder could
+// not be listed, a file is not what the action needs, a setting took effect.
+// It is logged under the line the row would have held, shown in the pop-up and
+// taken out of the row, so one outcome is one message. Repeated and back-to-back
+// results replace each other in the same box instead of slipping into the row
+// underneath it.
+func (a *App) noteStatus(lvl int, msg string, body ...string) {
+	a.noteResult(lvl, msg, "", msg, body...)
 }
 
 // setStatusOnly puts a message in the status row without logging it or raising
@@ -704,11 +718,11 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if err := p.Apply(msg); err != nil {
 			switch {
 			case cloud.KindOf(err) == cloud.KindCanceled:
-				a.setStatusLevel("listing cancelled — the panel stays where it was", lvlWarn)
+				a.noteStatus(lvlWarn, "listing cancelled — the panel stays where it was")
 			case msg.Rem != nil:
-				a.setStatus(msg.Rem.Remote.Name+": "+err.Error(), true)
+				a.noteStatus(lvlErr, msg.Rem.Remote.Name+": "+err.Error())
 			default:
-				a.setStatus(err.Error(), true)
+				a.noteStatus(lvlErr, err.Error())
 			}
 		} else if p.Archive() != nil && wasArc == nil {
 			a.archiveOpened(p)
@@ -889,7 +903,7 @@ func (a *App) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return a, a.toggleFocus()
 	}
 
-	a.setStatus("", false)
+	a.setStatusRow("", lvlInfo)
 	a.logKeyAction(msg)
 	p := a.panels[a.active]
 	if p.InRemote() {
@@ -906,7 +920,7 @@ func (a *App) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case k.Quit.Matches(msg):
 		if s := a.tasks.latestActive(); s != nil {
 			a.openTasks()
-			a.setStatusLevel("Background operations are still running; wait or cancel them in the task view before quitting", lvlWarn)
+			a.noteStatus(lvlWarn, "Background operations are still running; wait or cancel them in the task view before quitting")
 			return a, nil
 		}
 		a.quitting = true
@@ -982,12 +996,12 @@ func (a *App) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return a, a.toggleHidden()
 	case k.Sort.Matches(msg):
 		cmd := p.CycleSort()
-		a.setStatus("sort by "+p.Options().SortLabel()+" (S reverses)", false)
+		a.setStatusRow("sort by "+p.Options().SortLabel()+" (S reverses)", lvlInfo)
 		return a, cmd
 	case k.Reverse.Matches(msg):
 		cmd := p.ReverseSort()
 		dir := map[bool]string{true: "descending", false: "ascending"}[p.Options().Desc]
-		a.setStatus("sort by "+p.Options().SortLabel()+" ("+dir+")", false)
+		a.setStatusRow("sort by "+p.Options().SortLabel()+" ("+dir+")", lvlInfo)
 		return a, cmd
 	case k.Search.Matches(msg):
 		return a, a.beginSearch()
@@ -1240,7 +1254,7 @@ func (a *App) toggleHidden() tea.Cmd {
 		message += "; not saved: " + errText(a.settingsErr)
 		level = lvlWarn
 	}
-	a.setStatusLevel(message, level)
+	a.setStatusRow(message, level)
 	return tea.Batch(a.panels[0].SetShowHidden(a.showHidden), a.panels[1].SetShowHidden(a.showHidden))
 }
 

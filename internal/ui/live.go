@@ -44,21 +44,21 @@ func (a *App) watchTask(s *opSession) {
 func (a *App) watchSelectedTask() tea.Cmd {
 	e, ok := a.selectedTaskEntry()
 	if !ok {
-		a.setStatusLevel("No task to watch", lvlInfo)
+		a.noteStatus(lvlInfo, "No task to watch")
 		return nil
 	}
 	if e.kind == taskEntryRecord {
 		// A recorded operation has no live progress to show.
-		a.setStatusLevel("Recorded operations are read-only — nothing to watch", lvlInfo)
+		a.noteStatus(lvlInfo, "Recorded operations are read-only — nothing to watch")
 		return nil
 	}
 	s := e.task
 	if s == nil {
-		a.setStatusLevel("No task to watch", lvlInfo)
+		a.noteStatus(lvlInfo, "No task to watch")
 		return nil
 	}
 	if !s.active() {
-		a.setStatusLevel("This task has finished — its result stays in the task list", lvlInfo)
+		a.noteStatus(lvlInfo, "This task has finished — its result stays in the task list")
 		return nil
 	}
 	a.tasks.showing = false
@@ -102,7 +102,7 @@ func (a *App) liveKey(msg tea.KeyMsg) tea.Cmd {
 		running := s.active()
 		cmd := a.closeLive(running)
 		if !running && s.summary != "" {
-			a.setStatusLevel(s.summary, taskLevel(s))
+			a.noteStatus(taskLevel(s), s.summary)
 		}
 		return cmd
 	case a.is("live.tasks", msg):
@@ -111,7 +111,7 @@ func (a *App) liveKey(msg tea.KeyMsg) tea.Cmd {
 		return nil
 	case a.is("live.cancel", msg):
 		if !s.active() {
-			a.setStatusLevel("This task has already finished", lvlInfo)
+			a.noteStatus(lvlInfo, "This task has already finished")
 			return nil
 		}
 		a.cancelTask(s.id)

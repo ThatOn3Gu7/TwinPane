@@ -86,7 +86,7 @@ func (a *App) beginRename() tea.Cmd {
 	}
 	switch len(targets) {
 	case 0:
-		a.setStatus("nothing to rename: put the cursor on an item", true)
+		a.noteStatus(lvlErr, "nothing to rename: put the cursor on an item")
 		return nil
 	case 1:
 		return a.renameOne(targets[0])
@@ -97,7 +97,7 @@ func (a *App) beginRename() tea.Cmd {
 	}
 	b.replan()
 	a.bulk = b
-	a.setStatus("", false)
+	a.setStatusRow("", lvlInfo)
 	return nil
 }
 
@@ -128,7 +128,7 @@ func (a *App) bulkKey(msg tea.KeyMsg) tea.Cmd {
 		return tea.Quit
 	case a.is("bulkRename.cancel", msg):
 		a.bulk = nil
-		a.setStatus("bulk rename canceled: nothing was renamed", false)
+		a.noteStatus(lvlInfo, "bulk rename canceled: nothing was renamed")
 		return nil
 	case a.is("bulkRename.up", msg):
 		b.cursor--
@@ -150,13 +150,13 @@ func (a *App) bulkKey(msg tea.KeyMsg) tea.Cmd {
 		a.bulkTemplate()
 	case a.is("bulkRename.lower", msg):
 		b.setNews(ops.LowerNames(b.news()))
-		a.setStatus("lower-cased all new names", false)
+		a.noteStatus(lvlInfo, "lower-cased all new names")
 	case a.is("bulkRename.upper", msg):
 		b.setNews(ops.UpperNames(b.news()))
-		a.setStatus("upper-cased all new names", false)
+		a.noteStatus(lvlInfo, "upper-cased all new names")
 	case a.is("bulkRename.reset", msg):
 		b.setNews(b.olds())
-		a.setStatus("all new names reset to the current names", false)
+		a.noteStatus(lvlInfo, "all new names reset to the current names")
 	case a.is("bulkRename.editAll", msg):
 		return a.bulkEditor()
 	case a.is("bulkRename.apply", msg):
@@ -261,7 +261,7 @@ func (a *App) bulkFind() {
 					}
 					b.repl = repl
 					b.setNews(ns)
-					a.setStatus(fmt.Sprintf("replaced in %s", plural(changed, "name")), false)
+					a.noteStatus(lvlInfo, fmt.Sprintf("replaced in %s", plural(changed, "name")))
 					return nil
 				})
 			return nil
@@ -287,7 +287,7 @@ func (a *App) bulkTemplate() {
 			}
 			b.template = tpl
 			b.setNews(ns)
-			a.setStatus("pattern applied", false)
+			a.noteStatus(lvlInfo, "pattern applied")
 			return nil
 		})
 }
@@ -298,25 +298,25 @@ func (a *App) bulkEditor() tea.Cmd {
 	b := a.bulk
 	for _, it := range b.items {
 		if strings.ContainsAny(it.old+it.new, "\n\r") {
-			a.setStatus("cannot edit the list in an editor: a name contains a line break", true)
+			a.noteStatus(lvlErr, "cannot edit the list in an editor: a name contains a line break")
 			return nil
 		}
 	}
 	ed, err := editor.Resolve(a.edEnv)
 	if err != nil {
-		a.setStatus("cannot edit: "+err.Error(), true)
+		a.noteStatus(lvlErr, "cannot edit: "+err.Error())
 		return nil
 	}
 	f, err := os.CreateTemp("", "twinpane-rename-*.txt")
 	if err != nil {
-		a.setStatus("cannot create the temporary list: "+errText(err), true)
+		a.noteStatus(lvlErr, "cannot create the temporary list: "+errText(err))
 		return nil
 	}
 	_, werr := f.WriteString(strings.Join(b.news(), "\n") + "\n")
 	cerr := f.Close()
 	if werr != nil || cerr != nil {
 		os.Remove(f.Name())
-		a.setStatus("cannot write the temporary list", true)
+		a.noteStatus(lvlErr, "cannot write the temporary list")
 		return nil
 	}
 	return a.runEditor(ed, []string{f.Name()}, f.Name(), false)
@@ -330,17 +330,17 @@ func (a *App) bulkEditorDone(m editorDoneMsg) {
 		return
 	}
 	if m.err != nil {
-		a.setStatus(editor.DescribeExit(m.editor, m.err)+"; new names unchanged", true)
+		a.noteStatus(lvlErr, editor.DescribeExit(m.editor, m.err)+"; new names unchanged")
 		return
 	}
 	data, err := os.ReadFile(m.bulkFile)
 	if err != nil {
-		a.setStatus("cannot read the edited list: "+errText(err)+"; new names unchanged", true)
+		a.noteStatus(lvlErr, "cannot read the edited list: "+errText(err)+"; new names unchanged")
 		return
 	}
 	ns, err := ops.ParseNameList(string(data), len(b.items))
 	if err != nil {
-		a.setStatus(err.Error()+"; new names unchanged", true)
+		a.noteStatus(lvlErr, err.Error()+"; new names unchanged")
 		return
 	}
 	if strings.Join(ns, "\n") == strings.Join(b.news(), "\n") {
@@ -349,11 +349,11 @@ func (a *App) bulkEditorDone(m editorDoneMsg) {
 			msg += " (to save in " + m.hint.Name + ": " + m.hint.Save + ")"
 		}
 		delete(a.tipsShown, m.tipKey)
-		a.setStatus(msg, false)
+		a.noteStatus(lvlInfo, msg)
 		return
 	}
 	b.setNews(ns)
-	a.setStatusLevel("new names taken from the editor — nothing renamed yet: press a, then y to apply", lvlOK)
+	a.noteStatus(lvlOK, "new names taken from the editor — nothing renamed yet: press a, then y to apply")
 }
 
 func (a *App) bulkConfirm() {
@@ -366,11 +366,11 @@ func (a *App) bulkConfirm() {
 				break
 			}
 		}
-		a.setStatus(fmt.Sprintf("%s must be fixed before renaming (see the ✗ rows)", plural(b.plan.Errors, "problem")), true)
+		a.noteStatus(lvlErr, fmt.Sprintf("%s must be fixed before renaming (see the ✗ rows)", plural(b.plan.Errors, "problem")))
 		return
 	}
 	if b.plan.Changes == 0 {
-		a.setStatus("no new names yet: edit some names first", true)
+		a.noteStatus(lvlErr, "no new names yet: edit some names first")
 		return
 	}
 	d := &dialog{kind: dlgBulkConfirm, title: fmt.Sprintf("Rename %s?", plural(b.plan.Changes, "item")), width: 72}
@@ -407,7 +407,7 @@ func (a *App) bulkApply() tea.Cmd {
 	b.applying = true
 	plan := b.plan
 	b.started = a.now()
-	a.setStatus(fmt.Sprintf("renaming %s…", plural(plan.Changes, "item")), false)
+	a.setStatusRow(fmt.Sprintf("renaming %s…", plural(plan.Changes, "item")), lvlInfo)
 	return func() tea.Msg {
 		res, err := ops.ApplyBatchRename(context.Background(), plan)
 		return bulkDoneMsg{res: res, err: err}
@@ -436,12 +436,12 @@ func (a *App) bulkDone(m bulkDoneMsg) tea.Cmd {
 	p.ClearSelection()
 	cmds := tea.Batch(p.RefreshFocus(focus), other.Refresh())
 	if m.err != nil {
-		a.setStatus("bulk rename refused: "+m.err.Error(), true)
+		a.noteStatus(lvlErr, "bulk rename refused: "+m.err.Error())
 		return cmds
 	}
 	if m.res.Failed() == 0 {
 		a.result(lvlOK, "Rename completed", fmt.Sprintf("Renamed %s", plural(m.res.Renamed, "item")))
-		a.setStatus("", false)
+		a.setStatusRow("", lvlInfo)
 		return cmds
 	}
 	body := []dline{text(fmt.Sprintf("Renamed %d of %d items in:", m.res.Renamed, len(m.res.Items))), path(b.dir), blank()}
@@ -458,7 +458,11 @@ func (a *App) bulkDone(m bulkDoneMsg) tea.Cmd {
 			body = append(body, warn(fmt.Sprintf("  %s is now named %q (its original name was taken); rename it by hand", r.Old, r.Stranded)))
 		}
 	}
-	a.setStatus(fmt.Sprintf("bulk rename: %d renamed, %d failed", m.res.Renamed, m.res.Failed()), true)
+	lvl := lvlOK
+	if m.res.Failed() > 0 {
+		lvl = lvlErr
+	}
+	a.noteStatus(lvl, fmt.Sprintf("bulk rename: %d renamed, %d failed", m.res.Renamed, m.res.Failed()))
 	a.showReport("Bulk rename finished with problems", body)
 	return cmds
 }

@@ -143,10 +143,10 @@ func (a *App) sourcesDialog(c *cloud.Client, remotes []cloud.Remote, state sourc
 	d.list = append(d.list, listItem{label: "Local files", detail: localDetail, key: "l"})
 	choices = append(choices, choice{func(a *App) tea.Cmd {
 		if !p.InRemote() {
-			a.setStatus("the "+sideName(idx)+" panel already shows local files", false)
+			a.noteStatus(lvlInfo, "the "+sideName(idx)+" panel already shows local files")
 			return nil
 		}
-		a.setStatus("", false)
+		a.setStatusRow("", lvlInfo)
 		return p.GoLocal(localDir, "")
 	}})
 	cur := ""
@@ -165,7 +165,7 @@ func (a *App) sourcesDialog(c *cloud.Client, remotes []cloud.Remote, state sourc
 		}
 		d.list = append(d.list, listItem{label: r.Name + ":", detail: detail, key: key})
 		choices = append(choices, choice{func(a *App) tea.Cmd {
-			a.setStatus("opening "+r.Name+": … (Esc cancels)", false)
+			a.setStatusRow("opening "+r.Name+": … (Esc cancels)", lvlInfo)
 			return p.OpenRemote(&panel.RemoteSource{Client: c, Remote: r})
 		}})
 	}
@@ -216,14 +216,14 @@ func (a *App) localDirFor(i int) string {
 }
 
 func (a *App) refreshBoth() tea.Cmd {
-	a.setStatus("refreshed", false)
+	a.noteStatus(lvlInfo, "refreshed")
 	return tea.Batch(a.panels[0].Refresh(), a.panels[1].Refresh())
 }
 
 // remoteOpened reports a panel that just started showing a remote.
 func (a *App) remoteOpened(p *panel.Panel) {
 	src := p.Source()
-	a.setStatusLevel(fmt.Sprintf("%s: (%s) — c/m copy·move to the other panel · n new · r rename · d delete · ^R sources",
+	a.setStatusRow(fmt.Sprintf("%s: (%s) — c/m copy·move to the other panel · n new · r rename · d delete · ^R sources",
 		src.Remote.Name, src.Remote.Type), lvlInfo)
 }
 
@@ -259,7 +259,7 @@ func (a *App) refuseOnRemote(what string) {
 	if src := a.ActivePanel().Source(); src != nil {
 		name = src.Remote.Name + ":"
 	}
-	a.setStatus(what+" is not available on "+name+" — copy the item to a local panel first ("+a.primaryLabel("browse.copy")+"), or "+a.label("browse.sources")+" → Local files", true)
+	a.noteStatus(lvlErr, what+" is not available on "+name+" — copy the item to a local panel first ("+a.primaryLabel("browse.copy")+"), or "+a.label("browse.sources")+" → Local files")
 }
 
 // ---- copy / move with a remote ---------------------------------------------------
@@ -298,20 +298,20 @@ func (a *App) beginCloudTransfer(kind ops.Kind) tea.Cmd {
 	srcIdx := a.active
 	src, dst := a.panels[srcIdx], a.panels[1-srcIdx]
 	if src.InArchive() {
-		a.setStatus("extract from the archive to a local folder first (x), then copy that to the remote", true)
+		a.noteStatus(lvlErr, "extract from the archive to a local folder first (x), then copy that to the remote")
 		return nil
 	}
 	targets := src.Targets()
 	if len(targets) == 0 {
-		a.setStatus(fmt.Sprintf("nothing to %s: put the cursor on an item or select items with Space", kind), true)
+		a.noteStatus(lvlErr, fmt.Sprintf("nothing to %s: put the cursor on an item or select items with Space", kind))
 		return nil
 	}
 	if dst.Path() == "" || dst.Err() != nil {
-		a.setStatus(fmt.Sprintf("cannot %s: the other panel shows no folder (an error) — open a folder there first", kind), true)
+		a.noteStatus(lvlErr, fmt.Sprintf("cannot %s: the other panel shows no folder (an error) — open a folder there first", kind))
 		return nil
 	}
 	if src.Path() == dst.Path() {
-		a.setStatus(fmt.Sprintf("cannot %s: both panels show the same folder", kind), true)
+		a.noteStatus(lvlErr, fmt.Sprintf("cannot %s: both panels show the same folder", kind))
 		return nil
 	}
 	c := a.cloudClient()
@@ -329,7 +329,7 @@ func (a *App) beginCloudTransfer(kind ops.Kind) tea.Cmd {
 		items = append(items, cloud.TransferItem{Src: cloudPath(src, e.Path), IsDir: e.IsDir, Size: e.Size, ModTime: e.ModTime})
 	}
 	if len(items) == 0 {
-		a.setStatus("symbolic links cannot be copied to a remote (rclone does not follow them)", true)
+		a.noteStatus(lvlErr, "symbolic links cannot be copied to a remote (rclone does not follow them)")
 		return nil
 	}
 	verb, title := capitalize(kind.String()), cloudTitle(kind, src.InRemote(), dst.InRemote())
@@ -400,7 +400,7 @@ func (a *App) beginMkdir() tea.Cmd {
 	}
 	p := a.ActivePanel()
 	if p.Path() == "" || (p.Err() != nil && !p.InRemote()) {
-		a.setStatus("no folder to create it in", true)
+		a.noteStatus(lvlErr, "no folder to create it in")
 		return nil
 	}
 	idx := a.active
@@ -527,7 +527,7 @@ func (a *App) finishCloudOp(s *opSession, m opCloudDoneMsg) tea.Cmd {
 	}
 	a.finishTask(s, state, summary, details...)
 	a.taskResult(s, level, heading, summary, detailsBody(details)...)
-	a.setStatus("", false)
+	a.setStatusRow("", lvlInfo)
 	return cmd
 }
 
@@ -535,7 +535,7 @@ func (a *App) finishCloudOp(s *opSession, m opCloudDoneMsg) tea.Cmd {
 
 func (a *App) renameRemote(targets []fsys.Entry) tea.Cmd {
 	if len(targets) != 1 {
-		a.setStatus("several items at once (bulk rename) can only be renamed in a local panel — select one item", true)
+		a.noteStatus(lvlErr, "several items at once (bulk rename) can only be renamed in a local panel — select one item")
 		return nil
 	}
 	p := a.ActivePanel()
@@ -555,7 +555,7 @@ func (a *App) renameRemote(targets []fsys.Entry) tea.Cmd {
 	d.onSubmit = func(a *App, v string) tea.Cmd {
 		if v == old {
 			a.dialog = nil
-			a.setStatus("name unchanged", false)
+			a.setStatusRow("name unchanged", lvlInfo)
 			return nil
 		}
 		if err := cloud.CheckName(v); err != nil {
@@ -578,7 +578,7 @@ func (a *App) beginCloudDelete() tea.Cmd {
 	idx := a.active
 	targets := p.Targets()
 	if len(targets) == 0 {
-		a.setStatus("nothing to delete: put the cursor on an item or select items with Space", true)
+		a.noteStatus(lvlErr, "nothing to delete: put the cursor on an item or select items with Space")
 		return nil
 	}
 	src := p.Source()
@@ -825,7 +825,7 @@ func (a *App) finishCloudDelete(s *opSession, res cloudDeleteResult) tea.Cmd {
 		s.hist.errors = append(s.hist.errors, errText(res.fatal))
 	}
 	a.taskResult(s, level, heading, summary, detailsBody(details)...)
-	a.setStatus("", false)
+	a.setStatusRow("", lvlInfo)
 	a.finishTask(s, state, summary, details...)
 	return cmd
 }

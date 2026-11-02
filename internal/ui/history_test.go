@@ -779,16 +779,16 @@ func TestTaskActionsOnlyApplyToLiveRows(t *testing.T) {
 	if len(a.tasks.order) != 1 {
 		t.Fatalf("x cleared this run's tasks from a recorded row: %d left", len(a.tasks.order))
 	}
-	if !strings.Contains(a.status, "read-only") {
-		t.Fatalf("x gave no read-only explanation: %q", a.status)
+	if !strings.Contains(reportedText(a), "read-only") {
+		t.Fatalf("x gave no read-only explanation: %q", reportedText(a))
 	}
 	// c: refused, nothing is cancelled and the screen stays open.
 	press(a, "c")
 	if !a.tasks.showing || task.state != taskCompleted {
 		t.Fatal("c did something from a recorded row")
 	}
-	if !strings.Contains(a.status, "read-only") {
-		t.Fatalf("c gave no read-only explanation: %q", a.status)
+	if !strings.Contains(reportedText(a), "read-only") {
+		t.Fatalf("c gave no read-only explanation: %q", reportedText(a))
 	}
 	// Enter / w: refused, no live screen is opened for a record.
 	press(a, "enter")

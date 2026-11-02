@@ -647,7 +647,7 @@ func (a *App) changeHistoryRetention(delta int) {
 	}
 	want := history.ClampLimit(a.history.Limit() + delta)
 	if want == a.history.Limit() {
-		a.setStatusLevel(fmt.Sprintf("History keeps %s (the limit)", plural(want, "run")), lvlInfo)
+		a.noteStatus(lvlInfo, fmt.Sprintf("History keeps %s (the limit)", plural(want, "run")))
 		return
 	}
 	msg := fmt.Sprintf("History keeps the last %s", plural(want, "run"))
@@ -666,7 +666,7 @@ func (a *App) changeHistoryRetention(delta int) {
 			a.settingsErr = nil
 		}
 	}
-	a.setStatusLevel(msg, level)
+	a.noteStatus(level, msg)
 	// The selection may have been pruned away with its run.
 	a.ensureTaskSelection(a.taskEntries())
 }

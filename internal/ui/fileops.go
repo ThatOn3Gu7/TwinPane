@@ -345,7 +345,7 @@ func (a *App) cancelTask(id int) bool {
 		a.finishTask(s, taskCanceled, summary)
 		a.noteResult(lvlWarn, summary, capitalize(s.kind.String())+" cancelled", "nothing was transferred")
 	default:
-		a.setStatusLevel("Stopping "+s.title+" safely…", lvlWarn)
+		a.setStatusRow("Stopping "+s.title+" safely…", lvlWarn)
 	}
 	return true
 }
@@ -398,7 +398,7 @@ func (a *App) handleOpMsg(msg tea.Msg) (tea.Cmd, bool) {
 		if s.canceling {
 			summary := capitalize(s.kind.String()) + " cancelled — nothing was transferred"
 			a.finishTask(s, taskCanceled, summary)
-			a.setStatusLevel(summary, lvlWarn)
+			a.noteStatus(lvlWarn, summary)
 			return nil, true
 		}
 		if m.err != nil {
@@ -500,7 +500,7 @@ func (a *App) beginTransfer(kind ops.Kind) tea.Cmd {
 	src, dst := a.panels[srcIdx], a.panels[1-srcIdx]
 	targets := src.Targets()
 	if len(targets) == 0 {
-		a.setStatus(fmt.Sprintf("nothing to %s: put the cursor on an item or select items with Space", kind), true)
+		a.noteStatus(lvlErr, fmt.Sprintf("nothing to %s: put the cursor on an item or select items with Space", kind))
 		return nil
 	}
 	paths := pathsOf(targets)
@@ -513,7 +513,7 @@ func (a *App) beginTransfer(kind ops.Kind) tea.Cmd {
 	a.historyTouch(s)
 	s.state = taskPlanning
 	s.prog = ops.Progress{Phase: "validating", TotalItems: len(paths)}
-	a.setStatus("Checking "+kind.String()+" paths…", false)
+	a.setStatusRow("Checking "+kind.String()+" paths…", lvlInfo)
 	targets = append([]fsys.Entry(nil), targets...)
 	go func() {
 		err := ops.Validate(req)
@@ -744,7 +744,7 @@ func (a *App) finishTransfer(s *opSession, res ops.Result) tea.Cmd {
 		body = append(body, fmt.Sprintf("%s — details in the task list (t)", plural(n, "item")+" failed"))
 	}
 	a.taskResult(s, level, heading, summary, body...)
-	a.setStatus("", false)
+	a.setStatusRow("", lvlInfo)
 	return tea.Batch(cmds...)
 }
 
@@ -769,7 +769,7 @@ func (a *App) beginDelete() tea.Cmd {
 	}
 	targets := p.Targets()
 	if len(targets) == 0 {
-		a.setStatus("nothing to delete: put the cursor on an item or select items with Space", true)
+		a.noteStatus(lvlErr, "nothing to delete: put the cursor on an item or select items with Space")
 		return nil
 	}
 	paths := append([]string(nil), pathsOf(targets)...)
@@ -777,7 +777,7 @@ func (a *App) beginDelete() tea.Cmd {
 	s.isDelete = true
 	s.state = taskPlanning
 	s.prog = ops.Progress{Phase: "scanning", TotalItems: len(paths)}
-	a.setStatus("Checking what will be deleted…", false)
+	a.setStatusRow("Checking what will be deleted…", lvlInfo)
 	tr := a.trasher
 	go func() {
 		plan, err := ops.PlanDelete(ctx, paths, tr)
@@ -959,7 +959,7 @@ func (a *App) finishDelete(s *opSession, res ops.DeleteResult) tea.Cmd {
 		body = append(body, fmt.Sprintf("%s — details in the task list (t)", plural(len(res.Failed), "error")))
 	}
 	a.taskResult(s, level, heading, summary, body...)
-	a.setStatus("", false)
+	a.setStatusRow("", lvlInfo)
 	a.finishTask(s, state, summary, details...)
 	if s.after != nil {
 		s.after(a)
@@ -986,7 +986,7 @@ func (a *App) renameOne(e fsys.Entry) tea.Cmd {
 	d.onSubmit = func(a *App, v string) tea.Cmd {
 		if v == old {
 			a.dialog = nil
-			a.setStatus("name unchanged", false)
+			a.setStatusRow("name unchanged", lvlInfo)
 			return nil
 		}
 		started := a.now()

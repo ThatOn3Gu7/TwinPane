@@ -72,11 +72,11 @@ func (a *App) beginNewFile() tea.Cmd {
 	}
 	p := a.ActivePanel()
 	if p.InRemote() {
-		a.setStatus("new files can only be created in local folders — use Ctrl+R → Local files first", true)
+		a.noteStatus(lvlErr, "new files can only be created in local folders — use Ctrl+R → Local files first")
 		return nil
 	}
 	if p.Path() == "" || p.Err() != nil {
-		a.setStatus("no folder to create the file in", true)
+		a.noteStatus(lvlErr, "no folder to create the file in")
 		return nil
 	}
 	st := &newFileState{panelIdx: a.active, dir: p.Path()}

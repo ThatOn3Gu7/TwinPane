@@ -183,8 +183,8 @@ func TestEditCardCancelAndEsc(t *testing.T) {
 	if h.a.dialog != nil || len(env.execs) != 0 {
 		t.Fatal("Cancel must close without launching")
 	}
-	if !strings.Contains(h.status(), "not started") {
-		t.Fatalf("status %q", h.status())
+	if !strings.Contains(h.reported(), "not started") {
+		t.Fatalf("reported %q", h.reported())
 	}
 	// Esc
 	*clock = clock.Add(time.Second)

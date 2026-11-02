@@ -70,16 +70,16 @@ func (a *App) cachedPlatform() opener.Platform {
 func (a *App) fileUnderCursor(what string) (*panel.Panel, fsys.Entry, bool) {
 	p := a.ActivePanel()
 	if p.InArchive() {
-		a.setStatus(what+" works on real files: extract it first (x), or view it with v", true)
+		a.noteStatus(lvlErr, what+" works on real files: extract it first (x), or view it with v")
 		return p, fsys.Entry{}, false
 	}
 	e, ok := p.Current()
 	if !ok || e.IsParent {
-		a.setStatus(what+": put the cursor on a file", true)
+		a.noteStatus(lvlErr, what+": put the cursor on a file")
 		return p, e, false
 	}
 	if e.IsDir {
-		a.setStatus(what+" is for files — ⏎ opens a folder", true)
+		a.noteStatus(lvlErr, what+" is for files — ⏎ opens a folder")
 		return p, e, false
 	}
 	return p, e, true
@@ -116,7 +116,7 @@ func (a *App) launchCmd(argv []string, name string, plat opener.Platform, how st
 			how = "android"
 		}
 	}
-	a.setStatus(fmt.Sprintf("opening %s with %s…", fsys.SanitizeName(name), plat.Name), false)
+	a.setStatusRow(fmt.Sprintf("opening %s with %s…", fsys.SanitizeName(name), plat.Name), lvlInfo)
 	launch := a.launch
 	argv = append([]string(nil), argv...)
 	return func() tea.Msg {
@@ -223,7 +223,7 @@ func (a *App) openWithEntry(p *panel.Panel, e fsys.Entry) tea.Cmd {
 		case opener.ActEdit:
 			return a.editPaths([]string{e.Path}, false)
 		case opener.ActBrowse:
-			a.setStatus("opening "+fsys.SanitizeName(e.Name)+"…", false)
+			a.setStatusRow("opening "+fsys.SanitizeName(e.Name)+"…", lvlInfo)
 			return p.OpenArchive(e.Path)
 		case opener.ActCustom:
 			return a.runWithDialog(e)
@@ -247,7 +247,7 @@ func (a *App) shareFile() tea.Cmd {
 		if plat.Termux {
 			why = plat.Why
 		}
-		a.setStatus("cannot share: "+why, true)
+		a.noteStatus(lvlErr, "cannot share: "+why)
 		return nil
 	}
 	return a.launchCmd(argv, e.Name, plat, "share")
@@ -288,7 +288,7 @@ func (a *App) runWithDialog(e fsys.Entry) tea.Cmd {
 		a.dialog = nil
 		cmd := &exec.Cmd{Path: path, Args: append(append([]string{path}, args[1:]...), e.Path), Dir: filepath.Dir(e.Path)}
 		a.editing = true
-		a.setStatus("running "+args[0]+"…", false)
+		a.setStatusRow("running "+args[0]+"…", lvlInfo)
 		pr := editor.NewProcess(cmd)
 		name := e.Name
 		return a.execFn(pr, func(err error) tea.Msg { return runDoneMsg{prog: args[0], name: name, err: err} })

@@ -67,7 +67,7 @@ func (a *App) editPanelTargets(choose bool) tea.Cmd {
 	}
 	targets := a.ActivePanel().Targets()
 	if len(targets) == 0 {
-		a.setStatus("nothing to edit: put the cursor on a file", true)
+		a.noteStatus(lvlErr, "nothing to edit: put the cursor on a file")
 		return nil
 	}
 	paths := make([]string, len(targets))
@@ -95,14 +95,14 @@ func (a *App) editPathsAsk(paths []string, choose, ask bool) tea.Cmd {
 		info, err := editor.Check(p)
 		if errors.Is(err, editor.ErrIsDir) {
 			if len(paths) == 1 {
-				a.setStatus(fmt.Sprintf("%s is a folder: only files can be edited", name), true)
+				a.noteStatus(lvlErr, fmt.Sprintf("%s is a folder: only files can be edited", name))
 			} else {
-				a.setStatus(fmt.Sprintf("the selection contains the folder %s: only files can be edited", name), true)
+				a.noteStatus(lvlErr, fmt.Sprintf("the selection contains the folder %s: only files can be edited", name))
 			}
 			return nil
 		}
 		if err != nil {
-			a.setStatus("cannot edit: "+errText(err), true)
+			a.noteStatus(lvlErr, "cannot edit: "+errText(err))
 			return nil
 		}
 		if info.Binary {
@@ -114,7 +114,7 @@ func (a *App) editPathsAsk(paths []string, choose, ask bool) tea.Cmd {
 	}
 	ed, err := a.resolveEditor()
 	if err != nil {
-		a.setStatus("cannot edit: "+err.Error(), true)
+		a.noteStatus(lvlErr, "cannot edit: "+err.Error())
 		return nil
 	}
 	return a.confirmBinaryThenEdit(ed, paths, binary, ask)
@@ -127,7 +127,7 @@ func (a *App) editPathsAsk(paths []string, choose, ask bool) tea.Cmd {
 func (a *App) openEditorChooser(paths, binary []string) tea.Cmd {
 	eds := editor.Detect(a.edEnv)
 	if len(eds) == 0 {
-		a.setStatus("no editor found in $PATH (looked for "+strings.Join(editor.Fallbacks(a.edEnv.GOOS), ", ")+"): set $EDITOR or install one", true)
+		a.noteStatus(lvlErr, "no editor found in $PATH (looked for "+strings.Join(editor.Fallbacks(a.edEnv.GOOS), ", ")+"): set $EDITOR or install one")
 		return nil
 	}
 	def, defErr := a.resolveEditor()
@@ -176,7 +176,7 @@ func (a *App) openEditorChooser(paths, binary []string) tea.Cmd {
 		}
 	}
 	if cursor < 0 {
-		a.setStatus("none of the detected editors can open several files at once", true)
+		a.noteStatus(lvlErr, "none of the detected editors can open several files at once")
 		return nil
 	}
 	title := fmt.Sprintf("Open %s with…", fsys.SanitizeName(filepath.Base(paths[0])))
@@ -290,7 +290,7 @@ func (a *App) showEditTip(ed editor.Editor, paths []string, bulkFile string) tea
 		if a.dialog == d {
 			a.dialog = nil
 		}
-		a.setStatus("editing canceled: the editor was not started", false)
+		a.noteStatus(lvlInfo, "editing canceled: the editor was not started")
 		return nil
 	}
 	d.buttons = []button{
@@ -310,7 +310,7 @@ func tipLine(s string) dline { return hint(s) }
 func (a *App) launchEditor(ed editor.Editor, paths []string, bulkFile string) tea.Cmd {
 	a.tipsShown[tipKey(ed)] = true
 	name := ed.Display()
-	a.setStatus(fmt.Sprintf("editing with %s (from %s)…", name, ed.Source), false)
+	a.setStatusRow(fmt.Sprintf("editing with %s (from %s)…", name, ed.Source), lvlInfo)
 	// Keys that arrive before Bubble Tea has fully handed over the terminal,
 	// or after it took it back but before editorDoneMsg, are dropped.
 	a.editing = true
@@ -340,7 +340,7 @@ func (a *App) editorDone(m editorDoneMsg) tea.Cmd {
 	if m.bulkFile != "" {
 		a.bulkEditorDone(m)
 		if m.resumed > 0 && m.err == nil {
-			a.setStatusLevel(a.status+" (the editor was suspended and has been resumed)", lvlWarn)
+			a.setStatusRow(a.status+" (the editor was suspended and has been resumed)", lvlWarn)
 		}
 		return tea.Batch(tea.WindowSize(), mouse)
 	}

@@ -83,7 +83,7 @@ func (a *App) beginZip() tea.Cmd {
 	}
 	targets := p.Targets()
 	if len(targets) == 0 {
-		a.setStatus("nothing to compress: put the cursor on an item or select items with Space", true)
+		a.noteStatus(lvlErr, "nothing to compress: put the cursor on an item or select items with Space")
 		return nil
 	}
 	outDir := p.Path()
@@ -376,7 +376,7 @@ func (a *App) finishZip(s *opSession, res compress.Result) tea.Cmd {
 	body = append(body, detailsBody(details)...)
 	failed := res.Fatal != nil || len(res.Errors)+cleanupErrors > 0
 	a.taskResult(s, level, operationHeading("Compress", failed, res.Canceled, res.Created() && (failed || res.Canceled)), summary, body...)
-	a.setStatus("", false)
+	a.setStatusRow("", lvlInfo)
 	a.finishTask(s, state, summary, details...)
 	return cmd
 }

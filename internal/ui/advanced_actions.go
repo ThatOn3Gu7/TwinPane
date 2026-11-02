@@ -51,7 +51,7 @@ func (a *App) advancedSelectedTarget() (advancedTarget, bool) {
 	}
 	if v.mode == advancedContentMode {
 		if v.cursor < 0 || v.cursor >= len(v.contentResults) {
-			a.setStatusLevel("No content match selected", lvlWarn)
+			a.noteStatus(lvlWarn, "No content match selected")
 			return advancedTarget{}, false
 		}
 		r := v.contentResults[v.cursor]
@@ -62,7 +62,7 @@ func (a *App) advancedSelectedTarget() (advancedTarget, bool) {
 		return t, true
 	}
 	if v.cursor < 0 || v.cursor >= len(v.filenameResults) {
-		a.setStatusLevel("No result selected", lvlWarn)
+		a.noteStatus(lvlWarn, "No result selected")
 		return advancedTarget{}, false
 	}
 	index := v.filenameResults[v.cursor]
@@ -202,7 +202,7 @@ func (a *App) advancedJump(t advancedTarget, into bool) tea.Cmd {
 	}
 	info, err := os.Lstat(t.path)
 	if err != nil {
-		a.setStatusLevel(fmt.Sprintf("%s is no longer available: %s", fsys.SanitizeName(t.name), errText(err)), lvlWarn)
+		a.noteStatus(lvlWarn, fmt.Sprintf("%s is no longer available: %s", fsys.SanitizeName(t.name), errText(err)))
 		return nil
 	}
 	index := v.panel
@@ -220,7 +220,7 @@ func (a *App) advancedJump(t advancedTarget, into bool) tea.Cmd {
 	if t.line > 0 {
 		note += fmt.Sprintf(" (line %d)", t.line)
 	}
-	a.setStatusLevel(note, lvlOK)
+	a.setStatusRow(note, lvlOK)
 	var load tea.Cmd
 	if p.InArchive() || p.InRemote() {
 		load = p.GoLocal(dir, focus)
@@ -242,7 +242,7 @@ func (a *App) advancedEnterDirectory(t advancedTarget) tea.Cmd {
 // choices (and archive handling) as O in the panels.
 func (a *App) advancedOpenWith(t advancedTarget) tea.Cmd {
 	if t.isDir {
-		a.setStatusLevel("Open with is for files", lvlWarn)
+		a.noteStatus(lvlWarn, "Open with is for files")
 		return nil
 	}
 	p := a.panels[a.active]
@@ -259,16 +259,16 @@ func (a *App) advancedTransfer(t advancedTarget, kind ops.Kind) tea.Cmd {
 	what := map[ops.Kind]string{ops.Copy: "copy", ops.Move: "move"}[kind]
 	p := a.panels[1-a.active]
 	if p == nil || p.InArchive() || p.InRemote() {
-		a.setStatusLevel(fmt.Sprintf("cannot %s: the other panel is not a local folder", what), lvlWarn)
+		a.noteStatus(lvlWarn, fmt.Sprintf("cannot %s: the other panel is not a local folder", what))
 		return nil
 	}
 	if _, err := os.Lstat(t.path); err != nil {
-		a.setStatusLevel(fmt.Sprintf("%s is no longer available: %s", fsys.SanitizeName(t.name), errText(err)), lvlWarn)
+		a.noteStatus(lvlWarn, fmt.Sprintf("%s is no longer available: %s", fsys.SanitizeName(t.name), errText(err)))
 		return nil
 	}
 	dest := filepath.Clean(p.Path())
 	if dest == t.parent() && kind == ops.Move {
-		a.setStatusLevel("source and destination are the same folder", lvlWarn)
+		a.noteStatus(lvlWarn, "source and destination are the same folder")
 		return nil
 	}
 	paths := []string{t.path}
@@ -283,7 +283,7 @@ func (a *App) advancedTransfer(t advancedTarget, kind ops.Kind) tea.Cmd {
 		// A completed move removes the source: drop it from the results.
 		s.after = func(app *App) { app.pruneAdvancedResults(paths) }
 	}
-	a.setStatus("Checking "+what+" paths…", false)
+	a.setStatusRow("Checking "+what+" paths…", lvlInfo)
 	targets := []fsys.Entry{t.entry()}
 	go func() {
 		err := ops.Validate(req)
@@ -311,7 +311,7 @@ func (a *App) renameAdvancedResult(t advancedTarget) tea.Cmd {
 	d.onSubmit = func(a *App, v string) tea.Cmd {
 		if v == old {
 			a.dialog = nil
-			a.setStatus("name unchanged", false)
+			a.setStatusRow("name unchanged", lvlInfo)
 			return nil
 		}
 		if err := ops.Rename(dir, old, v); err != nil {
@@ -344,7 +344,7 @@ func (a *App) otherPanelRefresh() tea.Cmd {
 // deletes), conflicts, progress and cancellation are unchanged.
 func (a *App) deleteAdvancedResult(t advancedTarget) tea.Cmd {
 	if _, err := os.Lstat(t.path); err != nil {
-		a.setStatusLevel(fmt.Sprintf("%s is no longer available: %s", fsys.SanitizeName(t.name), errText(err)), lvlWarn)
+		a.noteStatus(lvlWarn, fmt.Sprintf("%s is no longer available: %s", fsys.SanitizeName(t.name), errText(err)))
 		return nil
 	}
 	paths := []string{t.path}
@@ -354,7 +354,7 @@ func (a *App) deleteAdvancedResult(t advancedTarget) tea.Cmd {
 	s.state = taskPlanning
 	s.prog = ops.Progress{Phase: "scanning", TotalItems: 1}
 	s.after = func(app *App) { app.pruneAdvancedResults(paths) }
-	a.setStatus("Checking what will be deleted…", false)
+	a.setStatusRow("Checking what will be deleted…", lvlInfo)
 	tr := a.trasher
 	go func() {
 		plan, err := ops.PlanDelete(ctx, paths, tr)

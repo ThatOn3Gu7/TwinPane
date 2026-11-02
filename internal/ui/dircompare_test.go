@@ -117,8 +117,8 @@ func TestDirectoryComparisonRejectsArchivePanels(t *testing.T) {
 	if h.a.comparison != nil {
 		t.Fatal("archive-backed panel must not start local directory comparison")
 	}
-	if !strings.Contains(h.status(), "local-only") {
-		t.Fatalf("local-only refusal not shown: %q", h.status())
+	if !strings.Contains(h.reported(), "local-only") {
+		t.Fatalf("local-only refusal not shown: %q", h.reported())
 	}
 }
 
@@ -140,8 +140,8 @@ exit 0
 	if h.a.comparison != nil {
 		t.Fatal("remote-backed panel must not start local directory comparison")
 	}
-	if !strings.Contains(h.status(), "local-only") {
-		t.Fatalf("local-only refusal not shown: %q", h.status())
+	if !strings.Contains(h.reported(), "local-only") {
+		t.Fatalf("local-only refusal not shown: %q", h.reported())
 	}
 }
 

@@ -635,6 +635,6 @@ func (a *App) closeActivityView() tea.Cmd {
 		return nil
 	}
 	a.actView = nil
-	a.setStatus("", false)
+	a.setStatusRow("", lvlInfo)
 	return nil
 }

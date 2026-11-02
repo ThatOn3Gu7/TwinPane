@@ -578,8 +578,8 @@ func TestDeleteNothingAndParentEntry(t *testing.T) {
 	h.a.ActivePanel().Top() // ".."
 	for _, k := range []string{"d", "c", "m", "r", "e"} {
 		h.press(k)
-		if h.a.dialog != nil || h.a.busy() || !h.a.statusErr {
-			t.Fatalf("%s on '..' should only show an error (status %q)", k, h.status())
+		if h.a.dialog != nil || h.a.busy() || !reportedErr(h.a) {
+			t.Fatalf("%s on '..' should only show an error (reported %q)", k, h.reported())
 		}
 	}
 }
@@ -662,8 +662,8 @@ func TestEditRefusesDirsAndWarnsOnBinary(t *testing.T) {
 	h, env := newOpsApp(t, nil, nil)
 	h.focus("sub")
 	h.press("e")
-	if !h.a.statusErr || !strings.Contains(h.status(), "only files can be edited") || len(env.execs) != 0 {
-		t.Fatalf("dir: %q", h.status())
+	if !reportedErr(h.a) || !strings.Contains(h.reported(), "only files can be edited") || len(env.execs) != 0 {
+		t.Fatalf("dir: %q", h.reported())
 	}
 	os.WriteFile(filepath.Join(env.src, "prog.bin"), []byte{0x7f, 'E', 'L', 'F', 0, 1, 2}, 0o644)
 	h.press("ctrl+l")

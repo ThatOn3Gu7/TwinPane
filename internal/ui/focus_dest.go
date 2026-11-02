@@ -106,12 +106,12 @@ func (a *App) beginFocusTransfer(kind ops.Kind) tea.Cmd {
 	p := a.panels[srcIdx]
 	targets := p.Targets()
 	if len(targets) == 0 {
-		a.setStatus(fmt.Sprintf("nothing to %s: put the cursor on an item or select items with Space", kind), true)
+		a.noteStatus(lvlErr, fmt.Sprintf("nothing to %s: put the cursor on an item or select items with Space", kind))
 		return nil
 	}
 	choices := a.destChoices(srcIdx)
 	if len(choices) == 0 {
-		a.setStatus("no destination available: open another folder in the hidden panel or use the two-pane layout", true)
+		a.noteStatus(lvlErr, "no destination available: open another folder in the hidden panel or use the two-pane layout")
 		return nil
 	}
 	d := &dialog{kind: dlgDest, title: fmt.Sprintf("%s %s to…", capitalize(kind.String()), describe(targets)), width: 64}
@@ -149,7 +149,7 @@ func (a *App) beginTransferTo(kind ops.Kind, srcIdx int, destDir string) tea.Cmd
 	src := a.panels[srcIdx]
 	targets := src.Targets()
 	if len(targets) == 0 {
-		a.setStatus(fmt.Sprintf("nothing to %s: put the cursor on an item or select items with Space", kind), true)
+		a.noteStatus(lvlErr, fmt.Sprintf("nothing to %s: put the cursor on an item or select items with Space", kind))
 		return nil
 	}
 	destDir = filepath.Clean(destDir)
@@ -158,7 +158,7 @@ func (a *App) beginTransferTo(kind ops.Kind, srcIdx int, destDir string) tea.Cmd
 		if err != nil {
 			msg = errText(err)
 		}
-		a.setStatus("cannot "+kind.String()+" to "+destLabel(destLoc{path: destDir})+": "+msg, true)
+		a.noteStatus(lvlErr, "cannot "+kind.String()+" to "+destLabel(destLoc{path: destDir})+": "+msg)
 		return nil
 	}
 	paths := pathsOf(targets)
@@ -169,7 +169,7 @@ func (a *App) beginTransferTo(kind ops.Kind, srcIdx int, destDir string) tea.Cmd
 	s.dstChosen = true
 	s.state = taskPlanning
 	s.prog = ops.Progress{Phase: "validating", TotalItems: len(paths)}
-	a.setStatus("Checking "+kind.String()+" paths…", false)
+	a.setStatusRow("Checking "+kind.String()+" paths…", lvlInfo)
 	targets = append([]fsys.Entry(nil), targets...)
 	go func() {
 		err := ops.Validate(req)

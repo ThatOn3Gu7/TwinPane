@@ -119,14 +119,14 @@ func TestExtractNeeds7zipAndCorrupt(t *testing.T) {
 	h.press("ctrl+l")
 	h.focus("pics.7z")
 	h.press("x")
-	if h.a.dialog != nil || !strings.Contains(h.status(), "needs 7-Zip") {
-		t.Fatalf("7z without 7-Zip: %q", h.status())
+	if h.a.dialog != nil || !strings.Contains(h.reported(), "needs 7-Zip") {
+		t.Fatalf("7z without 7-Zip: %q", h.reported())
 	}
 	env.env["TERMUX_VERSION"] = "1"
 	h.a.platCache = nil
 	h.press("x")
-	if !strings.Contains(h.status(), "pkg install 7zip") {
-		t.Fatalf("Termux hint: %q", h.status())
+	if !strings.Contains(h.reported(), "pkg install 7zip") {
+		t.Fatalf("Termux hint: %q", h.reported())
 	}
 	// a damaged archive: offered, then a clear report
 	h.focus("cut.tar.gz")

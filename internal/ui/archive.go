@@ -94,7 +94,7 @@ func (a *App) refuseInArchive(what string) bool {
 	if !a.ActivePanel().InArchive() {
 		return false
 	}
-	a.setStatus(what+" is not possible inside a read-only archive: x extracts, v views, Esc leaves", true)
+	a.noteStatus(lvlErr, what+" is not possible inside a read-only archive: x extracts, v views, Esc leaves")
 	return true
 }
 
@@ -104,7 +104,7 @@ func (a *App) refuseArchiveDest(what string) bool {
 	if !a.panels[1-a.active].InArchive() {
 		return false
 	}
-	a.setStatus("cannot "+what+" into a read-only archive: leave it in the other panel first (Esc there)", true)
+	a.noteStatus(lvlErr, "cannot "+what+" into a read-only archive: leave it in the other panel first (Esc there)")
 	return true
 }
 
@@ -121,7 +121,7 @@ func (a *App) openFile(p *panel.Panel, e fsys.Entry, tap bool) tea.Cmd {
 		return a.openViewer(p, e)
 	}
 	if a.isBrowsableArchive(e.Path) {
-		a.setStatus("opening "+fsys.SanitizeName(e.Name)+"…", false)
+		a.setStatusRow("opening "+fsys.SanitizeName(e.Name)+"…", lvlInfo)
 		return p.OpenArchive(e.Path)
 	}
 	// Media and documents open in their app when the platform has an
@@ -161,7 +161,7 @@ func (a *App) archiveOpened(p *panel.Panel) {
 		msg += " · " + strings.Join(notes, " · ")
 		lvl = lvlWarn
 	}
-	a.setStatusLevel(msg, lvl)
+	a.setStatusRow(msg, lvl)
 }
 
 // ---- extract -------------------------------------------------------------------
@@ -210,7 +210,7 @@ func (a *App) beginExtract(all bool) tea.Cmd {
 		} else {
 			targets := p.Targets()
 			if len(targets) == 0 {
-				a.setStatus("nothing to extract: put the cursor on an entry or select entries with Space (X extracts everything)", true)
+				a.noteStatus(lvlErr, "nothing to extract: put the cursor on an entry or select entries with Space (X extracts everything)")
 				return nil
 			}
 			t.base = p.ArchiveInner()
@@ -232,24 +232,24 @@ func (a *App) beginExtract(all bool) tea.Cmd {
 		targets := p.Targets()
 		if len(targets) != 1 {
 			if len(targets) == 0 {
-				a.setStatus("nothing to extract: put the cursor on an archive", true)
+				a.noteStatus(lvlErr, "nothing to extract: put the cursor on an archive")
 			} else {
-				a.setStatus("select a single archive to extract (or clear the selection with u)", true)
+				a.noteStatus(lvlErr, "select a single archive to extract (or clear the selection with u)")
 			}
 			return nil
 		}
 		e := targets[0]
 		if e.IsDir {
-			a.setStatus(fsys.SanitizeName(e.Name)+" is a folder, not an archive", true)
+			a.noteStatus(lvlErr, fsys.SanitizeName(e.Name)+" is a folder, not an archive")
 			return nil
 		}
 		info, err := archive.Detect(e.Path)
 		switch {
 		case err != nil:
-			a.setStatus("cannot read "+fsys.SanitizeName(e.Name)+": "+errText(err), true)
+			a.noteStatus(lvlErr, "cannot read "+fsys.SanitizeName(e.Name)+": "+errText(err))
 			return nil
 		case info.Format == archive.FormatUnknown:
-			a.setStatus(fsys.SanitizeName(e.Name)+" is not an archive TwinPane can extract — supported: "+archive.Supported, true)
+			a.noteStatus(lvlErr, fsys.SanitizeName(e.Name)+" is not an archive TwinPane can extract — supported: "+archive.Supported)
 			return nil
 		case info.External():
 			c, _ := compress.Find(compress.Detect(a.lookPath), compress.SevenZ)
@@ -258,7 +258,7 @@ func (a *App) beginExtract(all bool) tea.Cmd {
 				if a.platform().Termux {
 					hint = "Termux: pkg install 7zip"
 				}
-				a.setStatus(fmt.Sprintf("extracting %s archives needs 7-Zip (7zz, 7z, 7za or 7zr), not found — %s", info.Name(), hint), true)
+				a.noteStatus(lvlErr, fmt.Sprintf("extracting %s archives needs 7-Zip (7zz, 7z, 7za or 7zr), not found — %s", info.Name(), hint))
 				return nil
 			}
 			t.tool = c.Tool
@@ -437,7 +437,7 @@ func (a *App) finishExtract(s *opSession, res archive.ExtractResult, parent, par
 		body = append(body, fmt.Sprintf("%s — details in the task list (t)", plural(len(res.Errors), "entry")+" failed"))
 	}
 	a.taskResult(s, level, operationHeading("Extract", res.Fatal != nil || len(res.Errors) > 0, res.Canceled, partial), summary, body...)
-	a.setStatus("", false)
+	a.setStatusRow("", lvlInfo)
 	a.finishTask(s, state, summary, details...)
 	return tea.Batch(cmds...)
 }

@@ -299,8 +299,8 @@ func TestPropertiesEscDiscardsChanges(t *testing.T) {
 	if fi, _ := os.Stat(filepath.Join(env.src, "b.txt")); runtime.GOOS != "windows" && fi.Mode().Perm() != 0o644 {
 		t.Fatalf("mode changed: %v", fi.Mode())
 	}
-	if !strings.Contains(h.status(), "discarded") {
-		t.Fatalf("status %q", h.status())
+	if !strings.Contains(h.reported(), "discarded") {
+		t.Fatalf("reported %q", h.reported())
 	}
 }
 
@@ -520,8 +520,8 @@ func TestArchiveRefusesUnsupportedOperations(t *testing.T) {
 	h.settle()
 	for _, k := range []string{"c", "m"} {
 		h.press(k)
-		if h.a.dialog != nil || !strings.Contains(h.status(), "into a read-only archive") {
-			t.Fatalf("%s into archive: %q", k, h.status())
+		if h.a.dialog != nil || !strings.Contains(h.reported(), "into a read-only archive") {
+			t.Fatalf("%s into archive: %q", k, h.reported())
 		}
 	}
 	if !fileExists(filepath.Join(env.src, "a.txt")) {
@@ -619,8 +619,8 @@ func TestExtractCorruptArchiveFailsSafely(t *testing.T) {
 	if h.a.ActivePanel().InArchive() {
 		t.Fatal("opened a corrupt archive")
 	}
-	if s, isErr := h.a.Status(); !isErr || !strings.Contains(s, "bad.zip") {
-		t.Fatalf("status %q", s)
+	if s, isErr := reportedText(h.a), reportedErr(h.a); !isErr || !strings.Contains(s, "bad.zip") {
+		t.Fatalf("reported %q", s)
 	}
 	if h.a.ActivePanel().Path() != env.src {
 		t.Fatal("panel moved")
@@ -900,7 +900,7 @@ func TestViewerArchiveEntryAndEditor(t *testing.T) {
 		t.Fatal("edit offered for an archive entry")
 	}
 	h.press("e")
-	if len(env.execs) != 0 || !strings.Contains(h.status(), "cannot be edited") {
+	if len(env.execs) != 0 || !strings.Contains(h.reported(), "cannot be edited") {
 		t.Fatal("editor started for an archive entry")
 	}
 	h.press("esc")

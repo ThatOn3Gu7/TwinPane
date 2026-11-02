@@ -299,7 +299,7 @@ func (a *App) taskViewKey(msg tea.KeyMsg) tea.Cmd {
 	switch {
 	case a.is("tasks.close", msg):
 		a.closeTasks()
-		a.setStatus("", false)
+		a.setStatusRow("", lvlInfo)
 	case a.is("tasks.up", msg):
 		a.moveTaskSelection(-1)
 	case a.is("tasks.down", msg):
@@ -332,11 +332,11 @@ func (a *App) cancelSelectedEntry() tea.Cmd {
 	e, ok := a.selectedTaskEntry()
 	switch {
 	case !ok:
-		a.setStatusLevel("Nothing is selected", lvlInfo)
+		a.noteStatus(lvlInfo, "Nothing is selected")
 	case e.kind == taskEntryRecord:
-		a.setStatusLevel("Recorded operations are read-only — nothing to cancel", lvlInfo)
+		a.noteStatus(lvlInfo, "Recorded operations are read-only — nothing to cancel")
 	case e.task == nil || !e.task.active():
-		a.setStatusLevel("The selected task has already finished", lvlInfo)
+		a.noteStatus(lvlInfo, "The selected task has already finished")
 	default:
 		a.cancelTask(e.task.id)
 	}
@@ -347,12 +347,12 @@ func (a *App) cancelSelectedEntry() tea.Cmd {
 // never touched, so the action is refused while a record is selected.
 func (a *App) clearFinishedEntries() tea.Cmd {
 	if e, ok := a.selectedTaskEntry(); ok && e.kind == taskEntryRecord {
-		a.setStatusLevel("Recorded operations are read-only — x only clears this run's finished tasks", lvlInfo)
+		a.noteStatus(lvlInfo, "Recorded operations are read-only — x only clears this run's finished tasks")
 		return nil
 	}
 	n := a.tasks.clearFinished()
 	if n == 0 {
-		a.setStatusLevel("No completed tasks to clear", lvlInfo)
+		a.noteStatus(lvlInfo, "No completed tasks to clear")
 	} else {
 		a.noteResult(lvlOK, fmt.Sprintf("Cleared %s", plural(n, "completed task")),
 			"Tasks cleared", fmt.Sprintf("Cleared %s", plural(n, "completed task")))

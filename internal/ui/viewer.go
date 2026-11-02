@@ -89,7 +89,7 @@ func (a *App) openViewer(p *panel.Panel, e fsys.Entry) tea.Cmd {
 		return nil
 	}
 	if e.IsDir {
-		a.setStatus(fsys.SanitizeName(e.Name)+" is a folder: Enter opens it", true)
+		a.noteStatus(lvlErr, fsys.SanitizeName(e.Name)+" is a folder: Enter opens it")
 		return nil
 	}
 	if p.InRemote() {
@@ -121,7 +121,7 @@ func (a *App) openViewer(p *panel.Panel, e fsys.Entry) tea.Cmd {
 		load = func() (*textview.Doc, error) { return textview.LoadFile(path, textview.Defaults) }
 	}
 	a.viewer = v
-	a.setStatus("", false)
+	a.setStatusRow("", lvlInfo)
 	seq := v.seq
 	return func() tea.Msg {
 		doc, err := load()
@@ -156,7 +156,7 @@ func (a *App) openViewerAt(path, query string, line int, readOnly bool) tea.Cmd 
 		fromAdvanced: readOnly, initialQuery: query, initialLine: line,
 	}
 	a.viewer = v
-	a.setStatus("", false)
+	a.setStatusRow("", lvlInfo)
 	seq := v.seq
 	return func() tea.Msg {
 		doc, err := textview.LoadFile(path, textview.Defaults)
@@ -176,7 +176,7 @@ func innerDir(inner string) string {
 func (a *App) openViewerFor(p *panel.Panel) tea.Cmd {
 	e, ok := p.Current()
 	if !ok || e.IsParent {
-		a.setStatus("nothing to view: put the cursor on a file", true)
+		a.noteStatus(lvlErr, "nothing to view: put the cursor on a file")
 		return nil
 	}
 	return a.openViewer(p, e)
@@ -187,7 +187,7 @@ func (a *App) viewerLoaded(m viewLoadedMsg) tea.Cmd {
 	if v == nil || v.seq != m.seq {
 		return nil // closed or superseded
 	}
-	a.setStatus("", false)
+	a.setStatusRow("", lvlInfo)
 	v.loading = false
 	v.doc, v.err = m.doc, m.err
 	if m.doc == nil {
@@ -247,7 +247,7 @@ func (a *App) closeViewer() {
 		a.viewer.loadCancel() // stops the rclone read and removes the staging
 	}
 	a.viewer = nil
-	a.setStatus("", false)
+	a.setStatusRow("", lvlInfo)
 }
 
 // showsText reports whether there are lines to scroll through.
@@ -369,15 +369,15 @@ func (a *App) viewerKey(msg tea.KeyMsg) tea.Cmd {
 		return nil
 	case a.is("viewer.edit", msg):
 		if v.fromAdvanced {
-			a.setStatus("Advanced Search inspection is read-only", true)
+			a.noteStatus(lvlErr, "Advanced Search inspection is read-only")
 			return nil
 		}
 		if v.remote {
-			a.setStatus("remote previews are read-only — copy the file to a local panel (c) to edit it", true)
+			a.noteStatus(lvlErr, "remote previews are read-only — copy the file to a local panel (c) to edit it")
 			return nil
 		}
 		if v.path == "" {
-			a.setStatus("an archive entry cannot be edited: extract it first (x in the panel)", true)
+			a.noteStatus(lvlErr, "an archive entry cannot be edited: extract it first (x in the panel)")
 			return nil
 		}
 		path := v.path
@@ -390,7 +390,7 @@ func (a *App) viewerKey(msg tea.KeyMsg) tea.Cmd {
 	if !v.showsText() {
 		return nil
 	}
-	a.setStatus("", false)
+	a.setStatusRow("", lvlInfo)
 	page := max(1, v.rows-1)
 	switch {
 	case a.is("viewer.scrollDown", msg):
@@ -422,7 +422,7 @@ func (a *App) viewerKey(msg tea.KeyMsg) tea.Cmd {
 	case a.is("viewer.wrap", msg):
 		v.wrap = !v.wrap
 		v.sub, v.xoff = 0, 0
-		a.setStatus(map[bool]string{true: "line wrapping on", false: "line wrapping off: ←/→ scroll sideways"}[v.wrap], false)
+		a.setStatusRow(map[bool]string{true: "line wrapping on", false: "line wrapping off: ←/→ scroll sideways"}[v.wrap], lvlInfo)
 	case a.is("viewer.numbers", msg):
 		v.numbers = !v.numbers
 		v.sub = 0
@@ -452,12 +452,12 @@ func (a *App) viewerFindDialog() {
 		v.query = q
 		v.matches, v.mcur = nil, -1
 		if q == "" {
-			a.setStatus("search cleared", false)
+			a.setStatusRow("search cleared", lvlInfo)
 			return nil
 		}
 		v.matches = textview.Find(v.doc.Lines, q, viewMaxMatches)
 		if len(v.matches) == 0 {
-			a.setStatus(fmt.Sprintf("%q not found", q), true)
+			a.setStatusRow(fmt.Sprintf("%q not found", q), lvlErr)
 			return nil
 		}
 		// the first match at or after the top of the view (wrapping around)
@@ -479,9 +479,9 @@ func (a *App) viewerNextMatch(dir int) {
 	v := a.viewer
 	if len(v.matches) == 0 {
 		if v.query == "" {
-			a.setStatus("nothing to repeat: / finds text", false)
+			a.setStatusRow("nothing to repeat: / finds text", lvlInfo)
 		} else {
-			a.setStatus(fmt.Sprintf("%q not found", v.query), true)
+			a.setStatusRow(fmt.Sprintf("%q not found", v.query), lvlErr)
 		}
 		return
 	}
@@ -497,8 +497,8 @@ func (a *App) viewerMatchStatus() {
 	if len(v.matches) >= viewMaxMatches {
 		more = "+"
 	}
-	a.setStatus(fmt.Sprintf("%q: line %d — match %d of %d%s (n / N for next / previous)",
-		v.query, v.matches[v.mcur]+1, v.mcur+1, len(v.matches), more), false)
+	a.setStatusRow(fmt.Sprintf("%q: line %d — match %d of %d%s (n / N for next / previous)",
+		v.query, v.matches[v.mcur]+1, v.mcur+1, len(v.matches), more), lvlInfo)
 }
 
 // viewerPosition is shown in the status line when it has nothing else.

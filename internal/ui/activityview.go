@@ -322,11 +322,11 @@ func (a *App) activityKey(msg tea.KeyMsg) tea.Cmd {
 	case a.is("activity.category", msg):
 		v.catSel = v.catSel.Next(1)
 		v.rebuild()
-		a.setStatus("activity: "+v.catSel.Label(), false)
+		a.setStatusRow("activity: "+v.catSel.Label(), lvlInfo)
 	case a.is("activity.level", msg):
 		v.levelSel = v.levelSel.Next(1)
 		v.rebuild()
-		a.setStatus("activity: "+v.levelSel.Label(), false)
+		a.setStatusRow("activity: "+v.levelSel.Label(), lvlInfo)
 	case a.is("activity.prevRun", msg):
 		a.activityJumpRun(-1)
 	case a.is("activity.nextRun", msg):
@@ -340,10 +340,10 @@ func (a *App) activityKey(msg tea.KeyMsg) tea.Cmd {
 		v.query, v.typed = "", ""
 		v.catSel, v.levelSel = activity.FilterAll, activity.LevelsAll
 		v.rebuild()
-		a.setStatus("activity: all entries", false)
+		a.setStatusRow("activity: all entries", lvlInfo)
 	case a.is("activity.reload", msg):
 		v.reload(a)
-		a.setStatus("activity: reloaded", false)
+		a.noteStatus(lvlInfo, "activity: reloaded")
 	case a.is("activity.help", msg):
 		a.openHelp()
 	}
@@ -416,7 +416,7 @@ func (a *App) activityJumpRun(dir int) {
 		}
 		i += dir
 	}
-	a.setStatus("activity: no other session in this filter", false)
+	a.setStatusRow("activity: no other session in this filter", lvlInfo)
 }
 
 // ---- rendering ---------------------------------------------------------------

@@ -138,8 +138,8 @@ func TestEditTargetsSelection(t *testing.T) {
 	h.focus("sub")
 	h.press("space")
 	h.press("e")
-	if !h.a.statusErr || !strings.Contains(h.status(), "the selection contains the folder sub") || len(env.execs) != 1 {
-		t.Fatalf("%q", h.status())
+	if !reportedErr(h.a) || !strings.Contains(h.reported(), "the selection contains the folder sub") || len(env.execs) != 1 {
+		t.Fatalf("%q", h.reported())
 	}
 	_ = p
 }
@@ -387,8 +387,8 @@ func TestBulkRenameValidationAndCancel(t *testing.T) {
 		t.Fatalf("duplicates:\n%s", v)
 	}
 	h.press("a")
-	if h.a.dialog != nil || !strings.Contains(h.status(), "2 problems must be fixed") {
-		t.Fatalf("apply with errors: %q", h.status())
+	if h.a.dialog != nil || !strings.Contains(h.reported(), "2 problems must be fixed") {
+		t.Fatalf("apply with errors: %q", h.reported())
 	}
 	// collision with an existing file outside the batch ("a.txt" exists)
 	h.press("R", "enter", "ctrl+u", "ctrl+k")
@@ -420,7 +420,7 @@ func TestBulkRenameValidationAndCancel(t *testing.T) {
 		t.Fatalf("upper: %s", got)
 	}
 	h.press("esc")
-	if h.a.bulk != nil || !strings.Contains(h.status(), "nothing was renamed") {
+	if h.a.bulk != nil || !strings.Contains(h.reported(), "nothing was renamed") {
 		t.Fatal("Esc must cancel")
 	}
 	if !fileExists(filepath.Join(env.src, "one.txt")) || !fileExists(filepath.Join(env.src, "two.txt")) {
@@ -453,8 +453,8 @@ func TestBulkRenameInExternalEditor(t *testing.T) {
 	env.execErr = &editor.ExitError{Code: 1}
 	h.press("E")
 	h.settle()
-	if got := strings.Join(h.a.bulk.news(), ","); got != "first,second" || !strings.Contains(h.status(), "new names unchanged") {
-		t.Fatalf("editor failure: %s %q", got, h.status())
+	if got := strings.Join(h.a.bulk.news(), ","); got != "first,second" || !strings.Contains(h.reported(), "new names unchanged") {
+		t.Fatalf("editor failure: %s %q", got, h.reported())
 	}
 }
 
