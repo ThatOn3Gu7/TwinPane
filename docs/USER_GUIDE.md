@@ -1289,22 +1289,57 @@ shown in the **other panel**.
 - **Default is No.** `Enter` on the dialog cancels, and confirming needs an
   explicit `y`. Keys typed together with `d` (e.g. "dy" arriving in one read)
   and pasted text can never confirm a deletion.
-- **Trash first.** On Linux/BSD items are moved to the freedesktop.org trash
-  (`$XDG_DATA_HOME/Trash`, usually `~/.local/share/Trash`), with proper
-  `.trashinfo` files so desktop file managers can restore them. On macOS they
-  go to `~/.Trash`. A failed trash move is reported and never silently turns
-  into a permanent delete.
-- **Permanent delete** is used only when the trash can't be: in **Termux
-  (the android build has no trash)**, on Windows, and for items on a
-  different filesystem than the trash, e.g. USB drives or tmpfs. The dialog
-  says **PERMANENTLY** in red, explains why the trash isn't used, warns that
-  it **cannot be undone**, and for folders or multiple items requires typing
-  `delete`.
+- **Trash first.** A deletion is reversible: the item is *moved* into a trash
+  that TwinPane keeps for itself and can be put back from the Trash screen
+  (`T`; see **Trash** below). The move is a rename, so it is instant
+  and nothing is copied. This works the same everywhere — desktop Linux, other
+  distributions, macOS, Windows and **Termux**, which has no trash of its own —
+  because the trash belongs to the application rather than to the desktop. The
+  confirmation says the item goes to the trash, the result says "Moved 1 item
+  to the trash" and names `T` as the way back.
+- **Permanent delete** is used only when the trash cannot take the item: it is
+  on a **different filesystem** than the trash (a USB drive, tmpfs), the trash
+  folder cannot be written, or no home directory is known. The dialog says
+  **PERMANENTLY** in red, explains why the trash isn't used, warns that it
+  **cannot be undone**, and for folders or multiple items requires typing
+  `delete`. A failed move into the trash is reported as an error; it never
+  silently turns into a permanent delete.
 - Built-in safeguards: refuses the filesystem root, your home folder and any
   folder that contains it, and relative paths. Paths are re-checked right
   before deletion. Symlinks are deleted as links, never followed.
 - Partial failures (e.g. permission denied deep inside a folder) are listed in
   a report. Folders that still contain undeletable items are kept.
+
+**Trash (`T`)** — undo a deletion
+- Every delete goes to a trash TwinPane owns: `<XDG_DATA_HOME>/twinpane/trash`
+  (usually `~/.local/share/twinpane/trash`), or
+  `%LOCALAPPDATA%\TwinPane\trash` on Windows. Each item keeps the folder it
+  came from, the time it was deleted and its size, so the screen can list them
+  newest first with `name`, origin and `age · size`. `T` is the capital of the
+  key, so it never collides with `t` for the Tasks screen; `Esc` or `T` again
+  closes it and changes nothing.
+- `r` / `Enter` **puts the item back** where it came from. A restore never
+  overwrites anything: when the name is taken (or the original folder is gone)
+  the item lands in the other panel under a free name instead
+  (`report.txt` → `report (2).txt`), and a notification says where it went.
+  Folders come back whole, with their contents.
+- `d` / `Delete` **deletes the selected item for good** behind a confirmation,
+  and `x` **empties the whole trash** behind a `y` confirmation. Both report
+  what was freed. `Ctrl+L` re-reads the folder.
+- **Retention.** Items are removed automatically once they are older than the
+  time set in Settings → *Trash* → **Keep deleted items for** (1–365 days,
+  default **29**). The sweep runs at start-up and then every six hours while
+  TwinPane is open; nothing has to be scheduled outside the program, and no
+  daemon is left behind. A start-up sweep that removed something says so in one
+  notification ("Removed 1 item older than 29 days"); a sweep that finds
+  nothing says nothing.
+- **Size cap.** The trash may not grow past a tenth of the free space of the
+  filesystem it lives on (1 GiB when the free space cannot be read); beyond
+  that the oldest items are removed first. `TWINPANE_TRASH_CAP` sets a cap in
+  bytes for one run.
+- Only items on the same filesystem can be trashed, because the move has to be
+  a rename. Items elsewhere — and everything when there is no writable trash —
+  are deleted permanently, and the confirmation says so before you confirm.
 
 **Edit (`e` / `F4`)**
 - Opens the file in your external editor. The TUI is suspended while the
@@ -1752,6 +1787,9 @@ they have room to breathe:
   **Rotate at** (64 KiB–16 MiB, default 1 MiB) and **Delete rotated after**
   (1–365 days, default 30). The mode applies at once; the size and age limits
   apply to the next start. See [Activity log (`L`)](#activity-log-l).
+- **Trash** — **Keep deleted items for** (1–365 days, default 29) and **In the
+  trash now**, which shows the item count and size and opens the Trash screen
+  on `Enter`. Lowering the retention removes what is already too old at once.
 - **Keys** — **Key bindings** shows the state of `keybinding.json`: all
   defaults, how many keys differ, or why the file could not be used, with the
   path as its note. `Enter` (or `→`) reloads the file without restarting; the
@@ -1804,7 +1842,8 @@ disables tips whatever the screen says.
 | `c` / `F5` | **copy** to the other panel |
 | `m` / `F6` | **move** to the other panel |
 | `r` / `F2` | **rename** (several targets: **bulk rename**) |
-| `d` / `F8` / `Delete` | **delete** (trash when available) |
+| `d` / `F8` / `Delete` | **delete** (moves to TwinPane's trash; see Trash (`T`)) |
+| `T` | **trash**: restore or delete for good what was deleted before |
 | `e` / `F4` | **edit** in `$VISUAL`/`$EDITOR` (else the first installed editor) |
 | `E` | **edit with…**: choose from the installed editors |
 | `P` | **properties**: details, rename, permissions |
@@ -2000,14 +2039,14 @@ including the end-to-end test scripts, are in
 
 ## Known limitations
 
-- **Trash:** Termux has none: the android build deletes permanently, with
-  the confirmation described above. Elsewhere only the home trash is used. Items on other filesystems (USB
-  drives, other partitions, tmpfs) are deleted permanently, with the typed
-  confirmation described above. Per-volume `.Trash-$UID` folders are not
-  supported. The macOS trash doesn't record "Put Back" information (items can
-  still be dragged back). Windows has no Recycle Bin support, so deletes are
-  permanent there. The macOS and Windows code paths are compiled and vetted
-  but have not been run.
+- **Trash:** TwinPane keeps its own trash, so deletes are reversible on every
+  platform, Termux included. Items on a **different filesystem** than the trash
+  (USB drives, other partitions, tmpfs) cannot be moved into it — the move has
+  to be a rename — so they are deleted permanently, with the typed confirmation
+  described above. There is no freedesktop `.Trash-$UID` support, Windows'
+  Recycle Bin is not used, and items the *desktop* put in its own trash are
+  not listed. The Windows and macOS code paths are compiled and vetted, but
+  have not been run on those systems.
 - **Metadata:** permissions and modification times are preserved. Ownership,
   extended attributes, ACLs and hard links are not (hard-linked files become
   separate copies). Sparse files are written in full.

@@ -15,8 +15,36 @@ Defaults do not move: an untouched installation behaves exactly as before, and
 a missing file is written with the complete default list on first start.
 Settings → *Appearance* also grew from three theme presets to eleven, three of
 them built for light terminals, again without changing the default look.
+Deleting is now reversible everywhere — including Termux, which has no trash of
+its own — because TwinPane keeps the trash itself, with a screen (`T`) to put
+things back and a retention that cleans up on its own.
 
 ### Added
+- **A trash of its own, so a delete can be undone.** `d` / `F8` / `Delete` now
+  *moves* the item into a trash TwinPane keeps (`$XDG_DATA_HOME/twinpane/trash`,
+  usually `~/.local/share/twinpane/trash`; `%LOCALAPPDATA%\TwinPane\trash` on
+  Windows) instead of removing it, and `T` opens that trash. Every line names
+  the item, the folder it came from and its age and size; `r` / `Enter` puts it
+  back where it came from — or in the other panel under `report (2).txt` when
+  the name is taken, because a restore never overwrites — while `d` deletes one
+  item for good and `x` empties everything, each behind the usual confirmation
+  and reported as one notification. The move is a rename, so it is instant and
+  nothing is copied. This works on Termux, desktop Linux, other distributions,
+  macOS and Windows alike: the desktop's own trash is gone, one store behaving
+  the same everywhere and carrying the retention with it.
+- **Retention that needs no daemon.** Items older than **29 days** are removed
+  at start-up and every six hours while TwinPane is open; Settings → *Trash* →
+  **Keep deleted items for** sets it (1–365 days), and lowering it prunes at
+  once. A row underneath shows what the trash holds now and opens the screen on
+  `Enter`. The trash may not take more than a tenth of the free space of its
+  filesystem — the oldest items go first — and `TWINPANE_TRASH_CAP` sets a
+  different cap in bytes for one run. A sweep that removed something says so
+  once ("Removed 1 item older than 29 days"); one that found nothing is silent.
+- **`T` for the trash, `t` for the tasks.** The two screens have separate
+  sections in `keybinding.json` (`trash.*` and the task list's own names), and
+  the bindings were chosen so the old `t` keeps its meaning: the trash is the
+  capital of the same letter, and the help screen shows it in *File
+  operations*.
 - **Custom key bindings.** `keybinding.json` lives next to `settings.json`
   (`$TWINPANE_CONFIG_DIR`, default `~/.config/twinpane`). It names every action
   (`browse.copy`, `viewer.wrap`, `tasks.close`, `input.backspace`, …), grouped
@@ -95,6 +123,15 @@ them built for light terminals, again without changing the default look.
   being read.
 
 ### Changed
+- Deleting is no longer permanent by default on **Termux** or **Windows**. The
+  confirmation reads "Move … to the trash?" wherever the item is on the trash's
+  own filesystem, and the red **PERMANENTLY** wording is kept for the cases
+  that cannot be undone — an item on another filesystem (USB drive, tmpfs), a
+  trash folder that cannot be written, no home directory — together with the
+  reason and, for folders or several items, the typed `delete`.
+- The freedesktop.org trash (`~/.local/share/Trash`, `~/.Trash` on macOS) is
+  replaced by TwinPane's own store. Nothing that was already in the desktop
+  trash is touched or migrated; it stays with the desktop.
 - The browse key map, the focus-mode toggle, the preview pane and Go to are
   bindings now instead of hard-coded key strings, and the activity log records
   the action's name rather than the old key.

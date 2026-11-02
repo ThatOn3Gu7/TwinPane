@@ -29,7 +29,8 @@ view with large touch targets is easier than typing long paths.
   click, wheel and drag in desktop terminals. Destructive actions always ask
   first.
 - **Careful with your data:** copies are written to temporary files and
-  renamed when complete, deletes go to the trash where one exists, and
+  renamed when complete, deletes go to TwinPane's own trash (`T` restores
+  them), and
   nothing is ever overwritten without asking.
 
 ```
@@ -108,11 +109,13 @@ The [user guide](docs/USER_GUIDE.md) describes every feature in detail.
 - Rename (`r`) and bulk rename of several items: find/replace with regular
   expressions, name patterns, upper/lower case, or editing every name in your
   editor. Nothing is renamed until you confirm, and nothing is overwritten.
-- Delete (`d`) moves items to the trash on Linux and macOS. **Termux and
-  Windows have no trash: deletes there are permanent.** The dialog then says
-  PERMANENTLY in red, and for folders or several items you must type
-  `delete`. The same applies on Linux to items on another filesystem than
-  the trash (USB drives, tmpfs).
+- Delete (`d`) moves items to a trash TwinPane keeps itself, on every platform
+  including **Termux and Windows**, and `T` opens that trash to put something
+  back (`r`), delete it for good (`d`) or empty it (`x`). Items older than 29
+  days are removed automatically; Settings → *Trash* changes that. Items on
+  another filesystem than the trash (USB drives, tmpfs) cannot be moved into
+  it: the dialog then says PERMANENTLY in red, and for folders or several
+  items you must type `delete`.
 - Properties (`P`): size, times, owner, symbolic-link target, and permission
   editing on filesystems that support it.
 
@@ -512,7 +515,8 @@ quarantine flag; remove it with
 
 **Windows (untested):** extract `twinpane-v0.10.0-windows-amd64.zip` and run
 `twinpane.exe` in Windows Terminal. It is compiled for completeness but has
-never been run, and Windows has no trash (deletes are permanent).
+never been run. Deletes are reversible there too: the trash is TwinPane's own
+(`%LOCALAPPDATA%\TwinPane\trash`), not the Recycle Bin.
 
 ### Install with Go
 
@@ -620,13 +624,13 @@ twinpane --version
 | `Ctrl+O` | focus mode: one panel at full width (`p` toggles its preview) | `w` | watch the selected task live (in `t`) |
 | `↑` `↓` / `j` `k` | move | `m` / `F6` | move to the other panel |
 | `Enter` / `→` | open folder, view file, browse ZIP/TAR | `r` / `F2` | rename (several: bulk rename) |
-| `Backspace` / `←` | parent folder | `d` / `F8` | delete (trash if available) |
+| `Backspace` / `←` | parent folder | `d` / `F8` | delete (to the trash) |
 | `Space` | select | `e` / `E` | edit / edit with… |
 | `a` / `u` | select all / none | `v` / `F3` | view |
 | `/` | find by name; `Ctrl+G` opens Advanced Search | `z` / `x` | compress / extract |
 | `s` / `S` | sort / reverse | `o` / `O` | open / open with… |
 | `h` | hidden files | `P` | properties |
-| `D` / `A` | compare folders / analyze sizes | `t` | tasks & operation history (one list) |
+| `D` / `A` | compare folders / analyze sizes | `t` / `T` | tasks & operation history / the trash (restore, delete for good, empty) |
 | `L` | activity log (what TwinPane did) | `F9` / `Ctrl+S` | settings |
 | `b` / `B` | bookmarks / add | `M` | action menu |
 | `i` | storage | `?` / `F1` | help (with `/` filter) |

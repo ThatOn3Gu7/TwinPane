@@ -22,7 +22,7 @@ cmd/twinpane ──► internal/ui ──► internal/panel ──► internal/f
 | `panel` | One panel's state (path, entries, cursor, scroll offset, selection, error, loading). Has navigation methods, async loads that return `tea.Cmd`, and rendering at a given size. | `fsys`, `theme`, Bubble Tea types |
 | `fileext` | File-extension catalogue for New file: 238 extensions in 15 categories, category/name/description search, and the naming rules (`SplitExtension`, `FinalName`, `NormalizeExtension`). No I/O and no UI imports. | stdlib only |
 | `theme` | Every Lip Gloss style in one struct. | Lip Gloss |
-| `ops` | File-operation engine: `Validate`, `Run` (copy/move), `PlanDelete`/`Delete`, `Trasher` implementations, `ValidateName`/`Rename`. Reports through plain callback hooks. | stdlib, `x/sys` |
+| `ops` | File-operation engine: `Validate`, `Run` (copy/move), `PlanDelete`/`Delete`, the `Trasher` interface with the managed `TrashStore` (and `NoTrash`), `ValidateName`/`Rename`. Reports through plain callback hooks. | stdlib, `x/sys` |
 | `editor` | Picks the external editor (`$VISUAL` → `$EDITOR` → fallbacks), checks whether a file is editable or binary, builds the `*exec.Cmd`. Phase 3: `Process` runs it with terminal hand-over and job control (`process_jobctl.go`, termios per OS). | stdlib, `x/sys` |
 | `search` | Live filename indexing (`Index`, `Filter`, `Rank`), cancellable content traversal (`RunContent`, bounded by file/byte/result limits and skipping exact `.git` directories), and FZF-inspired fuzzy subsequence ranking (`FuzzyRankContext`). | stdlib, `proc`, `textview` |
 | `proc` | v0.3.1: `LookPath` and `Start`/`Wait`/`Kill` without the system calls Android's seccomp filter forbids. All program lookups and starts go through it. | stdlib, `x/sys` |
@@ -135,11 +135,27 @@ current relative directory where possible.
   `Trasher` whether every path can be trashed. `Delete` re-checks each path,
   then either trashes it or removes it post-order with `Lstat`, so links are
   never followed. A folder is kept if anything inside it failed.
-- `FreeDesktopTrash` writes `info/<name>.trashinfo` with `O_EXCL` (URL-escaped
-  path, local `DeletionDate`). It then renames into `files/` with
-  `RENAME_NOREPLACE`, and removes the info file if the rename fails. It only
-  accepts items on the trash's filesystem and never copies.
-  `MacTrash` uses `~/.Trash`; `NoTrash` covers everything else.
+- `TrashStore` is the trash every platform uses — the application's own store
+  rather than the desktop's, because Termux has no trash and Windows' Recycle
+  Bin needs COM. The layout is `data/<id>` (the item, moved with
+  `rename(2)`) and `info/<id>.json` (`name`, `origin`, `deletedAt`, `bytes`,
+  `dir`); the id is a UTC timestamp plus a counter, so equal names never
+  collide and `Restore` can never overwrite. `OpenTrash(dir)` creates both
+  folders with mode 0700; `DefaultTrashDir()` picks
+  `$XDG_DATA_HOME/twinpane/trash` (else `~/.local/share/twinpane/trash`) or
+  `%LOCALAPPDATA%\TwinPane\trash`. `Available` requires the *same device*
+  as the trash and refuses anything already inside it; `Put` writes the index
+  record first and removes it if the rename fails, so a failed attempt leaves
+  no trace. `Restore` renames back to an absolute destination and only falls
+  back to a copy (then delete) across filesystems.
+- `Sweep(keepDays, capBytes)` is the retention: it drops entries older than
+  `keepDays` (default 29, bounds 1–365) and then the oldest items while the
+  trash is over the cap. `CapBytes()` is a tenth of the free space of the
+  trash's filesystem (1 GiB when unknown; `TWINPANE_TRASH_CAP` overrides).
+  `Empty` and `Remove` claim the index file first, so two windows sharing one
+  trash cannot remove the same item twice. `NoTrash` (a reason string) stands
+  in when no location can be resolved, and the delete plan then reports the
+  reason and asks for a permanent delete.
 - Test seams (package variables): `moveRename` (forces `EXDEV`), `wrapWriter`
   (injects write errors or corruption), `freeSpaceFn`, `sameDeviceFn`,
   `homeDirFn`.
@@ -967,10 +983,12 @@ android-arm64 build".
   and macOS Intel runners) → publish (draft, upload, then publish; the only
   job with `contents: write`). Actions are pinned to commit SHAs. Details
   are in [RELEASING.md](RELEASING.md).
-- **Known behaviour, documented rather than changed:** `ops.DefaultTrasher`
-  has no case for `android`, so Termux uses `NoTrash` and deletes are
-  permanent (with the typed confirmation). Adding `android` to the
-  freedesktop case would enable a trash in Termux's home.
+- **The trash is not the desktop's.** `ops.DefaultTrasher` always returns the
+  managed `TrashStore`, on Android too, so a delete in Termux is reversible
+  like anywhere else; `NoTrash` is only reached when no home directory is
+  known or the folder cannot be created. The freedesktop trash was dropped
+  on purpose: `.trashinfo` only covers local files on one device, and the
+  retention and size caps are easier to keep honest inside one store.
 
 ## Phase 9 (v0.8.0): cloud remotes, extraction formats, new folder
 
@@ -1362,9 +1380,10 @@ and conflict prompts still apply per item.
   loops, unreadable files and folders, special files, disk full, low space,
   cancel mid-file, cross-device move (forced `EXDEV` plus a real one when
   `TWINPANE_XDEV_DIR` is set), verification failure, source-removal failure,
-  delete safeguards, symlinks never followed, partial delete, freedesktop
-  trash format, trash failure never falling back to permanent delete, and
-  name validation.
+  delete safeguards, symlinks never followed, partial delete, the managed
+  trash store (index round-trip, unavailable/failed moves, restore,
+  cross-filesystem restore, `Sweep` by age and by cap, `Empty`), trash
+  failure never falling back to permanent delete, and name validation.
 - `scripts/tui_smoke.sh` (phase 1, plus `h`/sort checks) and
   `scripts/tui_smoke_ops.sh` (phase 2): run the compiled binary in tmux and
   assert on the captured screen and on the filesystem.
@@ -1551,3 +1570,28 @@ The viewer (`L`) is a full-body screen following the Tasks screen's pattern:
 one snapshot of the log, a category filter (`activity.CatFilter`, including a
 "Warnings & Errors" filter that cuts across categories), a minimum-level filter
 and a typed query. Filters never change what is stored.
+
+## Trash screen (`internal/ui/trashview.go`)
+
+The screen is a full-body overlay like the Tasks screen, held in
+`uiState.trash`, and `T` opens it while `t` still opens the tasks — the two
+are separate sections in `keybinding.json` (`trash.*` and `task.*`), so a
+rebind of one cannot disturb the other. It shows one line per item
+(`name`, the origin path, then `age · size` right-aligned) and an empty state
+when there is nothing to undo.
+
+- **Restore** asks `trashRestoreTarget` for a destination: the recorded origin
+  when its folder still exists and the name is free, otherwise the other panel
+  (then the active one, then home) with `freeNameIn` numbering the clash
+  (`report.txt` → `report (2).txt`). `TrashStore.Restore` re-checks that the
+  destination does not exist, so the UI choice and the store cannot disagree.
+  Both panels refresh afterwards.
+- **Delete for good** and **empty the trash** reuse the standard dialogs and
+  the same "result is a notification" rule; `Empty` counts what it freed.
+- **Retention** comes from `settings.Trash.Days` (default 29). No timer is
+  started: `Init` sweeps once, and `trashMaybeSweep` runs another sweep from
+  `Update` when six hours have passed, so a long session still prunes and no
+  Tea command outlives the screen. A sweep that removed nothing is silent; one
+  that removed something reports the count as a single notification.
+- The cached count and size (`refreshTrashStats`) feed the Settings row
+  *In the trash now*; deleting, restoring and sweeping refresh it.
