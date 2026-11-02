@@ -325,27 +325,34 @@ corner of the panel area rather than by a line at the bottom of the screen:
   terminal both the heading and the message are truncated or wrapped to fit.
 - **The countdown** has no row of its own: the bottom border is drawn as a
   heavy line that shrinks towards the left as the time runs out.
-- **What becomes a notification:** every result — copy, move and delete
-  (including background ones and the ones cancelled at the confirmation),
-  archive extraction and compression, cloud file operations, reviewed
-  directory plans, renames and new files, folder-size scans, opening or sharing
-  a file with another app, bookmarks, the clipboard copy of a path, an edit
-  that finished, cleared tasks, settings being reset, the focus-mode toggle,
-  and a reload of `keybinding.json` from its Settings row (with the problems it
-  found, if any).
-- **What stays in the status line:** progress ("Checking copy paths…"),
-  prompts and refusals ("nothing to copy: put the cursor on an item or select
-  items with Space"), navigation notes, mode toggles and selection counts.
-  These describe what to do next rather than what just happened, so they
-  belong next to the panels — until they do not fit, in which case the
-  notification takes them over (see below). The focus toggle is always a
-  notification, because its note names the way back to the other layout, which
-  is the first thing a narrow row cuts.
+- **What becomes a notification — every answer to what you did:** copy, move
+  and delete (including background ones and the ones cancelled at the
+  confirmation), archive extraction and compression, cloud file operations
+  (including "Google Drive: no such host" when a remote is unreachable),
+  reviewed directory plans, renames and new files, folder-size scans, opening
+  or sharing a file with another app, bookmarks, the clipboard copy of a path,
+  an edit that finished, cleared tasks, the number of runs the history keeps,
+  settings being reset, the focus-mode toggle, and a reload of
+  `keybinding.json` from its Settings row (with the problems it found, if any).
+  A refusal counts too: pressing `c` with nothing to copy, `d` with the cursor
+  on `..`, `o` on a folder or `x` on a file that needs 7-Zip all answer in the
+  pop-up, whole.
+- **What stays in the status line — state you read while working:** progress
+  ("Checking copy paths…", "Scanning folder sizes…"), mode and state notes
+  ("sort by name", "hidden: shown", "preview pane on"), navigation ("back to
+  /home/me", "found src/main.go"), filter labels and selection counts. They
+  change all the time and belong next to the panels — until they do not fit,
+  in which case the notification takes them over (see below). The focus toggle
+  is always a notification, because its note names the way back to the other
+  layout, which is the first thing a narrow row cuts.
 - **One message, one place — and the same place every time.** A result is
   always the pop-up: on a wide terminal, where the sentence would have fitted
-  in the row, just as on a narrow one. Nothing is printed in both places, so
-  the row underneath the box goes back to naming the folder or file under the
-  cursor, and you never read the same sentence twice.
+  in the row, just as on a narrow one, and whether it is the first answer or
+  the fifth time you retried the same failing key. Nothing is printed in both
+  places, so the row underneath the box always goes back to naming the folder
+  or file under the cursor: a second attempt replaces the box, it never queues
+  up underneath it as a bare line. Which messages are results and which are
+  state is a property of the message itself, never of the terminal's width.
 - **A message longer than the row:** the row is one line and cuts what does not
   fit, and the cut part is usually the reason ("… put the cursor on an item",
   which line of `keybinding.json` to fix). When a *note* (guidance rather than
@@ -382,7 +389,8 @@ corner of the panel area rather than by a line at the bottom of the screen:
   looking.
 - **No spam:** only one notification is shown at a time, a newer result
   replaces an older one, and repeating the same result restarts its countdown
-  instead of flashing.
+  instead of flashing. Pressing a failing key five times gives one box that
+  keeps saying the same thing — not five lines of history.
 - **It fits the screen:** the box is drawn wherever TwinPane itself is drawn,
   from a phone in landscape to a wall of columns. On a short terminal it gives
   up its message lines before it gives up itself — three rows (heading, one

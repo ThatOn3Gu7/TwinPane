@@ -1215,21 +1215,28 @@ unseen).
   gives up message lines before it gives up itself, so three rows — heading, one
   line, countdown — are enough. Below that the status row carries the text.
 - Callers only build a `taskResult`; the operation code never draws.
-- `setStatusLevel` is also a producer: `noteLongStatus` moves a *note* into a
-  notification when it is wider than the status row (the row spends one cell on
-  its space and two on the level's icon), because the row cuts silently and the
-  tail is often the reason. The text then lives in the pop-up only.
-- `noteResult` is the producer for results: the message is logged under the line
-  the row would have held, shown in the notification, and taken out of the row
-  through `hideStatus`; if no pop-up can be drawn at all (a dialog owns the
-  screen, or the terminal is below the interface's own minimum) the row keeps
-  the message, so a result is never reported nowhere. Which surface a message
-  uses is a property of the call, never of the terminal's width: a result pops
-  up on a 200-column terminal exactly as on a 34-column one. This is what
-  every result-producing call site uses — file operations (through
-  `taskResult`), extract/compress, cloud operations, renames and new files,
-  opening and sharing, bookmarks, the clipboard copy, finished edits, cleared
-  tasks, the keybinding reload and the focus toggle.
+- There are two producers and no third way to talk to the user, so the split is
+  compile-enforced: `setStatus`/`setStatusLevel` do not exist any more.
+- `setStatusRow` (formerly `setStatusLevel`) writes state into the row and
+  nothing else — progress, mode and state notes, navigation, filter labels,
+  counts. It also runs `noteLongStatus`, which raises a *row* message that is
+  wider than the row (the row spends one cell on its space and two on the
+  level's icon) in the pop-up instead, because the row cuts silently and the
+  tail is often the reason.
+- `noteStatus` (a thin wrapper over `noteResult`) reports a result: the message
+  is logged under the line the row would have held, shown in the notification,
+  and taken out of the row through `hideStatus`; if no pop-up can be drawn at
+  all (a dialog owns the screen, or the terminal is below the interface's own
+  minimum) the row keeps the message, so a result is never reported nowhere.
+  Which surface a message uses is a property of the call, never of the
+  terminal's width: a result pops up on a 200-column terminal exactly as on a
+  34-column one. Every result-producing call site uses it — file operations
+  (through `taskResult`), extract/compress, cloud operations and their failures,
+  renames and new files, opening and sharing, bookmarks, the clipboard copy,
+  finished edits, cleared tasks, the history retention, the keybinding reload,
+  the focus toggle, and every refusal. Back-to-back results replace each other
+  in the same box; because the row is never written for them, a retry cannot
+  leave the previous answer under the new one.
 - `View`'s `statusView` suppresses a row message that is character-for-character
   the text the pop-up is currently showing, as a belt-and-braces guard for the
   case where a result was written to the row while a dialog paused the pop-up:
@@ -1253,10 +1260,14 @@ unseen).
 Tests: `internal/ui/notice_test.go` (kinds, wording, wrapping, pin/resume,
 replacement, dialog pause, the box shrinking on small terminals) and
 `notice_status_test.go` (a result popping up on any width and appearing exactly
-once, a long note moving out of the row, unfolding on a tap, the keybinding
-reload and start-up problems, the note over the Settings window). Tests that ask
-"did the app report this?" use the `reported()`/`reportedText` helpers, which
-look at whichever surface carries the message.
+once, three retries of a failing key staying in the box at four terminal sizes,
+the history retention in the box, a long note moving out of the row, unfolding
+on a tap, the keybinding reload and start-up problems, the note over the
+Settings window, row messages never popping up). Tests that ask "did the app
+report this?" use the `reported()`/`reportedText`/`reportedLevel`/`reportedErr`
+helpers, which look at whichever surface carries the message. The test harness
+drops `noticeTickMsg` like a spinner frame, so a message stays readable for the
+length of a test instead of expiring while the commands drain.
 
 ## Focus mode and panel navigation history (`ui/focus.go`, `ui/nav.go`)
 

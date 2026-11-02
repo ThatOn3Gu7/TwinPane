@@ -54,14 +54,27 @@ them built for light terminals, again without changing the default look.
   how many keys differ, or why the file could not be used) and reloads it on
   `Enter`, without a restart, reporting the result in a notification (and in
   the activity log). There is deliberately no key editor in the interface.
-- **Every result is a notification.** Copy, move, delete, extract, compress,
-  cloud operations, renames and new files, folder-size scans, opening or
+- **Every answer to what you did is a notification.** Copy, move, delete,
+  extract, compress, cloud operations and the failures of a remote ("Google
+  Drive: no such host"), renames and new files, folder-size scans, opening or
   sharing a file with another app, bookmarks, the copied path, a finished edit,
-  cleared tasks, the focus toggle and a reload of `keybinding.json` all report
-  in the pop-up — and only there, so the same outcome is never printed twice,
-  once in the box and once, cut short, on the row underneath it. The choice
-  does not depend on the terminal's width any more: before, a message switched
-  between the box and a bare line depending on how many columns the window had.
+  cleared tasks, the number of runs the history keeps, the focus toggle and a
+  reload of `keybinding.json` all report in the pop-up — and only there, so the
+  same outcome is never printed twice, once in the box and once, cut short, on
+  the row underneath it. Refusals count too: nothing to copy, `..` cannot be
+  deleted, a folder cannot be opened with another app, 7-Zip is missing. What
+  stays in the row is state rather than news — progress, mode notes,
+  navigation, filter labels and counts. The split is compile-enforced: the old
+  `setStatus` is gone, so every message has to say which surface it belongs to.
+- **A retry replaces the box instead of leaving the old answer under it.**
+  Pressing a failing key again — a remote without a network, a folder that
+  cannot be listed — used to raise the first failure in the pop-up and print
+  the second as bare text under it, so two attempts read as three messages.
+  Repeated and back-to-back results now replace each other in the same box,
+  and pressing the same key five times gives one box, not five lines. The
+  choice does not depend on the terminal's width either: before, a message
+  switched between the box and a bare line depending on how many columns the
+  window had.
 - **Nothing is cut off any more.** The status line is one row and silently
   truncated what did not fit — which was usually the part that explained
   something: "… put the cursor on an item and press c", the name in
@@ -88,8 +101,9 @@ them built for light terminals, again without changing the default look.
 - The focus-mode toggle and a key binding reload report themselves in a
   notification instead of the status line, because their text names the way
   back or the thing to fix, which is the part a narrow row cuts. One outcome is
-  one message for everything else too: a note only stays in the row when it
-  fits there.
+  one message for everything else too, including refusals; only state that is
+  read while working (progress, mode notes, navigation, counts) is left in the
+  row, and only while it fits there.
 - A notification is drawn over the Settings window and the properties card (a
   dialog still covers it and pauses its countdown), so the answer to a row
   pressed inside one of them is visible where it is looked for, and a tap lands
