@@ -168,7 +168,7 @@ func TestDeleteResultIsANotification(t *testing.T) {
 	if h.a.notice.kind != noticeOK {
 		t.Errorf("kind = %v, want success", h.a.notice.kind)
 	}
-	if !fileExists(filepath.Join(env.trash, "files", "a.txt")) {
+	if !inTrash(t, env.trash, "a.txt", "") {
 		t.Fatal("the delete did not happen")
 	}
 }

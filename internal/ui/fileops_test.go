@@ -200,7 +200,11 @@ func newOpsApp(t *testing.T, tr ops.Trasher, edEnv *editor.Env) (*harness, *opsE
 	t.Setenv("HOME", root+"/home")
 	os.MkdirAll(root+"/home", 0o755)
 	if tr == nil {
-		tr = &ops.FreeDesktopTrash{Dir: env.trash}
+		st, err := ops.OpenTrash(env.trash)
+		if err != nil {
+			t.Fatal(err)
+		}
+		tr = st
 	}
 	if edEnv == nil {
 		edEnv = &editor.Env{Getenv: func(string) string { return "" }, LookPath: func(n string) (string, error) { return "/bin/" + n, nil }, GOOS: "linux"}
@@ -454,7 +458,7 @@ func TestDeleteToTrashDefaultIsNo(t *testing.T) {
 	h.press("y")
 	h.idle()
 	h.settle()
-	if fileExists(filepath.Join(env.src, "a.txt")) || readFile(t, filepath.Join(env.trash, "files", "a.txt")) != "new-a" {
+	if fileExists(filepath.Join(env.src, "a.txt")) || !inTrash(t, env.trash, "a.txt", "new-a") {
 		t.Fatal("not moved to trash")
 	}
 	if !strings.HasPrefix(h.reported(), "Moved 1 item to the trash") || panelHas(h.a.Panel(0), "a.txt") {
@@ -1007,4 +1011,30 @@ func TestDialogsFitSmallScreens(t *testing.T) {
 		h.press("esc")
 		h.a.ActivePanel().ClearSelection()
 	}
+}
+
+// inTrash reports whether a deleted item with this name is in the trash and,
+// when want is not empty, whether its content is still intact.
+func inTrash(t *testing.T, trashDir, name, want string) bool {
+	t.Helper()
+	st, err := ops.OpenTrash(trashDir)
+	if err != nil {
+		return false
+	}
+	entries, err := st.Entries()
+	if err != nil {
+		return false
+	}
+	for _, e := range entries {
+		if e.Name != name {
+			continue
+		}
+		if want == "" {
+			return true
+		}
+		if b, err := os.ReadFile(filepath.Join(trashDir, "data", e.ID)); err == nil && string(b) == want {
+			return true
+		}
+	}
+	return false
 }

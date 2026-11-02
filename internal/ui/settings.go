@@ -72,6 +72,8 @@ const (
 	rowActivity
 	rowActivitySize
 	rowActivityDays
+	rowTrashDays
+	rowTrashNow
 	rowKeybindings
 )
 
@@ -140,6 +142,11 @@ func (a *App) settingsRows() []settingsRow {
 			value: fmt.Sprintf("%d KiB", a.actMaxKiB), after: "keeps 3 older files"},
 		{id: rowActivityDays, label: "Delete rotated after",
 			value: plural(a.actKeepDays, "day")},
+
+		{id: rowTrashDays, group: "Trash", label: "Keep deleted items for",
+			value: a.trashKeepLabel(), after: "then removed automatically"},
+		{id: rowTrashNow, label: "In the trash now", value: a.trashStatsText(),
+			after: "Enter opens it"},
 
 		{id: rowKeybindings, group: "Keys", label: "Key bindings",
 			value: a.bindingsSummary(), after: a.bindingsDetail() + " · Enter reloads"},
@@ -410,6 +417,23 @@ func (a *App) settingsAdjust(rows []settingsRow, delta int) tea.Cmd {
 		if a.actKeepDays < settings.ActivityDaysMin {
 			a.actKeepDays = settings.ActivityDaysMax
 		}
+	case rowTrashDays:
+		// One day per press: the useful range is a month, not a year.
+		next := a.trashKeepDays + delta
+		if next > settings.TrashDaysMax {
+			next = settings.TrashDaysMin
+		}
+		if next < settings.TrashDaysMin {
+			next = settings.TrashDaysMax
+		}
+		a.trashKeepDays = next
+		// A shorter retention applies at once: the user asked for the trash
+		// to shrink, and waiting for the next start-up would look like the
+		// setting did nothing.
+		return a.trashSweepCmd()
+	case rowTrashNow:
+		a.showSettings = false
+		return a.openTrash()
 	case rowHistorySessions:
 		// The history store prunes older runs as soon as the limit drops, so
 		// the screen and the store can never disagree.

@@ -784,7 +784,7 @@ func TestAdvancedActionDeleteUsesTheTrashAndPrunesTheResult(t *testing.T) {
 	h.idle()
 	h.until("deleted", func() bool { return !fileExists(path) })
 	h.settle()
-	if readFile(t, filepath.Join(env.trash, "files", "a.txt")) != "new-a" {
+	if !inTrash(t, env.trash, "a.txt", "new-a") {
 		t.Fatal("the file did not go to the trash")
 	}
 	if h.a.advancedSearch != v {

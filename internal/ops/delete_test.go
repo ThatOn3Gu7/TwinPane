@@ -162,11 +162,20 @@ func TestDeleteCancel(t *testing.T) {
 	}
 }
 
-func TestFreeDesktopTrash(t *testing.T) {
+func testTrash(t *testing.T, dir string, now time.Time) *TrashStore {
+	t.Helper()
+	st, err := OpenTrash(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	st.Now = func() time.Time { return now }
+	return st
+}
+
+func TestTrashStore(t *testing.T) {
 	root := t.TempDir()
-	trashDir := filepath.Join(root, "Trash")
 	fixed := time.Date(2026, 10, 15, 9, 30, 0, 0, time.Local)
-	tr := &FreeDesktopTrash{Dir: trashDir, Now: func() time.Time { return fixed }}
+	tr := testTrash(t, filepath.Join(root, "trash"), fixed)
 	f1 := filepath.Join(root, "my file.txt")
 	write(t, f1, "one")
 	dir := tree(t, root)
@@ -179,29 +188,130 @@ func TestFreeDesktopTrash(t *testing.T) {
 	if !res.OK() || res.Removed != 2 || !res.UseTrash || exists(f1) || exists(dir) {
 		t.Fatalf("%+v", res)
 	}
-	if read(t, filepath.Join(trashDir, "files", "my file.txt")) != "one" || read(t, filepath.Join(trashDir, "files", "proj", "a.txt")) != "alpha" {
-		t.Fatal("not in trash")
+	entries, err := tr.Entries()
+	if err != nil || len(entries) != 2 {
+		t.Fatalf("entries %+v %v", entries, err)
 	}
-	info := read(t, filepath.Join(trashDir, "info", "my file.txt.trashinfo"))
-	want := "[Trash Info]\nPath=" + strings.ReplaceAll(f1, " ", "%20") + "\nDeletionDate=2026-10-15T09:30:00\n"
-	if info != want {
-		t.Fatalf("trashinfo:\n%q\nwant\n%q", info, want)
+	byName := map[string]TrashEntry{}
+	for _, e := range entries {
+		byName[e.Name] = e
 	}
-	// same name again -> unique name
+	file, ok := byName["my file.txt"]
+	if !ok || file.Origin != f1 || !file.DeletedAt.Equal(fixed) || file.Bytes != 3 || file.Dir {
+		t.Fatalf("file entry %+v", file)
+	}
+	folder, ok := byName["proj"]
+	if !ok || !folder.Dir || folder.Bytes != 5+5+7 { // alpha, bravo, charlie
+		t.Fatalf("folder entry %+v", folder)
+	}
+	if read(t, filepath.Join(tr.dataDir(), folder.ID, "a.txt")) != "alpha" {
+		t.Fatal("folder contents not in the trash")
+	}
+
+	// the same name again: a second entry, never a collision
 	write(t, f1, "two")
-	if err := tr.Trash(f1); err != nil {
+	second, err := tr.Put(f1)
+	if err != nil || second.ID == file.ID || second.Name != "my file.txt" {
+		t.Fatalf("second %+v %v", second, err)
+	}
+	if n, _ := tr.Total(); n != 3 {
+		t.Fatalf("three items expected, got %d", n)
+	}
+
+	// restore puts it back and takes it out of the index
+	if err := tr.Restore(file, f1); err != nil {
 		t.Fatal(err)
 	}
-	if read(t, filepath.Join(trashDir, "files", "my file.2.txt")) != "two" || !exists(filepath.Join(trashDir, "info", "my file.2.txt.trashinfo")) {
-		t.Fatal("collision naming")
+	if read(t, f1) != "one" {
+		t.Fatalf("restored content %q", read(t, f1))
 	}
+	if n, _ := tr.Total(); n != 2 {
+		t.Fatalf("restore must remove the entry: %d left", n)
+	}
+	// restoring onto an existing path is refused, not overwritten
+	if err := tr.Restore(second, f1); err == nil {
+		t.Fatal("restore onto an existing path must fail")
+	}
+	if read(t, f1) != "one" {
+		t.Fatal("a refused restore overwrote the file")
+	}
+}
+
+func TestTrashSweep(t *testing.T) {
+	root := t.TempDir()
+	now := time.Date(2026, 11, 2, 12, 0, 0, 0, time.Local)
+	tr := testTrash(t, filepath.Join(root, "trash"), now)
+	add := func(name string, ageDays int, size int) TrashEntry {
+		path := filepath.Join(root, name)
+		write(t, path, strings.Repeat("x", size))
+		tr.Now = func() time.Time { return now.Add(-time.Duration(ageDays) * 24 * time.Hour) }
+		e, err := tr.Put(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return e
+	}
+	old := add("old.txt", 40, 10)
+	edge := add("edge.txt", 20, 10)
+	fresh := add("fresh.txt", 1, 10)
+
+	tr.Now = func() time.Time { return now }
+	res := tr.Sweep(29, 0)
+	if res.Removed != 1 || res.Expired != 1 || res.Bytes != 10 {
+		t.Fatalf("sweep %+v", res)
+	}
+	left := map[string]bool{}
+	for _, e := range mustEntries(t, tr) {
+		left[e.ID] = true
+	}
+	if left[old.ID] || !left[edge.ID] || !left[fresh.ID] {
+		t.Fatalf("wrong items kept: %+v", left)
+	}
+
+	// the size cap removes the oldest first
+	res = tr.Sweep(29, 12)
+	if res.Removed != 1 || res.Capped != 1 {
+		t.Fatalf("cap sweep %+v", res)
+	}
+	rest := mustEntries(t, tr)
+	if len(rest) != 1 || rest[0].ID != fresh.ID {
+		t.Fatalf("cap kept the wrong item: %+v", rest)
+	}
+}
+
+func TestTrashEmpty(t *testing.T) {
+	root := t.TempDir()
+	tr := testTrash(t, filepath.Join(root, "trash"), time.Date(2026, 11, 2, 12, 0, 0, 0, time.Local))
+	for _, name := range []string{"a.txt", "b.txt"} {
+		p := filepath.Join(root, name)
+		write(t, p, "xy")
+		if _, err := tr.Put(p); err != nil {
+			t.Fatal(err)
+		}
+	}
+	res := tr.Empty()
+	if res.Removed != 2 || res.Bytes != 4 {
+		t.Fatalf("empty %+v", res)
+	}
+	if n, _ := tr.Total(); n != 0 {
+		t.Fatalf("%d items left", n)
+	}
+}
+
+func mustEntries(t *testing.T, tr *TrashStore) []TrashEntry {
+	t.Helper()
+	entries, err := tr.Entries()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return entries
 }
 
 func TestTrashUnavailableFallsBackToPermanentPlanOnly(t *testing.T) {
 	root := t.TempDir()
 	f := filepath.Join(root, "f")
 	write(t, f, "x")
-	tr := &FreeDesktopTrash{Dir: filepath.Join(root, "Trash")}
+	tr := testTrash(t, filepath.Join(root, "Trash"), time.Now())
 	setSeam(t, &sameDeviceFn, func(a, b string) (bool, error) { return false, nil })
 	plan, err := PlanDelete(context.Background(), []string{f}, tr)
 	if err != nil {
@@ -220,18 +330,18 @@ func TestTrashFailureNeverDeletesPermanently(t *testing.T) {
 	root := t.TempDir()
 	f := filepath.Join(root, "f")
 	write(t, f, "x")
-	tr := &FreeDesktopTrash{Dir: filepath.Join(root, "Trash")}
+	tr := testTrash(t, filepath.Join(root, "Trash"), time.Now())
 	plan, _ := PlanDelete(context.Background(), []string{f}, tr)
 	if !plan.UseTrash {
 		t.Fatal("trash should be usable")
 	}
-	chmodRestore(t, filepath.Join(root, "Trash", "files"), 0o555)
+	chmodRestore(t, filepath.Join(root, "Trash", "data"), 0o555)
 	res := Delete(context.Background(), plan, tr, Hooks{})
 	if res.OK() || len(res.Failed) != 1 || !exists(f) {
 		t.Fatalf("%+v exists=%v", res, exists(f))
 	}
-	if exists(filepath.Join(root, "Trash", "info", "f.trashinfo")) {
-		t.Fatal("stale trashinfo left behind")
+	if n, _ := tr.Total(); n != 0 {
+		t.Fatal("a failed trashing left an index record behind")
 	}
 }
 

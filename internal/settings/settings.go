@@ -62,6 +62,37 @@ type Preferences struct {
 	HistorySessions int
 	// Activity configures the User Activity Log (see internal/activity).
 	Activity ActivityPrefs
+	// Trash says how long deleted items are kept before a sweep removes them
+	// for good (at start-up, and every few hours while TwinPane is open).
+	Trash TrashPrefs
+}
+
+// TrashPrefs is the trash's retention. Days is 1–365; 0 means the default
+// (29 days, long enough to notice a mistake a month later).
+type TrashPrefs struct {
+	Days int
+}
+
+// Bounds for the trash retention, mirrored by the settings screen.
+const (
+	TrashDaysMin = 1
+	TrashDaysDef = 29
+	TrashDaysMax = 365
+)
+
+// KeepDays returns the retention in days, with the default for 0 and
+// out-of-range values clamped into the allowed range.
+func (p TrashPrefs) KeepDays() int {
+	if p.Days == 0 {
+		return TrashDaysDef
+	}
+	if p.Days < TrashDaysMin {
+		return TrashDaysMin
+	}
+	if p.Days > TrashDaysMax {
+		return TrashDaysMax
+	}
+	return p.Days
 }
 
 // ActivityPrefs configures the activity log. Mode is how much is recorded:
@@ -193,6 +224,7 @@ func (p Preferences) Normalized() Preferences {
 	}
 	out.HistorySessions = history.ClampSessions(out.HistorySessions)
 	out.Activity = out.Activity.normalized()
+	out.Trash.Days = out.Trash.KeepDays()
 	return out
 }
 
@@ -253,6 +285,11 @@ type file struct {
 	// HistorySessions is omitted when zero (an older file keeps the default).
 	HistorySessions int          `json:"historySessions,omitempty"`
 	Activity        activityFile `json:"activity,omitempty"`
+	Trash           trashFile    `json:"trash,omitempty"`
+}
+
+type trashFile struct {
+	Days int `json:"keepDays,omitempty"`
 }
 
 type activityFile struct {
@@ -328,6 +365,7 @@ func (f file) decode() Preferences {
 	p.Compress = CompressPrefs{Format: f.Compress.Format, Levels: f.Compress.Levels}
 	p.HistorySessions = f.HistorySessions
 	p.Activity = ActivityPrefs{Mode: f.Activity.Mode, MaxKiB: f.Activity.MaxKiB, KeepDays: f.Activity.KeepDays}
+	p.Trash = TrashPrefs{Days: f.Trash.Days}
 	return p.Normalized()
 }
 
@@ -349,6 +387,7 @@ func encode(p Preferences) file {
 		Compress:        compressFile{Format: p.Compress.Format, Levels: p.Compress.Levels},
 		HistorySessions: p.HistorySessions,
 		Activity:        activityFile{Mode: p.Activity.Mode, MaxKiB: p.Activity.MaxKiB, KeepDays: p.Activity.KeepDays},
+		Trash:           trashFile{Days: p.Trash.KeepDays()},
 	}
 }
 

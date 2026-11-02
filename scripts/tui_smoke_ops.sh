@@ -144,7 +144,24 @@ check "Enter cancels (default No)" "nothing was deleted"
 fs "gamma.txt still exists" test -f "$H/L/gamma.txt"
 keys d; sleep 0.4; keys y
 check "trash status" "Moved 1 item to the trash"
-fs "gamma.txt in freedesktop trash" test -f "$H/.local/share/Trash/files/gamma.txt" -a -f "$H/.local/share/Trash/info/gamma.txt.trashinfo" -a ! -e "$H/L/gamma.txt"
+# The trash is TwinPane's own store (see docs/ARCHITECTURE.md): the item is
+# moved into data/<id> and its origin recorded in info/<id>.json.
+TRASH="$H/.local/share/twinpane/trash"
+fs "gamma.txt left the folder" test ! -e "$H/L/gamma.txt"
+fs "gamma.txt is in the trash data folder" test -n "$(ls -A "$TRASH/data" 2>/dev/null)"
+fs "the trash index records where it came from" grep -ql '"name":"gamma.txt"' "$TRASH"/info/*.json
+
+# ---- the Trash screen (T) restores it ------------------------------------------------------
+keys T
+S="$(cap)"
+check "T opens the trash" "Trash" "$S"
+check "the trash lists the deleted item" "gamma.txt" "$S"
+keys r
+S="$(cap 0.8)"
+check "restore reports where it went" "Restored gamma.txt" "$S"
+fs "gamma.txt is back where it came from" grep -qx beta "$H/L/gamma.txt"
+fs "the trash is empty again" test -z "$(ls -A "$TRASH/data" 2>/dev/null)"
+keys Escape
 
 # ---- permanent delete on another filesystem (trash unavailable) ---------------------------------
 keys Tab BSpace; sleep 0.3           # right -> HOME (cursor on R)

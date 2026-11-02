@@ -260,6 +260,16 @@ type App struct {
 	actDialog    *dialog // dialog seen last frame (activity log diffing)
 	actScreen    string  // screen seen last frame
 	actExited    bool
+
+	// The trash: the store deletions move into (nil when the session has no
+	// usable trash — see trasher above), the screen that shows it, and the
+	// retention the sweep uses (29 days by default).
+	trashStore     *ops.TrashStore
+	trashScr       *trashView
+	trashKeepDays  int
+	trashItems     int       // cached count, for the screen header and Settings row
+	trashBytes     int64     // cached size, same
+	trashLastSweep time.Time // when the trash was last swept (session sweeps)
 }
 
 // New creates the application model.
@@ -269,6 +279,11 @@ func New(opts Options) *App {
 	if a.trasher == nil {
 		a.trasher = ops.DefaultTrasher()
 	}
+	// The UI needs the store itself to list, restore and purge; a custom
+	// Trasher (tests, embedders) that is not a store simply has no screen.
+	a.trashStore, _ = a.trasher.(*ops.TrashStore)
+	a.trashKeepDays = ops.TrashKeepDaysDef
+	a.refreshTrashStats()
 	a.edEnv = editor.SystemEnv()
 	if opts.EditorEnv != nil {
 		a.edEnv = *opts.EditorEnv
@@ -390,6 +405,9 @@ func (a *App) Init() tea.Cmd {
 		tea.SetWindowTitle("TwinPane"),
 		a.panels[0].Load(expandHomeDir(a.startLeft), "", panel.LoadForce),
 		a.panels[1].Load(expandHomeDir(a.startRight), "", panel.LoadForce),
+		// Removing expired items needs no daemon: it happens when TwinPane
+		// starts, and every few hours while it stays open.
+		a.trashSweepCmd(),
 	)
 }
 
@@ -409,6 +427,7 @@ func (a *App) applyPreferences(p settings.Preferences) {
 	a.defSort, a.defDesc, a.defDirsFirst = key, p.Sort.Desc, p.Sort.DirsFirst
 	a.focusPreview = p.FocusPreview
 	a.noticeCorner, a.noticeDur = p.Notice.Corner, p.Duration()
+	a.trashKeepDays = p.Trash.KeepDays()
 	a.themeName = p.Theme
 	if th, ok := theme.Preset(a.themeName); ok {
 		a.theme = th
@@ -474,6 +493,7 @@ func (a *App) currentPrefs() settings.Preferences {
 		// The activity log's retention and mode live here: they are what the
 		// Settings screen edits (the store is re-created on the next start).
 		Activity: settings.ActivityPrefs{Mode: a.actMode.String(), MaxKiB: a.actMaxKiB, KeepDays: a.actKeepDays},
+		Trash:    settings.TrashPrefs{Days: a.trashKeepDays},
 	}
 }
 
@@ -602,6 +622,14 @@ func (a *App) DialogOpen() bool { return a.dialog != nil }
 // Update handles messages.
 func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	m, cmd := a.update(msg)
+	if _, isKey := msg.(tea.KeyMsg); isKey {
+		// Expired items are removed without a daemon: at start-up, and here
+		// when a session has been open long enough. A key press is the one
+		// moment something is known to be happening.
+		if sweep := a.trashMaybeSweep(); sweep != nil {
+			cmd = tea.Batch(cmd, sweep)
+		}
+	}
 	if !a.quitting {
 		a.showNextTaskPrompt()
 	}
@@ -708,6 +736,9 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case bulkDoneMsg:
 		return a, a.bulkDone(msg)
 
+	case trashSweptMsg:
+		return a, a.trashSwept(msg)
+
 	case panel.LoadedMsg:
 		if msg.PanelID < 0 || msg.PanelID > 1 {
 			return a, nil
@@ -755,6 +786,9 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if a.dialog == nil && a.tasks.showing {
 			return a, a.taskViewKey(msg)
+		}
+		if a.dialog == nil && a.trashScr != nil {
+			return a, a.trashKey(msg)
 		}
 		// A notification is dismissed with Esc where Esc means nothing else.
 		// Everywhere else Esc keeps its own meaning (closing the task list, a
@@ -853,6 +887,7 @@ type uiState struct {
 	props                                   *propsView
 	comparison                              *comparisonView
 	folderSize                              *folderSizeView
+	trash                                   bool
 }
 
 func (a *App) uiState() uiState {
@@ -862,6 +897,7 @@ func (a *App) uiState() uiState {
 		busy:     a.busy(), quitting: a.quitting, editing: a.editing, help: a.showHelp,
 		inputBox: a.dialog != nil && (a.dialog.input != nil || a.dialog.filter != nil), viewer: a.viewer, props: a.props,
 		comparison: a.comparison, folderSize: a.folderSize, activity: a.actView != nil,
+		trash: a.trashScr != nil,
 	}
 }
 
@@ -872,6 +908,9 @@ func (a *App) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	if a.tasks.showing {
 		return a, a.taskViewKey(msg)
+	}
+	if a.trashScr != nil {
+		return a, a.trashKey(msg)
 	}
 	if a.is("browse.interrupt", msg) {
 		if s := a.tasks.latestActive(); s != nil {
@@ -913,6 +952,8 @@ func (a *App) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 	switch {
+	case k.Trash.Matches(msg):
+		return a, a.openTrash()
 	case k.Tasks.Matches(msg):
 		a.openTasks()
 	case k.Activity.Matches(msg):
@@ -1110,6 +1151,8 @@ func (a *App) View() string {
 		body = a.helpView(a.height - 3)
 	case a.tasks.showing:
 		body = a.taskViewRender(a.height - 3)
+	case a.trashScr != nil:
+		body = a.trashViewRender(a.height - 3)
 	case a.actView != nil:
 		body = a.activityRender(a.height - 3)
 	case a.viewer != nil:

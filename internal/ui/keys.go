@@ -61,6 +61,10 @@ type KeyMap struct {
 	// Tasks screen (t).
 	Activity Binding
 
+	// The trash (T): what deletions can be undone from. It is a separate
+	// screen from the tasks (t), so the two are never confused.
+	Trash Binding
+
 	// Focus mode: the toggle, the preview pane and the typed location box.
 	// They only reach the panels while focus mode is on.
 	Focus, Preview, GoTo Binding
@@ -133,6 +137,7 @@ func keyMapFrom(s *keybinding.Set) KeyMap {
 		New:     b("browse.new", "new file / new folder"),
 
 		Activity: b("browse.activity", "activity log"),
+		Trash:    b("browse.trash", "trash: undo a delete"),
 
 		Focus:   b("browse.focus", "focus mode (one panel)"),
 		Preview: b("browse.preview", "preview pane (focus mode)"),
@@ -160,7 +165,7 @@ func (k KeyMap) helpSections() [2][]helpSection {
 				k.Activity}},
 		},
 		{
-			{"File operations", []Binding{k.Copy, k.Move, k.Rename, k.Delete, k.Edit, k.EditWith, k.Properties, k.Cancel}},
+			{"File operations", []Binding{k.Copy, k.Move, k.Rename, k.Delete, k.Trash, k.Edit, k.EditWith, k.Properties}},
 			{"View & general", []Binding{k.View, k.Search, k.Hidden, k.Sort, k.Reverse, k.Refresh, k.Tasks, k.Quit, k.Settings, k.Help}},
 			{"Folders & cloud (rclone)", []Binding{k.New, k.Mkdir, k.Sources,
 				{Help: "c / m", Desc: "upload / download"},

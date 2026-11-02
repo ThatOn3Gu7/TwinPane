@@ -62,6 +62,7 @@ const (
 	SecComparePlan = "comparePlan"
 	SecFolderSize  = "folderSize"
 	SecLive        = "live"
+	SecTrash       = "trash"
 )
 
 // sectionTitles name the sections in the generated file's "about" text and in
@@ -86,6 +87,7 @@ var sectionTitles = map[string]string{
 	SecComparePlan: "the reviewed comparison plan",
 	SecFolderSize:  "folder-size analysis",
 	SecLive:        "the live progress window",
+	SecTrash:       "the trash",
 }
 
 // actions is the registry. Order matters twice: it is the order of the file
@@ -118,7 +120,7 @@ var actions = []Action{
 	{Name: "browse.copy", Section: SecBrowse, Keys: []string{"c", "f5"}, Desc: "copy to the other panel", Label: "c/F5", Hint: "copies the marked entries (or the cursor's) to the other panel; nothing is overwritten without asking"},
 	{Name: "browse.move", Section: SecBrowse, Keys: []string{"m", "f6"}, Desc: "move to the other panel", Label: "m/F6", Hint: "moves the marked entries (or the one under the cursor) to the other panel"},
 	{Name: "browse.rename", Section: SecBrowse, Keys: []string{"r", "f2"}, Desc: "rename", Label: "r/F2", Hint: "renames the entry under the cursor; with several marked it opens bulk rename"},
-	{Name: "browse.delete", Section: SecBrowse, Keys: []string{"d", "f8", "delete"}, Desc: "delete", Label: "d/F8/Del", Hint: "deletes the marked entries (or the cursor's) after a confirmation, using the trash when there is one"},
+	{Name: "browse.delete", Section: SecBrowse, Keys: []string{"d", "f8", "delete"}, Desc: "delete", Label: "d/F8/Del", Hint: "moves the marked entries (or the cursor's) to the trash after a confirmation; T restores them"},
 	{Name: "browse.edit", Section: SecBrowse, Keys: []string{"e", "f4"}, Desc: "edit in the default editor", Label: "e/F4", Hint: "opens the file in your text editor"},
 	{Name: "browse.editWith", Section: SecBrowse, Keys: []string{"E"}, Desc: "edit with (choose editor)", Label: "E", Hint: "asks which installed editor to open the file with"},
 	{Name: "browse.cancel", Section: SecBrowse, Keys: []string{"esc"}, Desc: "cancel dialog / operation", Label: "Esc", Essential: true, Hint: "closes the dialog or stops the operation that is open; it never closes the panels"},
@@ -142,6 +144,7 @@ var actions = []Action{
 	{Name: "browse.mkdir", Section: SecBrowse, Keys: []string{"f7"}, Desc: "new folder (direct)", Label: "F7", Hint: "creates a folder after asking for its name"},
 	{Name: "browse.new", Section: SecBrowse, Keys: []string{"n"}, Desc: "new file / new folder", Label: "n", Hint: "opens the New file / New folder menu"},
 	{Name: "browse.activity", Section: SecBrowse, Keys: []string{"L"}, Desc: "activity log", Label: "L", Hint: "shows what TwinPane did, for troubleshooting"},
+	{Name: "browse.trash", Section: SecBrowse, Keys: []string{"T"}, Desc: "trash (restore deleted items)", Label: "T", Hint: "shows what was deleted and puts it back"},
 	{Name: "browse.focus", Section: SecBrowse, Keys: []string{"ctrl+o"}, Desc: "focus mode (one panel)", Label: "Ctrl+O", Hint: "shows one panel at full width, and back to two panels"},
 	{Name: "browse.preview", Section: SecBrowse, Keys: []string{"p"}, Desc: "preview pane (focus mode)", Label: "p", Hint: "turns the details preview pane on or off (only in focus mode)"},
 	{Name: "browse.goTo", Section: SecBrowse, Keys: []string{"ctrl+g"}, Desc: "go to a folder (focus mode)", Label: "Ctrl+G", Hint: "asks for a folder or a remote location to jump to (only in focus mode)"},
@@ -269,6 +272,20 @@ var actions = []Action{
 	{Name: "activity.clear", Section: SecActivity, Keys: []string{"x"}, Desc: "clear the filters", Hint: "removes the filters and shows everything again"},
 	{Name: "activity.reload", Section: SecActivity, Keys: []string{"r"}, Desc: "reload the log", Hint: "reads the log file again"},
 	{Name: "activity.help", Section: SecActivity, Keys: []string{"?"}, Desc: "help", Hint: "shows the key reference"},
+
+	// ---- trash -------------------------------------------------------------
+	{Name: "trash.close", Section: SecTrash, Keys: []string{"esc", "T"}, Desc: "close the trash", Essential: true, Hint: "leaves the trash screen; nothing in it is changed"},
+	{Name: "trash.up", Section: SecTrash, Keys: []string{"up", "k"}, Desc: "previous item", Hint: "moves the highlight to the item deleted after this one"},
+	{Name: "trash.down", Section: SecTrash, Keys: []string{"down", "j"}, Desc: "next item", Hint: "moves the highlight to the item deleted before this one"},
+	{Name: "trash.pageUp", Section: SecTrash, Keys: []string{"pgup", "ctrl+b"}, Desc: "page up", Hint: "moves the highlight up by a page"},
+	{Name: "trash.pageDown", Section: SecTrash, Keys: []string{"pgdown", "ctrl+f"}, Desc: "page down", Hint: "moves the highlight down by a page"},
+	{Name: "trash.first", Section: SecTrash, Keys: []string{"home", "g"}, Desc: "newest item", Hint: "jumps to the most recent deletion"},
+	{Name: "trash.last", Section: SecTrash, Keys: []string{"end", "G"}, Desc: "oldest item", Hint: "jumps to the oldest deletion"},
+	{Name: "trash.restore", Section: SecTrash, Keys: []string{"r", "enter"}, Desc: "restore", Hint: "puts the item back where it came from (or in the other panel when that path is taken)"},
+	{Name: "trash.delete", Section: SecTrash, Keys: []string{"d", "delete"}, Desc: "delete for good", Hint: "removes the selected item from the trash after a confirmation"},
+	{Name: "trash.empty", Section: SecTrash, Keys: []string{"x"}, Desc: "empty the trash", Hint: "deletes everything in the trash after a confirmation"},
+	{Name: "trash.refresh", Section: SecTrash, Keys: []string{"ctrl+l"}, Desc: "reload the trash", Hint: "reads the trash folder again"},
+	{Name: "trash.help", Section: SecTrash, Keys: []string{"?"}, Desc: "help", Hint: "shows the key reference"},
 
 	// ---- properties --------------------------------------------------------
 	{Name: "props.close", Section: SecProps, Keys: []string{"esc"}, Desc: "close without applying", Essential: true, Hint: "closes Properties without saving the changes"},

@@ -64,6 +64,7 @@ func (a *App) menuEntries() (title string, entries []menuEntry) {
 		add(menuEntry{label: "Leave the archive", action: "browse.cancel"})
 		add(menuEntry{label: "Bookmarks…", action: "browse.bookmarks"})
 		add(menuEntry{label: "Storage info", action: "browse.storage"})
+		add(trashMenuEntry())
 		add(settingsMenuEntry())
 		entries = append(entries, a.navMenuEntries(p)...)
 		entries = append(entries, a.focusMenuEntries()...)
@@ -96,6 +97,7 @@ func (a *App) menuEntries() (title string, entries []menuEntry) {
 		if len(targets) > 0 {
 			add(menuEntry{label: "Delete…", action: "browse.delete", danger: true})
 		}
+		add(trashMenuEntry())
 		add(settingsMenuEntry())
 		entries = append(entries, a.focusMenuEntries()...)
 		return title, entries
@@ -169,6 +171,7 @@ func (a *App) menuEntries() (title string, entries []menuEntry) {
 	add(menuEntry{label: "Bookmarks…", action: "browse.bookmarks"})
 	add(menuEntry{label: "Storage info", action: "browse.storage"})
 	add(menuEntry{label: "Analyze folder sizes", action: "browse.folderSize"})
+	add(trashMenuEntry())
 	add(settingsMenuEntry())
 	add(menuEntry{label: "Activity log", detail: "what TwinPane did", action: "browse.activity"})
 	entries = append(entries, a.navMenuEntries(p)...)
@@ -184,6 +187,13 @@ func (a *App) menuEntries() (title string, entries []menuEntry) {
 // the keyboard shortcut.
 func settingsMenuEntry() menuEntry {
 	return menuEntry{label: "Settings…", detail: "F9", action: "browse.settings"}
+}
+
+// trashMenuEntry is the Trash row of the action menu: deleted items can be
+// brought back from there, so it belongs next to Settings rather than inside
+// the Deleting flow where it would be too late.
+func trashMenuEntry() menuEntry {
+	return menuEntry{label: "Trash…", detail: "T", action: "browse.trash"}
 }
 
 // openMenu shows the action menu (M).

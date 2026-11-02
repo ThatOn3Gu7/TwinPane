@@ -955,9 +955,15 @@ func (a *App) finishDelete(s *opSession, res ops.DeleteResult) tea.Cmd {
 		summary = msg
 		heading = operationHeading("Delete", true, res.Canceled, partial)
 	}
+	if res.UseTrash && res.Removed > 0 {
+		// Say where the items went and how to get them back: the trash is the
+		// whole point of deleting this way.
+		body = append(body, "T opens the trash to put them back")
+	}
 	if len(res.Failed) > 0 {
 		body = append(body, fmt.Sprintf("%s — details in the task list (t)", plural(len(res.Failed), "error")))
 	}
+	a.refreshTrashStats()
 	a.taskResult(s, level, heading, summary, body...)
 	a.setStatusRow("", lvlInfo)
 	a.finishTask(s, state, summary, details...)

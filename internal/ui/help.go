@@ -70,7 +70,11 @@ func (a *App) helpColumns() [2][]helpSection {
 	if a.viewer != nil && a.viewer.fromAdvanced {
 		editor = helpSection{"Read-only search inspection", advancedInspectionHelp}
 	}
-	cols[1] = append(cols[1], editor, helpSection{"Help & dialogs", helpScreenHelp})
+	// Esc is listed with the dialogs it cancels: the file-operation section
+	// stays short enough for small screens, so the panel binding and the dialog
+	// rows sit together at the end of the list.
+	dialogHelp := append(append([]Binding(nil), helpScreenHelp...), a.keys.Cancel)
+	cols[1] = append(cols[1], editor, helpSection{"Help & dialogs", dialogHelp})
 	return cols
 }
 
