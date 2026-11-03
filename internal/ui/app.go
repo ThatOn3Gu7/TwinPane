@@ -357,8 +357,8 @@ func New(opts Options) *App {
 	// itself is in the log.
 	a.initActivityLog(opts.ActivityPath, opts.ActivityPathError, opts.ActivityMode)
 	a.loadBindings()
-	a.panels[0] = panel.New(0, opts.Lister)
-	a.panels[1] = panel.New(1, opts.Lister)
+	a.panels[0] = panel.New(0, a.localLister(opts.Lister))
+	a.panels[1] = panel.New(1, a.localLister(opts.Lister))
 	// Install the effective preferences before Init starts either panel's
 	// first load. Each SetX updates the option without reloading an
 	// uninitialized panel.
@@ -379,6 +379,9 @@ func New(opts Options) *App {
 		notices = append(notices, "history: "+historyErr.Error())
 	}
 	notices = append(notices, a.keybindNotices()...)
+	if note := a.takeTrashRecreated(); note != "" {
+		notices = append(notices, note)
+	}
 	if len(notices) > 0 {
 		// One place only: the pop-up carries the whole explanation of what did
 		// not load (one item per line) and the activity log keeps the line, so
@@ -742,6 +745,12 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case panel.LoadedMsg:
 		if msg.PanelID < 0 || msg.PanelID > 1 {
 			return a, nil
+		}
+		if msg.Err == nil && a.trashHiddenPath(msg.Listing.Path) {
+			// TwinPane's own folder (the trash, or the data folder around
+			// it): the panels stay out of it, whatever path led here —
+			// a startup folder, Go to, a bookmark, a pasted path.
+			return a, a.leaveHidden(msg.PanelID, msg.Listing.Path)
 		}
 		p := a.panels[msg.PanelID]
 		wasArc, wasRem := p.Archive(), p.Source()

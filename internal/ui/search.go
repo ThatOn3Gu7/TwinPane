@@ -87,7 +87,8 @@ func (a *App) beginSearch() tea.Cmd {
 			}
 			close(ch)
 		}()
-		search.Index(ctx, root, search.IndexOptions{ShowHidden: hidden, Backends: backends}, ch)
+		search.Index(ctx, root, search.IndexOptions{ShowHidden: hidden, Backends: backends,
+			Skip: a.trashHiddenPaths()}, ch)
 	}()
 	a.setStatusRow("", lvlInfo)
 	return sv.listen()

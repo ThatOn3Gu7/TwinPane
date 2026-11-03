@@ -13,6 +13,7 @@ import (
 
 	"github.com/ThatOn3Gu7/TwinPane/internal/fsys"
 	"github.com/ThatOn3Gu7/TwinPane/internal/ops"
+	"github.com/ThatOn3Gu7/TwinPane/internal/panel"
 	"github.com/ThatOn3Gu7/TwinPane/internal/scrollbar"
 )
 
@@ -117,6 +118,129 @@ func (a *App) refreshTrashStats() {
 // trashKeepLabel is the retention in words, used by the Settings row.
 func (a *App) trashKeepLabel() string {
 	return fmt.Sprintf("%s (1–365)", plural(a.trashKeepDays, "day"))
+}
+
+// takeTrashRecreated reports, once, that the trash folder had to be created
+// again because it was gone: the items it held went with it, and an empty
+// screen without a word would look like TwinPane lost them by itself.
+func (a *App) takeTrashRecreated() string {
+	st := a.trashStore
+	if st == nil || !st.Recreated {
+		return ""
+	}
+	st.Acknowledge()
+	return "trash: the trash folder was missing, so a new one was made — what it held is gone"
+}
+
+// ---- keeping the store out of the way -------------------------------------------------
+
+// trashHiddenPaths are the folders TwinPane keeps for itself and therefore does
+// not show: the trash, and the data folder around it when that is named after
+// the program. Deleting the trash by hand throws away everything it holds, so
+// the panels neither list it nor let a delete touch it, and the search does not
+// walk into it. Nothing is hidden from the rest of the system — the folder is
+// exactly where the user guide says it is.
+func (a *App) trashHiddenPaths() []string {
+	if a.trashStore == nil || a.trashStore.Dir == "" {
+		return nil
+	}
+	dir := filepath.Clean(a.trashStore.Dir)
+	out := []string{dir}
+	if parent := filepath.Dir(dir); strings.EqualFold(filepath.Base(parent), "twinpane") {
+		out = append(out, parent)
+	}
+	return out
+}
+
+// trashHiddenPath reports whether p is (or is inside) one of those folders.
+func (a *App) trashHiddenPath(p string) bool {
+	if p == "" {
+		return false
+	}
+	clean := filepath.Clean(p)
+	for _, h := range a.trashHiddenPaths() {
+		if clean == h || strings.HasPrefix(clean, h+string(filepath.Separator)) {
+			return true
+		}
+	}
+	return false
+}
+
+// visibleAncestor is the closest folder above p that the panels do show, used
+// when a path leads into the hidden ones (a startup folder, a Go to).
+func (a *App) visibleAncestor(p string) string {
+	dir := filepath.Dir(filepath.Clean(p))
+	for a.trashHiddenPath(dir) {
+		up := filepath.Dir(dir)
+		if up == dir {
+			return dir
+		}
+		dir = up
+	}
+	return dir
+}
+
+// hiddenLister drops the hidden folders from a panel's listing. It wraps the
+// panel's lister rather than the panel, so a place (a remote, an archive) that
+// brings its own lister is unaffected and nothing in internal/panel has to know
+// that TwinPane owns a trash.
+type hiddenLister struct {
+	inner fsys.Lister
+	hide  []string
+}
+
+func (l hiddenLister) List(path string, opts fsys.Options) (fsys.Listing, error) {
+	listing, err := l.inner.List(path, opts)
+	if err != nil || len(l.hide) == 0 {
+		return listing, err
+	}
+	kept := make([]fsys.Entry, 0, len(listing.Entries))
+	for _, e := range listing.Entries {
+		hidden := false
+		for _, h := range l.hide {
+			if filepath.Clean(e.Path) == h {
+				hidden = true
+				break
+			}
+		}
+		if hidden {
+			if e.IsDir {
+				listing.Dirs--
+			} else {
+				listing.Files--
+			}
+			listing.Hidden++
+			continue
+		}
+		kept = append(kept, e)
+	}
+	listing.Entries = kept
+	return listing, nil
+}
+
+// localLister is the lister the panels start with: the local filesystem, with
+// TwinPane's own folders filtered out (see trashHiddenPaths).
+func (a *App) localLister(inner fsys.Lister) fsys.Lister {
+	if inner == nil {
+		inner = fsys.OSLister{}
+	}
+	return hiddenLister{inner: inner, hide: a.trashHiddenPaths()}
+}
+
+// leaveHidden keeps a panel out of a hidden folder and says why, so typing the
+// trash's path somewhere (Go to, a startup folder, a bookmark) cannot turn the
+// panels into an accidental way to browse or delete it. The panel opens the
+// closest folder above instead.
+func (a *App) leaveHidden(id int, path string) tea.Cmd {
+	if id < 0 || id > 1 || a.panels[id] == nil {
+		return nil
+	}
+	a.noteStatus(lvlWarn, "That folder is TwinPane's own trash — press T to open it")
+	dest := a.visibleAncestor(path)
+	if dest == "" || dest == path {
+		return nil
+	}
+	return a.panels[id].Load(dest, "", panel.LoadNavigate)
 }
 
 // ---- keys ----------------------------------------------------------------------
@@ -468,6 +592,12 @@ type trashSweptMsg struct {
 // something was removed. Nothing is reported when the trash had nothing to do.
 func (a *App) trashSwept(msg trashSweptMsg) tea.Cmd {
 	a.trashLastSweep = a.trashNow()
+	if note := a.takeTrashRecreated(); note != "" {
+		// Removed from outside while TwinPane was running: the store built
+		// itself again, and the user is told before anything else about the
+		// sweep, so an empty trash is not mistaken for a working one.
+		a.noteStatus(lvlWarn, note)
+	}
 	a.refreshTrashStats()
 	if a.trashScr != nil {
 		a.reloadTrash()

@@ -29,6 +29,8 @@ type ContentOptions struct {
 	MaxBytesTotal     int64
 	MaxMatchesPerFile int
 	Interval          time.Duration
+	// Skip names folders that are never walked into (see IndexOptions.Skip).
+	Skip []string
 }
 
 const (
@@ -74,6 +76,25 @@ type ContentUpdate struct {
 	Truncated      bool
 	Canceled       bool
 	Err            error
+}
+
+// SkipPath reports whether p is one of the folders named in skip. It is the
+// same rule for every walker: a folder, and everything under it, is left out.
+func SkipPath(skip []string, p string) bool {
+	if len(skip) == 0 {
+		return false
+	}
+	clean := filepath.Clean(p)
+	for _, s := range skip {
+		if s == "" {
+			continue
+		}
+		s = filepath.Clean(s)
+		if clean == s || strings.HasPrefix(clean, s+string(filepath.Separator)) {
+			return true
+		}
+	}
+	return false
 }
 
 // RunContent searches text files below root for query and streams progress
@@ -171,6 +192,9 @@ func RunContent(ctx context.Context, root, query string, opt ContentOptions, out
 			return flushIfDueOrContinue(flushIfDue)
 		}
 		if entry.IsDir() && !opt.IncludeGit && entry.Name() == ".git" {
+			return filepath.SkipDir
+		}
+		if entry.IsDir() && SkipPath(opt.Skip, path) {
 			return filepath.SkipDir
 		}
 		if isRoot {

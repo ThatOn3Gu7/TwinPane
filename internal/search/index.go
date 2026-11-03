@@ -98,6 +98,10 @@ type IndexOptions struct {
 	Backends   []Backend     // tried in order; nil = DetectBackends(proc.LookPath)
 	MaxEntries int           // stop after this many (0 = DefaultMaxEntries)
 	Interval   time.Duration // batch interval (0 = DefaultInterval)
+	// Skip names folders that are never walked into: the UI uses it for the
+	// folders TwinPane keeps for itself, which hold the trash people might
+	// delete by accident after finding it in a search result.
+	Skip []string
 }
 
 // DefaultMaxEntries bounds memory use for huge trees.
@@ -145,6 +149,11 @@ func (ix *indexer) flush() bool {
 
 // add records an entry; false means stop (limit reached or canceled).
 func (ix *indexer) add(e Entry) bool {
+	// The walker prunes skipped folders, but an external tool (fd, find) does
+	// its own walking, so the rule is applied to every entry as well.
+	if SkipPath(ix.opts.Skip, e.Path) {
+		return true
+	}
 	ix.batch = append(ix.batch, e)
 	ix.total.Count++
 	if ix.total.Count >= ix.opts.MaxEntries {
@@ -363,6 +372,9 @@ func (ix *indexer) walk() error {
 			return nil
 		}
 		name := d.Name()
+		if d.IsDir() && SkipPath(ix.opts.Skip, p) {
+			return filepath.SkipDir
+		}
 		if !ix.opts.ShowHidden && strings.HasPrefix(name, ".") {
 			if d.IsDir() {
 				return filepath.SkipDir

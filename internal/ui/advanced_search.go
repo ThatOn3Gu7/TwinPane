@@ -61,6 +61,7 @@ type advancedSearchView struct {
 	panel      int
 	root       string
 	showHidden bool
+	skip       []string // folders never searched: TwinPane's own (see trashHiddenPaths)
 	mode       advancedSearchMode
 	input      *lineInput
 
@@ -141,7 +142,7 @@ func (a *App) beginAdvancedSearch(root string, panelIndex int, query string, sho
 	a.advancedSeq++
 	ctx, cancel := context.WithCancel(context.Background())
 	sv := &advancedSearchView{
-		id: a.advancedSeq, panel: panelIndex, root: root, showHidden: showHidden,
+		id: a.advancedSeq, panel: panelIndex, root: root, showHidden: showHidden, skip: a.trashHiddenPaths(),
 		mode: advancedFilenameMode, input: a.newInput(query), indexing: true,
 		ctx: ctx, cancel: cancel, events: make(chan advancedSearchEvent, 16), started: a.now(),
 	}
@@ -176,7 +177,8 @@ func (a *App) startAdvancedIndex(v *advancedSearchView) {
 				}
 			}
 		}()
-		search.Index(workerCtx, v.root, search.IndexOptions{ShowHidden: v.showHidden, Backends: backends}, updates)
+		search.Index(workerCtx, v.root, search.IndexOptions{ShowHidden: v.showHidden, Backends: backends,
+			Skip: v.skip}, updates)
 	}()
 	go func() {
 		for update := range updates {
@@ -379,7 +381,7 @@ func (a *App) startAdvancedContentSearch(query, keepPath string) {
 				}
 			}
 		}()
-		search.RunContent(workerCtx, v.root, query, search.ContentOptions{}, updates)
+		search.RunContent(workerCtx, v.root, query, search.ContentOptions{Skip: v.skip}, updates)
 	}()
 	go func() {
 		for update := range updates {

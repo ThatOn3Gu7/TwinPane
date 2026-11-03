@@ -10,6 +10,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/ThatOn3Gu7/TwinPane/internal/ops"
+	"github.com/ThatOn3Gu7/TwinPane/internal/panel"
 )
 
 // The trash screen (T): deleting is reversible, restoring puts an item back
@@ -308,4 +309,135 @@ func filesIn(dir string) []string {
 		out = append(out, e.Name())
 	}
 	return out
+}
+
+// ---- the trash folder removed from outside ---------------------------------------
+
+// The panels do not show TwinPane's own folders, so the trash cannot be deleted
+// by mistake from the place deletions come from.
+func TestTrashFolderIsHiddenFromThePanels(t *testing.T) {
+	h, env := newOpsApp(t, nil, nil)
+	h.focus("a.txt")
+	h.deleteToTrash("a.txt")
+	if !fileExists(filepath.Join(env.trash, "data")) {
+		t.Fatal("fixture: the trash should exist")
+	}
+	h.exec(h.a.Panel(0).Load(env.root, "", panel.LoadForce))
+	h.until("the folder above the trash", func() bool { return h.a.Panel(0).Path() == env.root })
+	if panelHas(h.a.Panel(0), "Trash") {
+		t.Fatalf("the trash is listed in the panel: %v", h.a.Panel(0).Entries())
+	}
+	if !panelHas(h.a.Panel(0), "src") {
+		t.Fatal("hiding the trash hid the other entries too")
+	}
+	// It is still on disk: only the panels look away.
+	if !fileExists(env.trash) {
+		t.Fatal("the trash folder must stay where it is")
+	}
+	// The panel counts what it did not show, like the hidden-file switch does.
+	if l := h.a.Panel(0).Listing(); l.Hidden < 1 {
+		t.Fatalf("hidden count = %d, want the trash", l.Hidden)
+	}
+}
+
+// A path that leads into it anyway (a startup folder, Go to, a bookmark) puts
+// the panel back above it and says where the trash really is.
+func TestPanelRefusesToEnterTheTrash(t *testing.T) {
+	h, env := newOpsApp(t, nil, nil)
+	h.exec(h.a.Panel(0).Load(filepath.Join(env.trash, "data"), "", panel.LoadForce))
+	h.until("the panel to come back out", func() bool { return h.a.Panel(0).Path() == env.root })
+	if got := h.a.Panel(0).Path(); got == filepath.Join(env.trash, "data") || h.a.trashHiddenPath(got) {
+		t.Fatalf("the panel went into the trash: %s", got)
+	}
+	if got := h.a.Panel(0).Path(); got != env.root {
+		t.Fatalf("panel path = %s, want the folder above (%s)", got, env.root)
+	}
+	if !strings.Contains(h.reported(), "press T") {
+		t.Fatalf("the refusal was not explained: %q", h.reported())
+	}
+	if panelHas(h.a.Panel(0), "data") || panelHas(h.a.Panel(0), "info") {
+		t.Fatal("the inside of the trash is on screen")
+	}
+}
+
+// Deleting it by hand is refused at the engine level too, whatever path found
+// it: the screen that restores from it is the only way to empty it.
+func TestDeleteOfTheTrashIsRefused(t *testing.T) {
+	h, env := newOpsApp(t, nil, nil)
+	h.focus("a.txt")
+	h.deleteToTrash("a.txt")
+	h.exec(h.a.Panel(0).Load(env.root, "", panel.LoadForce))
+	h.until("the folder above the trash", func() bool { return h.a.Panel(0).Path() == env.root })
+	if panelHas(h.a.Panel(0), "Trash") {
+		t.Fatal("fixture: the trash should be hidden")
+	}
+	// The start-up sweep must not remove it either.
+	h.send(h.a.trashSweepCmd()())
+	h.settle()
+	if !fileExists(filepath.Join(env.trash, "data")) {
+		t.Fatal("a sweep removed the trash folders")
+	}
+	// And the panel still cannot reach it even when the trash is wanted by name.
+	h.exec(h.a.Panel(0).Load(env.trash, "", panel.LoadForce))
+	h.settle()
+	if h.a.Panel(0).Path() == env.trash {
+		t.Fatal("the panel opened the trash")
+	}
+}
+
+// If the folder disappears anyway (rm, a sync tool), the store builds itself
+// again, deletions keep working, and TwinPane says what happened once.
+func TestTrashFolderRecreatedAfterRemoval(t *testing.T) {
+	h, env := newOpsApp(t, nil, nil)
+	h.focus("a.txt")
+	h.deleteToTrash("a.txt")
+	if err := os.RemoveAll(env.trash); err != nil {
+		t.Fatal(err)
+	}
+	h.a.dismissNotice()
+	h.press("d")
+	h.waitDialog(dlgDelete)
+	h.press("y")
+	h.idle()
+	h.settle()
+	if !strings.Contains(h.reported(), "Moved 1 item to the trash") {
+		t.Fatalf("deleting after the folder was removed: %q", h.reported())
+	}
+	if !inTrash(t, env.trash, "b.txt", "new-b") {
+		t.Fatal("the item did not reach the rebuilt trash")
+	}
+	if !fileExists(filepath.Join(env.trash, "info")) {
+		t.Fatal("the store did not rebuild its folders")
+	}
+	// The next look reports it, once.
+	if !h.a.trashStore.Recreated {
+		t.Fatal("the store should know it had to be rebuilt")
+	}
+	h.send(h.a.trashSweepCmd()())
+	h.settle()
+	if !strings.Contains(h.reported(), "was missing") {
+		t.Fatalf("the rebuild was not reported: %q", h.reported())
+	}
+	if h.a.trashStore.Recreated {
+		t.Fatal("the flag must be cleared once reported")
+	}
+	h.a.dismissNotice()
+	h.send(h.a.trashSweepCmd()())
+	h.settle()
+	if strings.Contains(reportedText(h.a), "was missing") {
+		t.Fatal("the same news was reported twice")
+	}
+}
+
+// A first start has nothing to report: nothing was lost.
+func TestFirstStartDoesNotMentionTheTrash(t *testing.T) {
+	h, _ := newOpsApp(t, nil, nil)
+	if h.a.trashStore.Recreated {
+		t.Fatal("a fresh trash was reported as re-created")
+	}
+	h.send(h.a.trashSweepCmd()())
+	h.settle()
+	if v := h.reported(); strings.Contains(v, "trash") && strings.Contains(v, "missing") {
+		t.Fatalf("unexpected trash notice: %q", v)
+	}
 }

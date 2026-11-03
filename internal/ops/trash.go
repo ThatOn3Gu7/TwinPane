@@ -72,6 +72,11 @@ type TrashEntry struct {
 // OpenTrash (or DefaultTrasher, which opens the platform's location).
 type TrashStore struct {
 	Dir string
+	// Recreated is set when the store folders had to be created again: on the
+	// first start, or after the trash folder was removed from outside. The UI
+	// reports it once and clears it with Acknowledge, so the user learns that
+	// earlier deletions are gone instead of finding an empty screen.
+	Recreated bool
 	// Now is the clock (default time.Now); tests pin it.
 	Now func() time.Time
 	// ID names a new entry (default: timestamp + counter); tests pin it.
@@ -127,12 +132,59 @@ func OpenTrash(dir string) (*TrashStore, error) {
 }
 
 func (t *TrashStore) prepare() error {
+	// The trash folder can be removed from outside — rm, a sync tool, or the
+	// user in a file manager. The store then rebuilds itself instead of
+	// failing every deletion, and remembers that it did (see Recreated).
+	//
+	// It is only worth telling the user about when there was a trash before:
+	// the marker file next to the folder outlives it, so a first start stays
+	// silent while a folder that was deleted does not.
+	if _, err := os.Stat(t.Dir); errors.Is(err, os.ErrNotExist) {
+		if _, err := os.Stat(t.markerPath()); err == nil {
+			t.Recreated = true
+		}
+	}
 	for _, sub := range []string{"data", "info"} {
 		if err := os.MkdirAll(filepath.Join(t.Dir, sub), 0o700); err != nil {
 			return err
 		}
 	}
+	if _, err := os.Stat(t.markerPath()); errors.Is(err, os.ErrNotExist) {
+		os.WriteFile(t.markerPath(), []byte("TwinPane's trash lives in "+t.Dir+"\n"), 0o600)
+	}
 	return nil
+}
+
+// markerPath is a small file in the data folder around the trash, used to tell
+// a first start from a trash folder that disappeared. It lives one level up,
+// so deleting the trash itself leaves it behind.
+func (t *TrashStore) markerPath() string {
+	return filepath.Join(filepath.Dir(t.Dir), ".twinpane-trash")
+}
+
+// Acknowledge clears the Recreated flag once the user has been told.
+func (t *TrashStore) Acknowledge() { t.Recreated = false }
+
+// Contains reports whether p is the trash folder itself or inside it. The
+// panels use it to keep TwinPane's own data out of the user's way, and the
+// delete safeguards use it to refuse removing the trash by hand.
+func (t *TrashStore) Contains(p string) bool {
+	if t == nil || p == "" || t.Dir == "" {
+		return false
+	}
+	abs, err := filepath.Abs(p)
+	if err != nil {
+		abs = p
+	}
+	dir, err := filepath.Abs(t.Dir)
+	if err != nil {
+		dir = t.Dir
+	}
+	abs, dir = filepath.Clean(abs), filepath.Clean(dir)
+	if abs == dir {
+		return true
+	}
+	return strings.HasPrefix(abs, dir+string(filepath.Separator))
 }
 
 func (t *TrashStore) dataDir() string { return filepath.Join(t.Dir, "data") }
@@ -440,6 +492,61 @@ type TrashSweep struct {
 	Expired int   // items removed because they were older than the retention
 	Capped  int   // items removed because the trash was over its size cap
 	Failed  int   // items that could not be removed
+	// Orphans counts items found in the data folder without an index record:
+	// they cannot be listed or restored, so a sweep clears them out instead of
+	// letting them sit in the trash forever. OrphanBytes is what that freed.
+	Orphans     int
+	OrphanBytes int64
+	// Lost counts index records whose item was gone (a crash between the two
+	// halves of a restore or a purge, or a deletion from outside).
+	Lost int
+}
+
+// repair reconciles the two folders of the store, which a crash or a delete
+// from outside can leave out of step. An item without a record cannot be
+// listed, restored or found, so keeping it would only hide space; a record
+// without an item describes nothing. Both are dropped, and the counts let the
+// caller say so once rather than silently tidying up.
+func (t *TrashStore) repair() (orphans int, bytes int64, lost int) {
+	if err := t.prepare(); err != nil {
+		return 0, 0, 0
+	}
+	records := map[string]bool{}
+	if des, err := os.ReadDir(t.infoDir()); err == nil {
+		for _, de := range des {
+			if de.IsDir() || !strings.HasSuffix(de.Name(), ".json") {
+				continue
+			}
+			records[strings.TrimSuffix(de.Name(), ".json")] = true
+		}
+	}
+	items := map[string]bool{}
+	if des, err := os.ReadDir(t.dataDir()); err == nil {
+		for _, de := range des {
+			items[de.Name()] = true
+		}
+	}
+	for id := range items {
+		if records[id] {
+			continue
+		}
+		p := filepath.Join(t.dataDir(), id)
+		size := treeSize(p)
+		if err := os.RemoveAll(p); err != nil {
+			continue
+		}
+		orphans++
+		bytes += size
+	}
+	for id := range records {
+		if items[id] {
+			continue
+		}
+		if err := os.Remove(filepath.Join(t.infoDir(), id+".json")); err == nil {
+			lost++
+		}
+	}
+	return orphans, bytes, lost
 }
 
 // Empty removes everything in the trash and reports what it freed.
@@ -458,6 +565,11 @@ func (t *TrashStore) Empty() TrashSweep {
 		out.Bytes += e.Bytes
 		out.Expired++
 	}
+	// Emptying the trash means the folder is empty, orphans included.
+	orphans, bytes, _ := t.repair()
+	out.Orphans, out.OrphanBytes = orphans, bytes
+	out.Removed += orphans
+	out.Bytes += bytes
 	return out
 }
 
@@ -466,9 +578,13 @@ func (t *TrashStore) Empty() TrashSweep {
 // limit either). It never looks at anything outside its own index.
 func (t *TrashStore) Sweep(keepDays int, capBytes int64) TrashSweep {
 	var out TrashSweep
+	if err := t.prepare(); err != nil {
+		return TrashSweep{Failed: 1}
+	}
+	out.Orphans, out.OrphanBytes, out.Lost = t.repair()
 	entries, err := t.Entries()
 	if err != nil {
-		return TrashSweep{Failed: 1}
+		return TrashSweep{Failed: 1, Orphans: out.Orphans, OrphanBytes: out.OrphanBytes, Lost: out.Lost}
 	}
 	if keepDays < TrashKeepDaysMin {
 		keepDays = TrashKeepDaysDef

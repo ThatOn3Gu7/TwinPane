@@ -36,6 +36,17 @@ type DeletePlan struct {
 	TrashNote  string // why the trash can't be used (when !UseTrash)
 }
 
+// checkNotTrash refuses a path that is TwinPane's own trash or inside it. The
+// panels hide the folder (see ui.trashHiddenPath), but a start-up directory or
+// a Go to can still name it, and deleting it by hand would throw away
+// everything it holds without the screen that shows it.
+func checkNotTrash(p string, trash Trasher) error {
+	if st, ok := trash.(*TrashStore); ok && st.Contains(p) {
+		return fmt.Errorf("refusing to delete %s: it is TwinPane's trash, which T opens and empties", filepath.Clean(p))
+	}
+	return nil
+}
+
 // CheckDeletable rejects paths that must never be deleted: relative paths,
 // "." / "..", filesystem roots, the home directory and any folder that
 // contains it.
@@ -74,6 +85,9 @@ func PlanDelete(ctx context.Context, paths []string, trash Trasher) (DeletePlan,
 	}
 	for _, p := range paths {
 		if err := CheckDeletable(p); err != nil {
+			return plan, err
+		}
+		if err := checkNotTrash(p, trash); err != nil {
 			return plan, err
 		}
 		p = filepath.Clean(p)
@@ -226,6 +240,10 @@ func Delete(ctx context.Context, plan DeletePlan, trash Trasher, hooks Hooks) De
 			break
 		}
 		if err := CheckDeletable(p); err != nil {
+			fail(p, "delete", err)
+			continue
+		}
+		if err := checkNotTrash(p, trash); err != nil {
 			fail(p, "delete", err)
 			continue
 		}

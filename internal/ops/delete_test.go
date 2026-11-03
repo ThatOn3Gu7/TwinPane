@@ -351,3 +351,156 @@ func TestNoTrash(t *testing.T) {
 		t.Fatal()
 	}
 }
+
+// ---- the trash folder removed from outside -------------------------------------
+
+func TestTrashIsNotDeletableFromThePanels(t *testing.T) {
+	root := t.TempDir()
+	tr := testTrash(t, filepath.Join(root, "Trash"), time.Now())
+	f := filepath.Join(root, "a.txt")
+	write(t, f, "x")
+	if _, err := tr.Put(f); err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range []string{tr.Dir, filepath.Join(tr.Dir, "data"), filepath.Join(tr.Dir, "info")} {
+		if _, err := PlanDelete(context.Background(), []string{p}, tr); err == nil ||
+			!strings.Contains(err.Error(), "TwinPane's trash") {
+			t.Fatalf("planning %s: %v", p, err)
+		}
+		plan, err := PlanDelete(context.Background(), []string{filepath.Join(root, "a.txt"), p}, tr)
+		if err == nil {
+			t.Fatalf("%s was planned anyway: %+v", p, plan)
+		}
+	}
+	if !exists(filepath.Join(tr.Dir, "data")) {
+		t.Fatal("the trash was touched by planning")
+	}
+}
+
+func TestContainsComparesWholePathParts(t *testing.T) {
+	root := t.TempDir()
+	tr := testTrash(t, filepath.Join(root, "Trash"), time.Now())
+	for _, p := range []string{tr.Dir, filepath.Join(tr.Dir, "data"), filepath.Join(tr.Dir, "data", "x")} {
+		if !tr.Contains(p) {
+			t.Errorf("Contains(%q) = false", p)
+		}
+	}
+	// A sibling whose name merely starts the same must not match.
+	for _, p := range []string{filepath.Join(root, "Trashy"), filepath.Join(root, "trash"), root} {
+		if tr.Contains(p) {
+			t.Errorf("Contains(%q) = true", p)
+		}
+	}
+	var none *TrashStore
+	if none.Contains(tr.Dir) {
+		t.Error("a nil store contains nothing")
+	}
+}
+
+// Starting fresh is silent; finding the folders gone is news.
+func TestTrashRecreatedFlag(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "Trash")
+	st := testTrash(t, dir, time.Now())
+	if st.Recreated {
+		t.Fatal("a first start must not report a re-created trash")
+	}
+	// A store opened again over an existing folder stays quiet too.
+	if again := testTrash(t, dir, time.Now()); again.Recreated {
+		t.Fatal("an existing trash was reported as re-created")
+	}
+	if err := os.RemoveAll(dir); err != nil {
+		t.Fatal(err)
+	}
+	// The next look at the store is what notices (and rebuilds it).
+	if n, _ := st.Total(); n != 0 {
+		t.Fatalf("an empty rebuilt trash reported %d items", n)
+	}
+	if !st.Recreated {
+		t.Fatal("the next look after the folder vanished should notice")
+	}
+	st.Acknowledge()
+	if st.Recreated {
+		t.Fatal("Acknowledge keeps the flag")
+	}
+	if _, err := os.Stat(filepath.Join(dir, "data")); err != nil {
+		t.Fatalf("the store did not rebuild itself: %v", err)
+	}
+	// and it works again
+	f := filepath.Join(root, "b.txt")
+	write(t, f, "y")
+	if err := st.Trash(f); err != nil {
+		t.Fatalf("trashing after the folder was removed: %v", err)
+	}
+	if n, _ := st.Total(); n != 1 {
+		t.Fatalf("trash holds %d items", n)
+	}
+}
+
+// An item without an index record cannot be listed or restored, so a sweep
+// clears it out instead of hiding it in the trash forever.
+func TestSweepClearsOrphansAndLostRecords(t *testing.T) {
+	root := t.TempDir()
+	tr := testTrash(t, filepath.Join(root, "Trash"), time.Now())
+	a, b := filepath.Join(root, "a.txt"), filepath.Join(root, "b.txt")
+	write(t, a, "aaaa")
+	write(t, b, "bbbb")
+	if _, err := tr.Put(a); err != nil {
+		t.Fatal(err)
+	}
+	entries, err := tr.Entries()
+	if err != nil || len(entries) != 1 {
+		t.Fatalf("%v %v", entries, err)
+	}
+	kept := entries[0]
+	// An orphan: an item in data with no record.
+	orphan := filepath.Join(tr.Dir, "data", "20260101T000000.000000000-999")
+	if err := os.MkdirAll(orphan, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	write(t, filepath.Join(orphan, "inside.txt"), "cccc")
+	// A record whose item is gone.
+	write(t, filepath.Join(tr.Dir, "info", "20260101T000000.000000000-998.json"),
+		`{"id":"20260101T000000.000000000-998","name":"ghost.txt","origin":"/x/ghost.txt"}`)
+
+	sweep := tr.Sweep(TrashKeepDaysDef, 0)
+	if sweep.Orphans != 1 || sweep.OrphanBytes != 4 {
+		t.Fatalf("orphan report: %+v", sweep)
+	}
+	if sweep.Lost != 1 {
+		t.Fatalf("lost record report: %+v", sweep)
+	}
+	if _, err := os.Lstat(orphan); err == nil {
+		t.Fatal("the orphan was kept")
+	}
+	if _, err := os.Lstat(filepath.Join(tr.Dir, "info", "20260101T000000.000000000-998.json")); err == nil {
+		t.Fatal("the record without an item was kept")
+	}
+	// Nothing else was touched.
+	if !exists(filepath.Join(tr.Dir, "data", kept.ID)) {
+		t.Fatal("the real item was removed")
+	}
+	if n, _ := tr.Total(); n != 1 {
+		t.Fatalf("trash holds %d items", n)
+	}
+}
+
+// Emptying the trash empties the folder, orphans included.
+func TestEmptyAlsoRemovesOrphans(t *testing.T) {
+	root := t.TempDir()
+	tr := testTrash(t, filepath.Join(root, "Trash"), time.Now())
+	f := filepath.Join(root, "a.txt")
+	write(t, f, "aaaa")
+	if _, err := tr.Put(f); err != nil {
+		t.Fatal(err)
+	}
+	write(t, filepath.Join(tr.Dir, "data", "leftover"), "zz")
+	res := tr.Empty()
+	if res.Removed != 2 || res.Orphans != 1 {
+		t.Fatalf("%+v", res)
+	}
+	des, _ := os.ReadDir(filepath.Join(tr.Dir, "data"))
+	if len(des) != 0 {
+		t.Fatalf("data folder still holds %d entries", len(des))
+	}
+}
