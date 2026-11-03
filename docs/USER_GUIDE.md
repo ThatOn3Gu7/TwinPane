@@ -1340,6 +1340,23 @@ shown in the **other panel**.
 - Only items on the same filesystem can be trashed, because the move has to be
   a rename. Items elsewhere — and everything when there is no writable trash —
   are deleted permanently, and the confirmation says so before you confirm.
+- **The panels keep out of it.** The trash folder (and the `twinpane` data
+  folder around it) is never listed in a panel, the search does not walk into
+  it, and a path that leads there anyway — a startup folder, Go to, a bookmark
+  — puts the panel in the folder above it with a note that `T` is how to look
+  inside. Deleting it from the panels is refused for the same reason: the
+  screen is the one place that knows what the items are and can put them back.
+  Nothing is hidden from the rest of the system; the folder is exactly where
+  this section says it is.
+- **If the folder disappears anyway** — `rm -rf`, a sync tool, another file
+  manager — the trash is created again the next time it is used, and the next
+  start says so once ("the trash folder was missing, so a new one was made —
+  what it held is gone"), because an empty Trash screen with no word would look
+  like TwinPane lost the items by itself. A first start stays silent: there was
+  nothing to lose. Items found in the folder without a record (the leavings of
+  a crash, or a restore interrupted halfway) cannot be listed or restored, so a
+  sweep clears them out instead of holding the space forever; emptying the
+  trash empties the folder the same way.
 
 **Edit (`e` / `F4`)**
 - Opens the file in your external editor. The TUI is suspended while the
@@ -2040,7 +2057,8 @@ including the end-to-end test scripts, are in
 ## Known limitations
 
 - **Trash:** TwinPane keeps its own trash, so deletes are reversible on every
-  platform, Termux included. Items on a **different filesystem** than the trash
+  platform, Termux included. It is not shown in the panels (see **Trash**),
+  so a search or a panel copy will not offer it either. Items on a **different filesystem** than the trash
   (USB drives, other partitions, tmpfs) cannot be moved into it — the move has
   to be a rename — so they are deleted permanently, with the typed confirmation
   described above. There is no freedesktop `.Trash-$UID` support, Windows'

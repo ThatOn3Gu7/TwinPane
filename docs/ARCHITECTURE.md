@@ -1595,3 +1595,42 @@ when there is nothing to undo.
   that removed something reports the count as a single notification.
 - The cached count and size (`refreshTrashStats`) feed the Settings row
   *In the trash now*; deleting, restoring and sweeping refresh it.
+
+### Keeping the store out of the way
+
+The trash is a folder in the user's data directory, so it can be reached by the
+file manager that is meant to be the only thing deleting into it. Three small
+pieces stop that from being a way to lose it:
+
+- `trashHiddenPaths` (the store's folder, plus the `twinpane` folder around it
+  when it is named that) is applied by `hiddenLister`, a `fsys.Lister` wrapper
+  the panels start with. Nothing in `internal/panel` knows about the trash, and
+  a place that brings its own lister (a remote, an archive) is unaffected. The
+  hidden entries are counted in `Listing.Hidden`, the same way the hidden-file
+  switch treats its own.
+- `App.leaveHidden` runs when a finished load names one of those folders — a
+  startup folder, Go to, a bookmark, a pasted path — and sends the panel to the
+  closest visible folder above with a note that `T` is the way in.
+- `TrashStore.Contains` is checked by `PlanDelete`/`Delete` through
+  `checkNotTrash`, so a deletion of the trash (by any route, including an API
+  user) is refused with a message that names the screen. The start-up sweep
+  only ever looks inside its own index, so it cannot remove the store either.
+
+The folder can still disappear from outside, and the store is built for that:
+`prepare` creates both sub-folders whenever they are missing, so a deletion
+after the fact simply works and the trash is rebuilt. `Recreated` records that
+it happened, and `App.takeTrashRecreated` reports it once — at start-up with
+the other load notices, or from a sweep when the folder vanished while TwinPane
+was open. A marker file one level above the store (`.twinpane-trash`) is what
+tells a first start from a folder that was deleted: an empty trash is normal on
+day one and news on day two.
+
+`repair` reconciles the two folders on every sweep and on every empty: an item
+without a record cannot be listed or restored, so keeping it would only hold
+space, and a record without an item describes nothing. Both are dropped, and
+`TrashSweep.Orphans`/`Lost` carry the counts so a sweep can mention them.
+
+The search follows the same rule: `search.IndexOptions.Skip` and
+`search.ContentOptions.Skip` prune the folders in the walker, and the indexer
+filters external-tool output (`fd`, `find`) through the same `SkipPath`, so a
+trashed file is never offered as a search result that leads back to the store.

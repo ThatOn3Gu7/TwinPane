@@ -40,6 +40,17 @@ things back and a retention that cleans up on its own.
   filesystem — the oldest items go first — and `TWINPANE_TRASH_CAP` sets a
   different cap in bytes for one run. A sweep that removed something says so
   once ("Removed 1 item older than 29 days"); one that found nothing is silent.
+- **The trash is kept out of the way.** Its folder lives in the data directory
+  where the user guide says it is, but the panels never list it, the search
+  never walks into it, and a startup folder, Go to or bookmark that points at
+  it lands in the folder above with a note that `T` is the way in. Deleting it
+  from the panels is refused — the Trash screen is the one place that knows what
+  the items are and can restore them. If it disappears anyway (`rm -rf`, a sync
+  tool), the trash is created again the next time it is used and the next start
+  says so once, because an empty screen with no word would look like TwinPane
+  lost the items; a first start stays quiet. Items left in the folder without a
+  record — the leavings of a crash — are cleared by a sweep instead of holding
+  their space forever, and emptying the trash empties the folder the same way.
 - **`T` for the trash, `t` for the tasks.** The two screens have separate
   sections in `keybinding.json` (`trash.*` and the task list's own names), and
   the bindings were chosen so the old `t` keeps its meaning: the trash is the

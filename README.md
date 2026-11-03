@@ -115,7 +115,8 @@ The [user guide](docs/USER_GUIDE.md) describes every feature in detail.
   days are removed automatically; Settings → *Trash* changes that. Items on
   another filesystem than the trash (USB drives, tmpfs) cannot be moved into
   it: the dialog then says PERMANENTLY in red, and for folders or several
-  items you must type `delete`.
+  items you must type `delete`. The panels and the search keep out of the
+  trash folder itself, so it cannot be deleted by accident from TwinPane.
 - Properties (`P`): size, times, owner, symbolic-link target, and permission
   editing on filesystems that support it.
 
