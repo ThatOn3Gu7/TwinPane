@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -502,5 +503,116 @@ func TestEmptyAlsoRemovesOrphans(t *testing.T) {
 	des, _ := os.ReadDir(filepath.Join(tr.Dir, "data"))
 	if len(des) != 0 {
 		t.Fatalf("data folder still holds %d entries", len(des))
+	}
+}
+
+// ---- trash: ids, removal order and eligibility ----------------------------------
+
+// Two deletes in the same instant must not collide, and a taken id (another
+// TwinPane sharing the trash, or a clock that stepped back) is answered with a
+// new one rather than a failed delete.
+func TestTrashIDCollisionIsRetried(t *testing.T) {
+	root := t.TempDir()
+	tr := testTrash(t, filepath.Join(root, "Trash"), time.Now())
+	taken := tr.newID(time.Now())
+	calls := 0
+	tr.ID = func(time.Time) string {
+		calls++
+		if calls == 1 {
+			return taken // pin one collision, then behave
+		}
+		return taken + "-" + strconv.Itoa(calls)
+	}
+	for _, name := range []string{"a.txt", "b.txt"} {
+		p := filepath.Join(root, name)
+		write(t, p, name)
+		if err := tr.Trash(p); err != nil {
+			t.Fatalf("trashing %s: %v", name, err)
+		}
+	}
+	if n, _ := tr.Total(); n != 2 {
+		t.Fatalf("trash holds %d items, want 2", n)
+	}
+
+	// An id function that never produces a free name is a clear error, not a
+	// raw "file exists" leaking out of the index write.
+	tr2 := testTrash(t, filepath.Join(root, "Trash2"), time.Now())
+	tr2.ID = func(time.Time) string { return "fixed" }
+	for _, name := range []string{"c.txt", "d.txt"} {
+		write(t, filepath.Join(root, name), name)
+	}
+	if err := tr2.Trash(filepath.Join(root, "c.txt")); err != nil {
+		t.Fatalf("first trash: %v", err)
+	}
+	err := tr2.Trash(filepath.Join(root, "d.txt"))
+	if err == nil || !strings.Contains(err.Error(), "unused trash id") {
+		t.Fatalf("second trash with a fixed id: %v", err)
+	}
+	if !exists(filepath.Join(root, "d.txt")) {
+		t.Fatal("a failed trashing removed the item")
+	}
+}
+
+// Ids handed out by the default generator differ even when the clock does not.
+func TestTrashIDIsUniquePerCall(t *testing.T) {
+	at := time.Date(2026, 11, 4, 12, 0, 0, 0, time.UTC)
+	st := &TrashStore{Dir: t.TempDir()}
+	seen := map[string]bool{}
+	for i := 0; i < 5000; i++ {
+		id := st.newID(at)
+		if seen[id] {
+			t.Fatalf("duplicate id %q after %d ids", id, i)
+		}
+		seen[id] = true
+	}
+}
+
+// A removal claims the record first, so a crash in the middle leaves something
+// a sweep can finish instead of data nothing points at.
+func TestInterruptedRemovalIsFinishedBySweep(t *testing.T) {
+	root := t.TempDir()
+	tr := testTrash(t, filepath.Join(root, "Trash"), time.Now())
+	f := filepath.Join(root, "a.txt")
+	write(t, f, "aaaa")
+	e, err := tr.Put(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// This is the state a crash between "claim the record" and "remove the
+	// item" leaves behind.
+	if err := os.Rename(filepath.Join(tr.Dir, "info", e.ID+".json"),
+		filepath.Join(tr.Dir, "info", e.ID+".json.removing")); err != nil {
+		t.Fatal(err)
+	}
+	if list, _ := tr.Entries(); len(list) != 0 {
+		t.Fatalf("a claimed item is still listed: %+v", list)
+	}
+	tr.Sweep(TrashKeepDaysDef, 0)
+	if exists(filepath.Join(tr.Dir, "data", e.ID)) {
+		t.Fatal("the item of an interrupted removal is still in data/")
+	}
+	if _, err := os.Lstat(filepath.Join(tr.Dir, "info", e.ID+".json.removing")); err == nil {
+		t.Fatal("the claim outlived the sweep")
+	}
+}
+
+// The trash folder cannot be trashed: neither itself, nor the folder that
+// contains it (which would move the trash into itself).
+func TestTrashRefusesItselfAndItsParents(t *testing.T) {
+	root := t.TempDir()
+	tr := testTrash(t, filepath.Join(root, "data", "twinpane", "trash"), time.Now())
+	for _, p := range []string{tr.Dir, filepath.Join(root, "data"), filepath.Join(root, "data", "twinpane")} {
+		if ok, why := tr.Available(p); ok {
+			t.Errorf("Available(%q) = true", p)
+		} else if !strings.Contains(why, "trash") {
+			t.Errorf("Available(%q) refused without a reason: %q", p, why)
+		}
+	}
+	// An ordinary item, and one whose name merely starts like the trash's, are
+	// still eligible.
+	sibling := filepath.Join(root, "data", "trashy")
+	write(t, sibling, "x")
+	if ok, why := tr.Available(sibling); !ok {
+		t.Errorf("Available(%q) = false: %s", sibling, why)
 	}
 }

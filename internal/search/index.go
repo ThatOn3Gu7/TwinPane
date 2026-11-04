@@ -455,8 +455,18 @@ func Filter(es []Entry, q Query, from int, dst []int) []int {
 // Rank sorts matches (indices into es) by Score, keeping the index order
 // within a score.
 func Rank(es []Entry, q Query, m []int) {
-	if q.raw == "" || q.glob || q.wantPath {
+	if q.raw == "" || q.glob || q.wantPath || len(m) < 2 {
 		return
 	}
-	sort.SliceStable(m, func(i, j int) bool { return q.Score(&es[m[i]]) < q.Score(&es[m[j]]) })
+	// One score per match, not two per comparison: sorting thousands of
+	// results used to re-derive the same score over and over.
+	type scored struct{ idx, score int }
+	items := make([]scored, len(m))
+	for i, idx := range m {
+		items[i] = scored{idx: idx, score: q.Score(&es[idx])}
+	}
+	sort.SliceStable(items, func(i, j int) bool { return items[i].score < items[j].score })
+	for i := range items {
+		m[i] = items[i].idx
+	}
 }

@@ -695,8 +695,11 @@ func exec7z(ctx context.Context, tool string, args []string, dir string, info In
 	}()
 	st, werr := child.Wait()
 	close(stop)
-	<-outDone
-	<-errDone
+	// The process is gone, but a helper it started can still hold the write
+	// end of a pipe. Waiting for the readers without a limit used to block the
+	// extraction forever in that case; closing the read end after a moment
+	// unblocks them and the work is done either way.
+	awaitReaders(outDone, errDone, outR, errR)
 	if ctx.Err() != nil {
 		return context.Canceled
 	}
@@ -707,6 +710,37 @@ func exec7z(ctx context.Context, tool string, args []string, dir string, info In
 		return explain7z(info, st.Code, stderr.String())
 	}
 	return nil
+}
+
+// drainGrace is how long the pipe readers may take after the process exited
+// before their read ends are closed under them.
+const drainGrace = 2 * time.Second
+
+// awaitReaders waits for the two copier goroutines, but never forever: an
+// inherited pipe means EOF never arrives, and a file manager must not hang on
+// a finished extraction.
+func awaitReaders(outDone, errDone chan struct{}, outR, errR *os.File) {
+	deadline := time.NewTimer(drainGrace)
+	defer deadline.Stop()
+	pending := 2
+	for pending > 0 {
+		select {
+		case <-outDone:
+			outDone = nil
+			pending--
+		case <-errDone:
+			errDone = nil
+			pending--
+		case <-deadline.C:
+			// Closing the read ends makes the copiers return at once; the
+			// goroutines then close them again, which is harmless.
+			outR.Close()
+			errR.Close()
+			<-outDone
+			<-errDone
+			return
+		}
+	}
 }
 
 // explain7z turns 7-Zip's error output into a message.

@@ -1326,6 +1326,13 @@ shown in the **other panel**.
 - `d` / `Delete` **deletes the selected item for good** behind a confirmation,
   and `x` **empties the whole trash** behind a `y` confirmation. Both report
   what was freed. `Ctrl+L` re-reads the folder.
+- **The screen stays usable while it works.** Restoring an item from another
+  filesystem copies it, and emptying a full trash removes everything in it, so
+  both run in the background: the header and the status row say what is
+  happening, the list can still be scrolled, and the result arrives as one
+  notification. A second action waits for the first — pressing one while
+  another runs says so instead of queueing, because they all change the same
+  folder. There is no cancel button yet: an action that has started finishes.
 - **Retention.** Items are removed automatically once they are older than the
   time set in Settings → *Trash* → **Keep deleted items for** (1–365 days,
   default **29**). The sweep runs at start-up and then every six hours while

@@ -148,6 +148,17 @@ current relative directory where possible.
   record first and removes it if the rename fails, so a failed attempt leaves
   no trace. `Restore` renames back to an absolute destination and only falls
   back to a copy (then delete) across filesystems.
+- **Ids and removal order.** Ids come from an atomic counter, and `Put` retries
+  with a fresh id when the index write or the rename finds the name taken
+  (another TwinPane sharing the trash, a clock that stepped back), so a clash
+  is not a failed delete. `Remove` claims the record by renaming it to
+  `<id>.json.removing` and only then deletes `data/<id>`: a crash in the middle
+  leaves a claim, which `repair` finishes on the next sweep, instead of data
+  no record points at.
+- **Eligibility** is decided on the item itself: `checkTrashTarget` refuses
+  anything inside the trash, the trash itself, and any folder that *contains*
+  the trash (the move would have to put it inside itself), and compares the
+  item's own device with the trash's rather than its parent's.
 - `Sweep(keepDays, capBytes)` is the retention: it drops entries older than
   `keepDays` (default 29, bounds 1–365) and then the oldest items while the
   trash is over the cap. `CapBytes()` is a tenth of the free space of the
@@ -1571,6 +1582,33 @@ one snapshot of the log, a category filter (`activity.CatFilter`, including a
 "Warnings & Errors" filter that cuts across categories), a minimum-level filter
 and a typed query. Filters never change what is stored.
 
+## Hot paths (render, sort, search, comparison)
+
+An audit of the program found four places where ordinary use paid more than it
+had to; the fixes are small and local, and none changes a result:
+
+- **Panel render.** `Panel.SelectionStats` counts the listed entries, the
+  selected ones and their size in one pass and caches the result against
+  `(entryGen, sel.gen)`. `entryGen` moves when `Apply` replaces the listing;
+  the selection carries its own generation in a package-wide counter, so a
+  shared selection changed through the other panel invalidates both caches and
+  a fresh selection can never collide with an old number. `realCount`,
+  `summaryText` and the hint bar read the cache (`SelectionCount`,
+  `TargetCount`, `TargetsAllFiles`) instead of calling `Selection()` and
+  `Targets()`, which allocate.
+- **Sorting.** `fsys.SortEntries` precomputes the lower-cased name (and, for
+  sort-by-type, the extension) once per entry and sorts an array of
+  `sortItem`s, so the comparator no longer lower-cases two names per compare.
+- **Ranking.** `search.Rank` scores each match once and sorts the scored
+  slice; the old comparator called `Query.Score` twice per comparison.
+- **Directory comparison.** `dircompare` indexes scan errors by folder and
+  walks each entry's ancestors to find the nearest one, instead of testing
+  every error against every entry.
+- **Process pipes.** `archive.exec7z` and `compress.runCapture` release their
+  reader goroutines after a two-second grace period once the child has exited:
+  a helper that inherited the pipe can hold it open, and waiting for EOF
+  without a limit hung a finished extraction.
+
 ## Trash screen (`internal/ui/trashview.go`)
 
 The screen is a full-body overlay like the Tasks screen, held in
@@ -1580,6 +1618,19 @@ rebind of one cannot disturb the other. It shows one line per item
 (`name`, the origin path, then `age · size` right-aligned) and an empty state
 when there is nothing to undo.
 
+- **One action at a time, off the input loop.** Restore, delete-for-good and
+  empty return a `tea.Cmd` (`trashRestoredMsg`, `trashRemovedMsg`,
+  `trashEmptiedMsg`) instead of calling the store in the key handler, because a
+  cross-filesystem restore copies a tree and emptying walks every item.
+  `beginTrashWork`/`endTrashWork` hold a single flag: the row and the screen
+  header name the running action, and a second request reports "still working"
+  rather than starting a parallel one. `trashBusy` also trims the hint bar to
+  the close key. There is no cancel: `TrashStore.Restore`/`Empty` take no
+  context.
+- **Sweeps do not stack.** `trashSweeping` is set when a sweep command is
+  returned and cleared in `trashSwept`, so an overdue sweep is not started
+  again by every key press that arrives while a slow one runs; a request that
+  arrives meanwhile is dropped and the next sweep uses the new retention.
 - **Restore** asks `trashRestoreTarget` for a destination: the recorded origin
   when its folder still exists and the name is free, otherwise the other panel
   (then the active one, then home) with `freeNameIn` numbering the clash

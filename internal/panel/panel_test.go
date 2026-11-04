@@ -336,3 +336,52 @@ func TestTargetsAndNextFocus(t *testing.T) {
 		t.Fatalf("RefreshFocus cursor on %q", e.Name)
 	}
 }
+
+// SelectionStats feeds the summary line and the hint bar; it must agree with
+// Selection() and stay correct when the shared selection changes from the
+// other panel.
+func TestSelectionStatsFollowTheSharedSelection(t *testing.T) {
+	a, b := New(0, nil), New(1, nil)
+	listing := fsys.Listing{Path: "/x", Entries: []fsys.Entry{
+		{Name: "..", IsParent: true, IsDir: true},
+		{Name: "dir", IsDir: true, Size: 4096},
+		{Name: "a.txt", Size: 10},
+		{Name: "b.txt", Size: 32},
+	}}
+	for _, p := range []*Panel{a, b} {
+		p.Apply(LoadedMsg{Seq: p.seq, Path: "/x", Listing: listing})
+	}
+	ShareSelection(a, b)
+	if n, bytes, total := a.SelectionStats(); n != 0 || bytes != 0 || total != 3 {
+		t.Fatalf("empty selection: %d %d %d", n, bytes, total)
+	}
+	b.sel.m["a.txt"] = struct{}{}
+	b.sel.m["dir"] = struct{}{}
+	b.sel.touch()
+	if n, bytes, total := a.SelectionStats(); n != 2 || bytes != 10 || total != 3 {
+		t.Fatalf("after selecting: %d %d %d", n, bytes, total)
+	}
+	if a.SelectionCount() != 2 || a.TargetCount() != 2 || a.TargetsAllFiles() {
+		t.Fatalf("counts disagree with the stats")
+	}
+	if len(a.Selection()) != 2 {
+		t.Fatalf("Selection() = %v", a.Selection())
+	}
+	// A navigation drops the selection (the panel detached), and the cached
+	// counts follow the new listing.
+	listing2 := fsys.Listing{Path: "/x", Entries: listing.Entries[:3]}
+	a.Apply(LoadedMsg{Seq: a.seq, Path: "/x", Listing: listing2})
+	if n, bytes, total := a.SelectionStats(); n != 0 || bytes != 0 || total != 2 {
+		t.Fatalf("after the reload: %d %d %d", n, bytes, total)
+	}
+	// Sharing again brings the other panel's names back, and clearing from
+	// that panel empties both counts.
+	ShareSelection(a, b)
+	if n, bytes, _ := a.SelectionStats(); n != 2 || bytes != 10 {
+		t.Fatalf("after sharing again: %d %d", n, bytes)
+	}
+	b.ClearSelection()
+	if n, _, _ := a.SelectionStats(); n != 0 {
+		t.Fatalf("clearing from the other panel left %d selected", n)
+	}
+}

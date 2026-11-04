@@ -270,6 +270,9 @@ type App struct {
 	trashItems     int       // cached count, for the screen header and Settings row
 	trashBytes     int64     // cached size, same
 	trashLastSweep time.Time // when the trash was last swept (session sweeps)
+	trashSweeping  bool      // a sweep is running (never start a second one)
+	trashBusy      bool      // a restore/delete/empty is running in the background
+	trashBusyLabel string    // what it is doing, for the row and the screen header
 }
 
 // New creates the application model.
@@ -741,6 +744,15 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case trashSweptMsg:
 		return a, a.trashSwept(msg)
+
+	case trashRestoredMsg:
+		return a, a.trashRestored(msg)
+
+	case trashRemovedMsg:
+		return a, a.trashRemoved(msg)
+
+	case trashEmptiedMsg:
+		return a, a.trashEmptied(msg)
 
 	case panel.LoadedMsg:
 		if msg.PanelID < 0 || msg.PanelID > 1 {

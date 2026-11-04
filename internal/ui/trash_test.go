@@ -214,6 +214,11 @@ func TestTrashRetentionSweepsOldItemsAtStartup(t *testing.T) {
 	st.Now = time.Now
 
 	h, _ := newOpsApp(t, st, nil)
+	// The start-up sweep runs in the background, so wait for its report rather
+	// than assuming it has landed by the time the panels are ready.
+	h.until("the start-up sweep", func() bool {
+		return strings.Contains(h.reported(), "Removed 1 item older than 29 days")
+	})
 	if !strings.Contains(h.reported(), "Removed 1 item older than 29 days") {
 		t.Fatalf("the sweep did not report itself: %q", h.reported())
 	}
@@ -439,5 +444,82 @@ func TestFirstStartDoesNotMentionTheTrash(t *testing.T) {
 	h.settle()
 	if v := h.reported(); strings.Contains(v, "trash") && strings.Contains(v, "missing") {
 		t.Fatalf("unexpected trash notice: %q", v)
+	}
+}
+
+// ---- background actions and one-at-a-time sweeps ---------------------------------
+
+// Restoring and emptying leave the screen usable: they run as commands, report
+// when they are done, and the row says what is happening meanwhile.
+func TestTrashActionsRunInTheBackground(t *testing.T) {
+	h, env := newOpsApp(t, nil, nil)
+	h.deleteToTrash("a.txt")
+	h.a.dismissNotice()
+	h.press("T")
+	h.press("r") // restore: a command, not a direct call in the key handler
+	if !strings.Contains(h.reported(), "Restored") {
+		t.Fatalf("restore did not complete: %q", h.reported())
+	}
+	if h.a.trashBusy {
+		t.Fatal("the restore left the screen busy")
+	}
+	if _, err := os.Lstat(filepath.Join(env.src, "a.txt")); err != nil {
+		t.Fatal("the file is not back")
+	}
+	// Emptying an empty trash is refused without pretending to work.
+	h.a.dismissNotice()
+	h.press("x")
+	if !strings.Contains(h.reported(), "already empty") {
+		t.Fatalf("empty on an empty trash: %q", h.reported())
+	}
+}
+
+// A second action while one is running is refused, not queued: they all change
+// the same folder.
+func TestTrashActionsDoNotOverlap(t *testing.T) {
+	h, _ := newOpsApp(t, nil, nil)
+	if !h.a.beginTrashWork("Restoring a.txt…") {
+		t.Fatal("the first action was refused")
+	}
+	if h.a.beginTrashWork("Emptying the trash…") {
+		t.Fatal("a second action started while one was running")
+	}
+	if st := h.status(); !strings.Contains(st, "Still working") {
+		t.Fatalf("the refusal was not shown as state: %q", st)
+	}
+	if h.a.trashBusyLabel != "Restoring a.txt…" {
+		t.Fatalf("the running action was replaced: %q", h.a.trashBusyLabel)
+	}
+	h.a.endTrashWork()
+	if h.a.trashBusy || !h.a.beginTrashWork("Emptying the trash…") {
+		t.Fatal("the screen did not become available again")
+	}
+}
+
+// A sweep that is still running is not started a second time by key presses.
+func TestTrashSweepsDoNotStack(t *testing.T) {
+	h, env := newOpsApp(t, nil, nil)
+	h.deleteToTrash("a.txt")
+	if h.a.trashSweeping {
+		t.Fatal("the start-up sweep should be done by now")
+	}
+	h.a.trashLastSweep = time.Now().Add(-7 * time.Hour)
+	cmd := h.a.trashMaybeSweep()
+	if cmd == nil {
+		t.Fatal("an overdue sweep was not scheduled")
+	}
+	if !h.a.trashSweeping {
+		t.Fatal("the scheduled sweep is not marked as running")
+	}
+	if again := h.a.trashMaybeSweep(); again != nil {
+		t.Fatal("a second sweep was scheduled while one was running")
+	}
+	h.send(cmd())
+	h.settle()
+	if h.a.trashSweeping {
+		t.Fatal("the flag was not cleared when the sweep finished")
+	}
+	if !inTrash(t, env.trash, "a.txt", "new-a") {
+		t.Fatal("the sweep removed a fresh item")
 	}
 }

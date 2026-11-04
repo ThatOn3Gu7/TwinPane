@@ -108,6 +108,17 @@ type Panel struct {
 	// hist is this panel's own session-local back/forward history (see
 	// history.go); it is never shared with the other panel or persisted.
 	hist navHistory
+
+	// entryGen changes whenever entries are replaced; the cached counts below
+	// are only valid for the pair (entryGen, sel.gen). Rendering asks for the
+	// numbers several times per frame and must not walk the listing each time.
+	entryGen   uint64
+	statsFor   [2]uint64 // entryGen, sel generation the cache was computed for
+	statsSeen  bool
+	totalCount int   // entries without ".."
+	selCount   int   // selected entries currently listed
+	selFiles   int   // selected entries that are not folders
+	selBytes   int64 // their size in bytes (files only)
 }
 
 // New creates a panel. Call Load to populate it.
@@ -224,10 +235,22 @@ func (p *Panel) IsSelected(name string) bool { _, ok := p.sel.m[name]; return ok
 // the other at once.
 type selection struct {
 	m    map[string]struct{}
-	refs int // panels using it
+	refs int    // panels using it
+	gen  uint64 // bumped on every change; caches compare it
 }
 
-func newSelection() *selection { return &selection{m: map[string]struct{}{}, refs: 1} }
+// selGenSeq hands out selection generations. A fresh selection gets a new
+// number too, so a panel that swaps one for another can never read a stale
+// cache just because both counters happened to be zero.
+var selGenSeq uint64
+
+// touch marks the selection as changed.
+func (s *selection) touch() { selGenSeq++; s.gen = selGenSeq }
+
+func newSelection() *selection {
+	selGenSeq++
+	return &selection{m: map[string]struct{}{}, refs: 1, gen: selGenSeq}
+}
 
 // detach gives the panel a new, empty selection (after it changed
 // directory), leaving a shared one to the other panel.
@@ -245,6 +268,7 @@ func ShareSelection(a, b *Panel) {
 	for name := range b.sel.m {
 		a.sel.m[name] = struct{}{}
 	}
+	a.sel.touch()
 	b.sel.refs--
 	b.sel = a.sel
 	a.sel.refs++
@@ -262,9 +286,43 @@ func (p *Panel) Unshare() {
 	for name := range p.sel.m {
 		cp.m[name] = struct{}{}
 	}
+	cp.touch()
 	p.sel.refs--
 	p.sel = cp
 }
+
+// SelectionStats returns how many listed entries are selected, their total
+// size and how many entries there are in all, computing the three in one pass
+// and remembering them until the listing or the selection changes. The render
+// path and the hint bar call it several times per frame.
+func (p *Panel) SelectionStats() (count int, bytes int64, total int) {
+	key := [2]uint64{p.entryGen, p.sel.gen}
+	if p.statsSeen && p.statsFor == key {
+		return p.selCount, p.selBytes, p.totalCount
+	}
+	count, bytes, total, files := 0, 0, 0, 0
+	for _, e := range p.entries {
+		if e.IsParent {
+			continue
+		}
+		total++
+		if p.IsSelected(e.Name) {
+			count++
+			if e.IsDir {
+				files--
+			} else {
+				bytes += e.Size
+			}
+		}
+	}
+	p.statsFor, p.statsSeen = key, true
+	p.selCount, p.selBytes, p.totalCount = count, bytes, total
+	p.selFiles = count + files
+	return count, bytes, total
+}
+
+// SelectionCount is how many listed entries are selected.
+func (p *Panel) SelectionCount() int { n, _, _ := p.SelectionStats(); return n }
 
 // Selection returns the selected entries in display order. Later phases
 // (copy/move/delete) operate on this list.
@@ -286,6 +344,29 @@ func (p *Panel) SelectedNames() []string {
 		names = append(names, name)
 	}
 	return names
+}
+
+// TargetCount is how many entries Targets would return, without building the
+// slice: the hint bar asks on every frame.
+func (p *Panel) TargetCount() int {
+	if n := p.SelectionCount(); n > 0 {
+		return n
+	}
+	if e, ok := p.Current(); ok && !e.IsParent {
+		return 1
+	}
+	return 0
+}
+
+// TargetsAllFiles reports whether every target is a plain file or link, which
+// the hint bar uses to offer the edit keys. It never builds the slice.
+func (p *Panel) TargetsAllFiles() bool {
+	if n := p.SelectionCount(); n > 0 {
+		p.SelectionStats()
+		return p.selFiles == n
+	}
+	e, ok := p.Current()
+	return ok && !e.IsDir && !e.IsParent
 }
 
 // Targets returns the entries a file operation should act on: the selection
@@ -525,6 +606,7 @@ func (p *Panel) Apply(msg LoadedMsg) error {
 	p.path = msg.Listing.Path
 	p.listing = msg.Listing
 	p.entries = msg.Listing.Entries
+	p.entryGen++
 
 	if msg.Mode == LoadRefresh && samePath {
 		// keep the selection for entries that are still listed (in place:
@@ -724,6 +806,7 @@ func (p *Panel) ToggleSelect() {
 		} else {
 			p.sel.m[e.Name] = struct{}{}
 		}
+		p.sel.touch()
 	}
 	p.Down()
 }
@@ -748,10 +831,14 @@ func (p *Panel) SelectAll() {
 			p.sel.m[e.Name] = struct{}{}
 		}
 	}
+	p.sel.touch()
 }
 
 // ClearSelection removes all selections.
-func (p *Panel) ClearSelection() { clear(p.sel.m) }
+func (p *Panel) ClearSelection() {
+	clear(p.sel.m)
+	p.sel.touch()
+}
 
 // ScrollBy scrolls the viewport by n rows (negative = up) without moving the
 // cursor more than necessary: the cursor is pulled along only when it would

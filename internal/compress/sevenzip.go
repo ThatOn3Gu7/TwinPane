@@ -107,7 +107,14 @@ func runCapture(path string, args []string, dir string, timeout time.Duration) (
 	timer := time.AfterFunc(timeout, func() { child.KillGroup() })
 	_, err = child.Wait()
 	timer.Stop()
-	<-done
+	// A helper that inherited the pipe keeps it open past the exit; do not
+	// wait for an EOF that may never come.
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		r.Close()
+		<-done
+	}
 	return buf.String(), err
 }
 

@@ -252,3 +252,26 @@ func TestFilterRank(t *testing.T) {
 		t.Fatalf("reports/*.txt: %v", g)
 	}
 }
+
+// Rank scores each match once: the order must be the same as before, with the
+// index order kept inside one score.
+func TestRankOrdersByScoreAndKeepsIndexOrder(t *testing.T) {
+	q, err := ParseQuery("report")
+	if err != nil {
+		t.Fatal(err)
+	}
+	es := []Entry{
+		{Path: "/x/myreport.txt", Rel: "myreport.txt", lowName: "myreport.txt", lowRel: "myreport.txt"},
+		{Path: "/x/report.txt", Rel: "report.txt", lowName: "report.txt", lowRel: "report.txt"},
+		{Path: "/x/report-2.txt", Rel: "report-2.txt", lowName: "report-2.txt", lowRel: "report-2.txt"},
+		{Path: "/x/other.txt", Rel: "other.txt", lowName: "other.txt", lowRel: "other.txt"},
+	}
+	matches := []int{0, 1, 2, 3}
+	Rank(es, q, matches)
+	want := []int{1, 2, 0, 3} // exact name, prefix, contains, the rest
+	for i := range want {
+		if matches[i] != want[i] {
+			t.Fatalf("rank = %v, want %v", matches, want)
+		}
+	}
+}

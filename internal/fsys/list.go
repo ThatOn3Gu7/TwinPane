@@ -105,13 +105,26 @@ func statEntry(dir string, de fs.DirEntry) Entry {
 // mixed interleaves directories with files by the sort key instead of
 // grouping them first (Options.MixedOrder).
 func SortEntries(entries []Entry, key SortKey, desc, mixed bool) {
-	sort.SliceStable(entries, func(i, j int) bool {
-		a, b := entries[i], entries[j]
-		if a.IsParent != b.IsParent {
-			return a.IsParent
+	if len(entries) < 2 {
+		return
+	}
+	// Lower-casing and finding the extension are done once per entry rather
+	// than twice per comparison: sorting a large folder used to allocate a
+	// string for every compare it made.
+	items := make([]sortItem, len(entries))
+	for i, e := range entries {
+		items[i] = sortItem{e: e, low: strings.ToLower(e.Name)}
+		if key == SortType {
+			items[i].kind = TypeOf(e.Name)
 		}
-		if !mixed && a.IsDir != b.IsDir {
-			return a.IsDir
+	}
+	sort.SliceStable(items, func(i, j int) bool {
+		a, b := items[i], items[j]
+		if a.e.IsParent != b.e.IsParent {
+			return a.e.IsParent
+		}
+		if !mixed && a.e.IsDir != b.e.IsDir {
+			return a.e.IsDir
 		}
 		if c := comparePrimary(a, b, key); c != 0 {
 			if c == unknownLast || c == -unknownLast {
@@ -122,8 +135,18 @@ func SortEntries(entries []Entry, key SortKey, desc, mixed bool) {
 			}
 			return c < 0
 		}
-		return nameLess(a.Name, b.Name)
+		return nameLessPre(a, b)
 	})
+	for i := range items {
+		entries[i] = items[i].e
+	}
+}
+
+// sortItem is an entry plus the keys the sort needs, computed once.
+type sortItem struct {
+	e    Entry
+	low  string // lower-cased name
+	kind string // TypeOf(name), only for sort-by-type
 }
 
 // unknownLast marks a comparison decided by missing metadata; it is not
@@ -132,39 +155,37 @@ const unknownLast = 2
 
 // comparePrimary compares by key: -1/0/1, or ±unknownLast when exactly one
 // side lacks the metadata (the known side sorts first).
-func comparePrimary(a, b Entry, key SortKey) int {
+func comparePrimary(a, b sortItem, key SortKey) int {
 	switch key {
 	case SortSize:
-		if a.IsDir || b.IsDir {
+		if a.e.IsDir || b.e.IsDir {
 			// Both are directories: by name. Mixed listings also meet
 			// here for a directory against a file, where a size would
 			// not be meaningful: fall through to the name tie-break.
 			return 0
 		}
-		ka, kb := sizeKnown(a), sizeKnown(b)
+		ka, kb := sizeKnown(a.e), sizeKnown(b.e)
 		if ka != kb {
 			return knownFirst(ka)
 		}
-		if ka && a.Size != b.Size {
-			return cmp3(a.Size < b.Size)
+		if ka && a.e.Size != b.e.Size {
+			return cmp3(a.e.Size < b.e.Size)
 		}
 	case SortTime:
-		ka, kb := timeKnown(a), timeKnown(b)
+		ka, kb := timeKnown(a.e), timeKnown(b.e)
 		if ka != kb {
 			return knownFirst(ka)
 		}
-		if ka && !a.ModTime.Equal(b.ModTime) {
-			return cmp3(a.ModTime.Before(b.ModTime))
+		if ka && !a.e.ModTime.Equal(b.e.ModTime) {
+			return cmp3(a.e.ModTime.Before(b.e.ModTime))
 		}
 	case SortType:
-		ea, eb := TypeOf(a.Name), TypeOf(b.Name)
-		if ea != eb {
-			return cmp3(ea < eb)
+		if a.kind != b.kind {
+			return cmp3(a.kind < b.kind)
 		}
 	default: // SortName
-		la, lb := strings.ToLower(a.Name), strings.ToLower(b.Name)
-		if la != lb {
-			return cmp3(la < lb)
+		if a.low != b.low {
+			return cmp3(a.low < b.low)
 		}
 	}
 	return 0
@@ -185,11 +206,16 @@ func knownFirst(aKnown bool) int {
 }
 
 func nameLess(a, b string) bool {
-	la, lb := strings.ToLower(a), strings.ToLower(b)
-	if la != lb {
-		return la < lb
+	return nameLessPre(sortItem{e: Entry{Name: a}, low: strings.ToLower(a)},
+		sortItem{e: Entry{Name: b}, low: strings.ToLower(b)})
+}
+
+// nameLessPre is the tie-break on already lower-cased names.
+func nameLessPre(a, b sortItem) bool {
+	if a.low != b.low {
+		return a.low < b.low
 	}
-	return a < b
+	return a.e.Name < b.e.Name
 }
 
 func sizeKnown(e Entry) bool { return e.StatErr == nil && !(e.IsLink && e.LinkBroken) }

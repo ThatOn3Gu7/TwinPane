@@ -366,14 +366,10 @@ func (p *Panel) renderRows(th theme.Theme, active bool, l layout, cols columns) 
 	return out
 }
 
+// realCount is the number of entries without "..", from the cached stats.
 func (p *Panel) realCount() int {
-	n := 0
-	for _, e := range p.entries {
-		if !e.IsParent {
-			n++
-		}
-	}
-	return n
+	_, _, total := p.SelectionStats()
+	return total
 }
 
 func (p *Panel) rowText(e fsys.Entry, cols columns, innerW int) string {
@@ -549,14 +545,8 @@ func (p *Panel) summaryText(w int) string {
 	if !p.opts.ShowHidden && p.listing.Hidden > 0 {
 		left += fmt.Sprintf("  +%d hidden", p.listing.Hidden)
 	}
-	if sel := p.Selection(); len(sel) > 0 {
-		var total int64
-		for _, e := range sel {
-			if !e.IsDir {
-				total += e.Size
-			}
-		}
-		left += fmt.Sprintf("  %d selected (%s)", len(sel), fsys.HumanSize(total))
+	if n, total, _ := p.SelectionStats(); n > 0 {
+		left += fmt.Sprintf("  %d selected (%s)", n, fsys.HumanSize(total))
 	}
 	pos := 0
 	if len(p.entries) > 0 {

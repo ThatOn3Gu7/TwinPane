@@ -11,6 +11,7 @@ import (
 	"runtime"
 	"sort"
 	"strings"
+	"sync/atomic"
 	"time"
 )
 
@@ -216,12 +217,16 @@ func (t *TrashStore) Available(path string) (bool, string) {
 // checkTrashTarget is the shared eligibility test: the trash has to be on the
 // same device (the move is a rename) and the item must not be inside it.
 func checkTrashTarget(path, trashDir string) (bool, string) {
-	if ti, err := os.Stat(trashDir); err == nil {
-		if inside, _ := isInside(filepath.Dir(path), ti); inside {
-			return false, "item is already inside the trash"
-		}
+	path, trashDir = filepath.Clean(path), filepath.Clean(trashDir)
+	// The item itself is checked, not its parent: a folder that *contains* the
+	// trash cannot be moved into it, and the trash cannot be moved into itself.
+	if pathInside(path, trashDir) {
+		return false, "item is already inside the trash"
 	}
-	same, err := sameDeviceFn(filepath.Dir(path), trashDir)
+	if pathInside(trashDir, path) {
+		return false, fmt.Sprintf("refusing to trash %s: the trash is inside it", filepath.Base(path))
+	}
+	same, err := sameDeviceFn(path, trashDir)
 	if err != nil {
 		return false, fmt.Sprintf("cannot check filesystem: %v", err)
 	}
@@ -229,6 +234,16 @@ func checkTrashTarget(path, trashDir string) (bool, string) {
 		return false, fmt.Sprintf("%s is on a different filesystem than the trash (%s)", filepath.Base(path), trashDir)
 	}
 	return true, ""
+}
+
+// pathInside reports whether p is dir or below it, comparing whole path parts
+// (so "/data/trashy" is not inside "/data/trash").
+func pathInside(p, dir string) bool {
+	rel, err := filepath.Rel(dir, p)
+	if err != nil {
+		return false
+	}
+	return rel == "." || (rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)))
 }
 
 // meta is the index record written next to an item.
@@ -241,15 +256,18 @@ type meta struct {
 	Dir       bool      `json:"dir,omitempty"`
 }
 
-var trashCounter int
+// trashSeq numbers entries inside this process. Deletes run in background
+// goroutines, so it is atomic: two items deleted in the same nanosecond must
+// still get different ids.
+var trashSeq atomic.Uint64
 
-// newID builds a sortable, unique name for a new entry.
+// newID builds a sortable, unique name for a new entry. Uniqueness on disk is
+// still checked by Put, because another TwinPane may share the trash.
 func (t *TrashStore) newID(at time.Time) string {
 	if t.ID != nil {
 		return t.ID(at)
 	}
-	trashCounter++
-	return fmt.Sprintf("%s-%03d", at.UTC().Format("20060102T150405.000000000"), trashCounter%1000)
+	return fmt.Sprintf("%s-%06d", at.UTC().Format("20060102T150405.000000000"), trashSeq.Add(1)%1_000_000)
 }
 
 // Trash moves path into the store. The item is renamed, never copied and never
@@ -282,7 +300,6 @@ func (t *TrashStore) Put(path string) (TrashEntry, error) {
 	}
 	at := t.now()
 	e := TrashEntry{
-		ID:        t.newID(at),
 		Name:      filepath.Base(abs),
 		Origin:    abs,
 		DeletedAt: at,
@@ -293,26 +310,53 @@ func (t *TrashStore) Put(path string) (TrashEntry, error) {
 	} else if fi.Mode().IsRegular() {
 		e.Bytes = fi.Size()
 	}
+	// The id only has to be unique, so a clash (another TwinPane, a clock that
+	// stepped back, a pinned test id) is answered with a new one instead of a
+	// failed delete. Anything else is a real error.
+	var lastErr error
+	for attempt := 0; attempt < 8; attempt++ {
+		e.ID = t.newID(at)
+		err := t.putEntry(e)
+		if err == nil {
+			return e, nil
+		}
+		if !errors.Is(err, fs.ErrExist) {
+			return TrashEntry{}, err
+		}
+		lastErr = err
+	}
+	return TrashEntry{}, fmt.Errorf("cannot find an unused trash id: %w", lastErr)
+}
+
+// putEntry writes the index record and moves the item into data/. It leaves
+// no trace of a failed attempt.
+func (t *TrashStore) putEntry(e TrashEntry) error {
 	infoPath := filepath.Join(t.infoDir(), e.ID+".json")
 	body, err := json.Marshal(meta{ID: e.ID, Name: e.Name, Origin: e.Origin, DeletedAt: e.DeletedAt, Bytes: e.Bytes, Dir: e.Dir})
 	if err != nil {
-		return TrashEntry{}, err
+		return err
 	}
 	f, err := os.OpenFile(infoPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 	if err != nil {
-		return TrashEntry{}, fmt.Errorf("cannot write the trash index: %w", err)
+		if errors.Is(err, fs.ErrExist) {
+			return err // taken: the caller picks another id
+		}
+		return fmt.Errorf("cannot write the trash index: %w", err)
 	}
 	_, werr := f.Write(append(body, '\n'))
 	cerr := f.Close()
 	if werr != nil || cerr != nil {
 		os.Remove(infoPath)
-		return TrashEntry{}, fmt.Errorf("cannot write the trash index: %v", errors.Join(werr, cerr))
+		return fmt.Errorf("cannot write the trash index: %v", errors.Join(werr, cerr))
 	}
-	if err := renameNoReplace(abs, filepath.Join(t.dataDir(), e.ID)); err != nil {
+	if err := renameNoReplace(e.Origin, filepath.Join(t.dataDir(), e.ID)); err != nil {
 		os.Remove(infoPath)
-		return TrashEntry{}, err
+		if errors.Is(err, fs.ErrExist) {
+			return err // the data name was taken too: retry as well
+		}
+		return err
 	}
-	return e, nil
+	return nil
 }
 
 // treeSize adds up the size of the regular files under path. Unreadable
@@ -477,12 +521,29 @@ func copyFile(src, dst string, perm os.FileMode) error {
 
 // Remove deletes one item from the trash for good.
 func (t *TrashStore) Remove(e TrashEntry) error {
-	// The index file is claimed first: if two windows are looking at the same
-	// trash, only one of them removes the item.
-	if err := os.Remove(filepath.Join(t.infoDir(), e.ID+".json")); err != nil && !errors.Is(err, os.ErrNotExist) {
+	// The index file is claimed by renaming it first: if two windows share the
+	// trash, only one of them removes the item. The claim is a rename rather
+	// than a delete so that an interrupted removal can be finished later: the
+	// record stays on disk (as <id>.json.removing) until the item is gone, and
+	// repair picks it up after a crash. Deleting the item while the record is
+	// still there would be the wrong order: a crash in the middle would leave
+	// data nothing points at.
+	infoPath := filepath.Join(t.infoDir(), e.ID+".json")
+	claim := filepath.Join(t.infoDir(), e.ID+".json.removing")
+	if err := os.Rename(infoPath, claim); err != nil {
+		if !errors.Is(err, fs.ErrNotExist) {
+			return err
+		}
+		// No record: either it was already removed, or the item never had one.
+		// Removing whatever is in data/ keeps "delete" honest either way.
+		return os.RemoveAll(filepath.Join(t.dataDir(), e.ID))
+	}
+	if err := os.RemoveAll(filepath.Join(t.dataDir(), e.ID)); err != nil {
+		// The claim goes back, so the item is still listed and can be retried.
+		os.Rename(claim, infoPath)
 		return err
 	}
-	return os.RemoveAll(filepath.Join(t.dataDir(), e.ID))
+	return os.Remove(claim)
 }
 
 // TrashSweep is what a sweep did.
@@ -514,10 +575,21 @@ func (t *TrashStore) repair() (orphans int, bytes int64, lost int) {
 	records := map[string]bool{}
 	if des, err := os.ReadDir(t.infoDir()); err == nil {
 		for _, de := range des {
-			if de.IsDir() || !strings.HasSuffix(de.Name(), ".json") {
+			if de.IsDir() {
 				continue
 			}
-			records[strings.TrimSuffix(de.Name(), ".json")] = true
+			name := de.Name()
+			if id, ok := strings.CutSuffix(name, ".json.removing"); ok {
+				// A removal that was interrupted: finish it. The record was
+				// claimed, so the item is not listed and must not linger.
+				os.RemoveAll(filepath.Join(t.dataDir(), id))
+				os.Remove(filepath.Join(t.infoDir(), name))
+				continue
+			}
+			if !strings.HasSuffix(name, ".json") {
+				continue
+			}
+			records[strings.TrimSuffix(name, ".json")] = true
 		}
 	}
 	items := map[string]bool{}

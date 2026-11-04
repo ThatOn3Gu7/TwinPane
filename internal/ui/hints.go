@@ -136,8 +136,8 @@ func (a *App) browseHints() []barItem {
 		return a.remoteHints()
 	}
 	cur, ok := p.Current()
-	targets := p.Targets()
-	nsel := len(p.Selection())
+	ntargets := p.TargetCount()
+	nsel := p.SelectionCount()
 	isBrowsable := ok && !cur.IsDir && !cur.IsParent && a.isBrowsableArchive(cur.Path)
 
 	out := []barItem{a.bind("browse.switch", "switch")}
@@ -161,9 +161,9 @@ func (a *App) browseHints() []barItem {
 	if nsel > 0 {
 		out = append(out, a.bind("browse.unselect", "clear"))
 	}
-	if len(targets) > 0 {
+	if ntargets > 0 {
 		rename := "rename"
-		if len(targets) > 1 {
+		if ntargets > 1 {
 			rename = "bulk rename"
 		}
 		copyDesc, moveDesc := "copy", "move"
@@ -172,14 +172,7 @@ func (a *App) browseHints() []barItem {
 			copyDesc, moveDesc = "copy to…", "move to…"
 		}
 		out = append(out, a.bind("browse.copy", copyDesc), a.bind("browse.move", moveDesc), a.bind("browse.rename", rename), a.bind("browse.delete", "delete"))
-		files := true
-		for _, e := range targets {
-			if e.IsDir {
-				files = false
-				break
-			}
-		}
-		if files {
+		if p.TargetsAllFiles() {
 			out = append(out, a.bindAll("edit", "browse.edit", "browse.editWith"))
 		}
 	}
@@ -213,7 +206,7 @@ func (a *App) browseHints() []barItem {
 		out = append(out, a.bindAll("open with", "browse.openExternal", "browse.openWith"))
 	}
 	out = append(out, a.bind("browse.bookmarks", "bookmarks"), a.bind("browse.storage", "storage"), a.bind("browse.folderSize", "folder sizes"))
-	if len(targets) > 0 {
+	if ntargets > 0 {
 		out = append(out, a.bind("browse.compress", "compress"))
 	}
 	// phase 9, again after everything that was there before
@@ -232,7 +225,7 @@ func (a *App) browseHints() []barItem {
 func (a *App) remoteHints() []barItem {
 	p := a.ActivePanel()
 	cur, ok := p.Current()
-	nsel := len(p.Selection())
+	nsel := p.SelectionCount()
 	out := []barItem{a.bind("browse.switch", "switch"), a.bind("browse.tasks", "tasks")}
 	out = append(out, a.focusHints()...)
 	out = append(out, a.navHints(p)...)
@@ -249,9 +242,9 @@ func (a *App) remoteHints() []barItem {
 	if nsel > 0 {
 		out = append(out, a.bind("browse.unselect", "clear"))
 	}
-	if len(p.Targets()) > 0 {
+	if p.TargetCount() > 0 {
 		out = append(out, a.bind("browse.copy", "copy"), a.bind("browse.move", "move"))
-		if len(p.Targets()) == 1 {
+		if p.TargetCount() == 1 {
 			out = append(out, a.bind("browse.rename", "rename"))
 		}
 		out = append(out, a.bind("browse.delete", "delete"))
@@ -271,11 +264,11 @@ func (a *App) remoteHints() []barItem {
 func (a *App) archiveHints() []barItem {
 	p := a.ActivePanel()
 	cur, ok := p.Current()
-	nsel := len(p.Selection())
+	nsel := p.SelectionCount()
 	out := []barItem{a.bind("browse.switch", "switch"), a.bind("browse.tasks", "tasks"), a.bind("browse.cancel", "leave archive")}
 	out = append(out, a.focusHints()...)
 	out = append(out, a.navHints(p)...)
-	if len(p.Targets()) > 0 {
+	if p.TargetCount() > 0 {
 		out = append(out, a.bind("browse.extract", "extract"))
 	}
 	if ok && nsel == 0 {

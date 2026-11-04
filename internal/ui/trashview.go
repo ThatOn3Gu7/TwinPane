@@ -343,22 +343,61 @@ func (a *App) trashRestore() tea.Cmd {
 		a.noteStatus(lvlInfo, "Nothing to restore: the trash is empty")
 		return nil
 	}
-	dest, moved := a.trashRestoreTarget(e)
-	if err := a.trashStore.Restore(e, dest); err != nil {
-		a.reloadTrash()
-		a.noteResult(lvlErr, "could not restore "+e.Name+": "+errText(err), "Restore failed",
-			"Could not restore "+fsys.SanitizeName(e.Name), errText(err))
+	if !a.beginTrashWork("Putting " + fsys.SanitizeName(e.Name) + " back…") {
 		return nil
 	}
-	a.reloadTrash()
-	reload := a.refreshPanelsAfterRestore(filepath.Dir(dest), filepath.Base(dest))
-	body := []string{"→ " + shortPath(dest)}
-	if moved != "" {
-		body = append(body, moved)
+	dest, moved := a.trashRestoreTarget(e)
+	st := a.trashStore
+	// The move is a rename in the common case, but a restore from another
+	// filesystem copies the whole item: it runs in the background so the
+	// screen keeps scrolling and the hint bar keeps working.
+	return func() tea.Msg {
+		return trashRestoredMsg{entry: e, dest: dest, note: moved, err: st.Restore(e, dest)}
 	}
-	a.noteResult(lvlOK, "restored "+e.Name+" to "+dest, "Restored",
-		"Restored "+fsys.SanitizeName(e.Name), body...)
+}
+
+// trashRestoredMsg is the result of a restore that ran in the background.
+type trashRestoredMsg struct {
+	entry ops.TrashEntry
+	dest  string
+	note  string
+	err   error
+}
+
+func (a *App) trashRestored(msg trashRestoredMsg) tea.Cmd {
+	a.endTrashWork()
+	a.reloadTrash()
+	if msg.err != nil {
+		a.noteResult(lvlErr, "could not restore "+msg.entry.Name+": "+errText(msg.err), "Restore failed",
+			"Could not restore "+fsys.SanitizeName(msg.entry.Name), errText(msg.err))
+		return nil
+	}
+	reload := a.refreshPanelsAfterRestore(filepath.Dir(msg.dest), filepath.Base(msg.dest))
+	body := []string{"→ " + shortPath(msg.dest)}
+	if msg.note != "" {
+		body = append(body, msg.note)
+	}
+	a.noteResult(lvlOK, "restored "+msg.entry.Name+" to "+msg.dest, "Restored",
+		"Restored "+fsys.SanitizeName(msg.entry.Name), body...)
 	return reload
+}
+
+// beginTrashWork marks a restore/delete/empty as running. It returns false
+// when one is already running: the actions change the same folder, so they
+// run one at a time and the second press says so instead of queueing.
+func (a *App) beginTrashWork(label string) bool {
+	if a.trashBusy {
+		a.setStatusRow("Still working on the trash…", lvlInfo)
+		return false
+	}
+	a.trashBusy, a.trashBusyLabel = true, label
+	a.setStatusRow(label, lvlInfo)
+	return true
+}
+
+func (a *App) endTrashWork() {
+	a.trashBusy, a.trashBusyLabel = false, ""
+	a.setStatusRow("", lvlInfo)
 }
 
 // trashRestoreTarget picks where an entry goes back to.
@@ -473,15 +512,29 @@ func (a *App) trashDelete(e ops.TrashEntry) tea.Cmd {
 	if a.trashStore == nil {
 		return nil
 	}
-	if err := a.trashStore.Remove(e); err != nil {
-		a.reloadTrash()
-		a.noteResult(lvlErr, "could not delete "+e.Name+" from the trash: "+errText(err),
-			"Delete failed", "Could not delete "+fsys.SanitizeName(e.Name)+" from the trash", errText(err))
+	if !a.beginTrashWork("Deleting " + fsys.SanitizeName(e.Name) + " for good…") {
 		return nil
 	}
+	st := a.trashStore
+	return func() tea.Msg { return trashRemovedMsg{entry: e, err: st.Remove(e)} }
+}
+
+// trashRemovedMsg is the result of deleting one item from the trash.
+type trashRemovedMsg struct {
+	entry ops.TrashEntry
+	err   error
+}
+
+func (a *App) trashRemoved(msg trashRemovedMsg) tea.Cmd {
+	a.endTrashWork()
 	a.reloadTrash()
-	a.noteResult(lvlOK, "deleted "+e.Name+" from the trash", "Deleted from the trash",
-		"Deleted "+fsys.SanitizeName(e.Name)+" for good")
+	if msg.err != nil {
+		a.noteResult(lvlErr, "could not delete "+msg.entry.Name+" from the trash: "+errText(msg.err),
+			"Delete failed", "Could not delete "+fsys.SanitizeName(msg.entry.Name)+" from the trash", errText(msg.err))
+		return nil
+	}
+	a.noteResult(lvlOK, "deleted "+msg.entry.Name+" from the trash", "Deleted from the trash",
+		"Deleted "+fsys.SanitizeName(msg.entry.Name)+" for good")
 	return nil
 }
 
@@ -519,7 +572,19 @@ func (a *App) trashEmpty() tea.Cmd {
 	if a.trashStore == nil {
 		return nil
 	}
-	res := a.trashStore.Empty()
+	if !a.beginTrashWork("Emptying the trash…") {
+		return nil
+	}
+	st := a.trashStore
+	return func() tea.Msg { return trashEmptiedMsg{res: st.Empty()} }
+}
+
+// trashEmptiedMsg is the result of emptying the trash.
+type trashEmptiedMsg struct{ res ops.TrashSweep }
+
+func (a *App) trashEmptied(msg trashEmptiedMsg) tea.Cmd {
+	a.endTrashWork()
+	res := msg.res
 	a.reloadTrash()
 	if res.Removed == 0 {
 		a.noteResult(lvlWarn, "nothing could be removed from the trash",
@@ -544,7 +609,7 @@ const trashSweepEvery = 6 * time.Hour
 // key presses rather than a timer, so an idle TwinPane does nothing and a
 // running one tidies up at the next interaction.
 func (a *App) trashMaybeSweep() tea.Cmd {
-	if a.trashStore == nil || a.trashLastSweep.IsZero() {
+	if a.trashStore == nil || a.trashLastSweep.IsZero() || a.trashSweeping {
 		return nil
 	}
 	if a.trashNow().Sub(a.trashLastSweep) < trashSweepEvery {
@@ -572,6 +637,14 @@ func (a *App) trashSweepCmd() tea.Cmd {
 	if st == nil {
 		return nil
 	}
+	// trashLastSweep only moves when a sweep finishes, so without this flag a
+	// slow sweep (a big trash, busy storage) would be started again by every
+	// key press that arrives while it runs. A second request is dropped: the
+	// running sweep reports, and the next one picks up the new retention.
+	if a.trashSweeping {
+		return nil
+	}
+	a.trashSweeping = true
 	keep := a.effectiveTrashKeepDays()
 	cap := st.CapBytes()
 	return func() tea.Msg {
@@ -591,6 +664,7 @@ type trashSweptMsg struct {
 // trashSwept applies a sweep: refresh the numbers and tell the user if
 // something was removed. Nothing is reported when the trash had nothing to do.
 func (a *App) trashSwept(msg trashSweptMsg) tea.Cmd {
+	a.trashSweeping = false
 	a.trashLastSweep = a.trashNow()
 	if note := a.takeTrashRecreated(); note != "" {
 		// Removed from outside while TwinPane was running: the store built
@@ -644,6 +718,16 @@ func trashAgeText(at, now time.Time) string {
 	}
 }
 
+// trashHeaderLine is the summary row above the list: what the trash holds, or
+// what is being done to it right now.
+func (a *App) trashHeaderLine() string {
+	if a.trashBusy && a.trashBusyLabel != "" {
+		return a.trashBusyLabel
+	}
+	return a.trashStatsText() + " · items older than " +
+		plural(a.effectiveTrashKeepDays(), "day") + " are removed automatically"
+}
+
 // ---- rendering -----------------------------------------------------------------
 
 func (a *App) trashViewRender(height int) string {
@@ -654,8 +738,7 @@ func (a *App) trashViewRender(height int) string {
 	th := a.theme
 	innerW := max(1, a.width-3) // two border cells and the cursor column
 	lines := []string{
-		th.Summary.Render(fitWidth(" "+a.trashStatsText()+
-			" · items older than "+plural(a.effectiveTrashKeepDays(), "day")+" are removed automatically", innerW)),
+		th.Summary.Render(fitWidth(" "+a.trashHeaderLine(), innerW)),
 		"",
 	}
 	if v.err != nil {
@@ -723,6 +806,12 @@ func (a *App) trashEntryLines(e ops.TrashEntry, selected bool, width int) []stri
 // trashHints is the hint bar for the screen.
 func (a *App) trashHints() []barItem {
 	out := []barItem{item("↑↓", "move", "")}
+	if a.trashBusy {
+		// One action at a time: the other keys would change the same folder
+		// underneath a running one, and the bar should say so rather than
+		// offer them.
+		return append(out, a.bind("trash.close", "close"))
+	}
 	if a.trashItems > 0 {
 		out = append(out, a.bind("trash.restore", "restore"), a.bind("trash.delete", "delete for good"), a.bind("trash.empty", "empty"))
 	}

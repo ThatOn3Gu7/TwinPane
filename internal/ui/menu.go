@@ -33,7 +33,7 @@ func (a *App) menuEntries() (title string, entries []menuEntry) {
 	if hasCur && e.IsParent {
 		hasCur = false
 	}
-	nsel := len(p.Selection())
+	nsel := p.SelectionCount()
 	targets := p.Targets()
 	add := func(m menuEntry) { entries = append(entries, m) }
 	single := nsel == 0 && hasCur

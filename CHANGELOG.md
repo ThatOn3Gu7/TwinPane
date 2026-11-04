@@ -133,7 +133,35 @@ things back and a retention that cleans up on its own.
   outside folds it back, and the countdown still stops while the message is
   being read.
 
+### Fixed
+- **An audit of the whole program, acted on.** A deletion that arrived in the
+  same nanosecond as another could fail on an id clash — ids are now handed out
+  atomically and a clash is answered with a new id instead of an error. A crash
+  while removing an item from the trash left a data folder nothing pointed at;
+  the record is now claimed before the item is deleted and the next sweep
+  finishes an interrupted removal. The trash refused neither itself nor the
+  folder that contains it, so a delete of `~/.local/share` planned a "move to
+  the trash" that could only fail at the rename; both are refused with a reason
+  now, and the item's own filesystem is the one checked. 7-Zip's output pipes
+  could keep an extraction or a compression waiting forever when a helper
+  inherited them; the readers are released after a couple of seconds now.
+  Restoring, deleting and emptying run in the background instead of on the key
+  press, so a restore from another filesystem no longer freezes the interface,
+  and two of them cannot run at once. A sweep that was still running could be
+  started again by every key press; it is one at a time now.
+- The directory comparison no longer scans every error for every entry: with a
+  tree full of unreadable folders it was quadratic. The nearest failed folder
+  is still what an entry reports, so what it says is unchanged.
+- `docs/TEST_RESULTS.txt`, a leftover log from an old branch reconciliation,
+  is gone; the changelog and the guides are the record.
+
 ### Changed
+- **The render path stopped re-walking the listing.** The panel's entry count,
+  the selection count and the selected-size total are computed in one pass and
+  cached until the listing or the selection changes, and the hint bar asks for
+  numbers instead of building the selected entries: a large folder no longer
+  pays several full scans per frame. Sorting lower-cases each name once instead
+  of twice per comparison, and the search ranks each match once.
 - Deleting is no longer permanent by default on **Termux** or **Windows**. The
   confirmation reads "Move … to the trash?" wherever the item is on the trash's
   own filesystem, and the red **PERMANENTLY** wording is kept for the cases

@@ -222,22 +222,35 @@ func Compare(ctx context.Context, leftRoot, rightRoot string, opts Options) (Res
 	sort.Strings(rels)
 	result.Entries = make([]Entry, 0, len(rels))
 	rootErrors := map[string]string{}
+	// A failed directory read means all descendants on that side are unknown,
+	// not absent. The errors are indexed by folder and looked up along each
+	// entry's ancestors: scanning every error for every entry made a tree
+	// full of unreadable folders quadratic.
+	byRel := map[string][2]string{}
 	for _, scanErr := range scanErrors {
 		if scanErr.Rel == "" {
 			rootErrors[scanErr.Side] = scanErr.Err
+			continue
 		}
+		slot := byRel[scanErr.Rel]
+		if scanErr.Side == "left" {
+			slot[0] = scanErr.Err
+		} else {
+			slot[1] = scanErr.Err
+		}
+		byRel[scanErr.Rel] = slot
 	}
 	for _, rel := range rels {
 		entry := Entry{Rel: rel, Left: leftEntries[rel], Right: rightEntries[rel]}
-		// A failed directory read means all descendants on that side are
-		// unknown, not absent. Propagate the error through the subtree so
-		// the display never suggests a one-sided copy from an incomplete scan.
-		for _, scanErr := range scanErrors {
-			if scanErr.Side == "left" && (scanErr.Rel == "" || rel == scanErr.Rel || strings.HasPrefix(rel, scanErr.Rel+"/")) {
-				entry.Left.Error = scanErr.Err
-			}
-			if scanErr.Side == "right" && (scanErr.Rel == "" || rel == scanErr.Rel || strings.HasPrefix(rel, scanErr.Rel+"/")) {
-				entry.Right.Error = scanErr.Err
+		for d := rel; d != ""; d = parentRel(d) {
+			if errs, ok := byRel[d]; ok {
+				if errs[0] != "" {
+					entry.Left.Error = errs[0]
+				}
+				if errs[1] != "" {
+					entry.Right.Error = errs[1]
+				}
+				break // the nearest failed folder is the most specific answer
 			}
 		}
 		if entry.Left.Snapshot == nil && entry.Left.Error == "" && rootErrors["left"] != "" {
@@ -289,6 +302,15 @@ func Compare(ctx context.Context, leftRoot, rightRoot string, opts Options) (Res
 	result.Complete = len(result.Errors) == 0
 	result.Totals = countTotals(result.Entries)
 	return result, nil
+}
+
+// parentRel returns the folder that holds rel ("" at the top).
+func parentRel(rel string) string {
+	i := strings.LastIndex(rel, "/")
+	if i <= 0 {
+		return ""
+	}
+	return rel[:i]
 }
 
 func resolveRoot(path string) (string, fs.FileInfo, error) {
