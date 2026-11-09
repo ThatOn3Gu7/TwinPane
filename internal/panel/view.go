@@ -153,7 +153,7 @@ func (p *Panel) View(th theme.Theme, active bool) string {
 			}
 		}
 		w := l.innerW - bw
-		pathText := " " + fitLeft(fsys.SanitizeName(p.path), w-1-ansi.StringWidth(suffix)) + suffix
+		pathText := " " + fitLeft(fsys.SanitizeName(displayPath(p.path)), w-1-ansi.StringWidth(suffix)) + suffix
 		lines = append(lines, badge+pathStyle.Render(fit(pathText, w)))
 	}
 
@@ -367,6 +367,24 @@ func (p *Panel) renderRows(th theme.Theme, active bool, l layout, cols columns) 
 }
 
 // realCount is the number of entries without "..", from the cached stats.
+// displayPath shortens a path under the home folder to "~", the way a shell
+// prompt does: the path line is one row, and the part worth reading is the end.
+// The full path stays in the panel (and on the clipboard, in errors, …).
+func displayPath(path string) string {
+	home := fsys.HomeDir()
+	if home == "" || home == string(filepath.Separator) {
+		return path
+	}
+	clean := filepath.Clean(path)
+	if clean == home {
+		return "~"
+	}
+	if strings.HasPrefix(clean, home+string(filepath.Separator)) {
+		return "~" + clean[len(home):]
+	}
+	return path
+}
+
 func (p *Panel) realCount() int {
 	_, _, total := p.SelectionStats()
 	return total

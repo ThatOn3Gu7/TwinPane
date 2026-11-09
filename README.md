@@ -15,6 +15,10 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT license"></a>
 </p>
 
+<p align="center">
+  <img src="assets/demo.gif" alt="TwinPane in use: two folders side by side, files marked and copied to the other panel, an item deleted to the trash and restored, hidden files shown, and a search." width="900">
+</p>
+
 TwinPane shows two folders side by side and lets you copy, move, rename,
 delete, compress, extract, view and edit files between them, entirely inside
 the terminal. It is built for people who manage files in a shell, especially

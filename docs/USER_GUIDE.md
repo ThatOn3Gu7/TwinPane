@@ -1222,8 +1222,10 @@ overflows. Tap targets cover the whole chip and description.
   (see phase 3), refresh.
 - Active panel is clearly marked: rounded accent border, highlighted path bar
   and cursor. The inactive panel uses a dim square border.
-- Per-panel path, columns (name / size / modified), info line for the entry
-  under the cursor, and a summary (dirs, files, hidden count, selection count
+- Per-panel path (a folder inside your home is shown from `~`, the way a
+  shell prompt does, and shortened from the left when the row is narrow —
+  the panel, errors and the clipboard always carry the full path), columns
+  (name / size / modified), info line for the entry under the cursor, and a summary (dirs, files, hidden count, selection count
   and size, sort key, position).
 - Symlinks (`@`), broken links, executables (`*`) and directories (`/`) are
   marked and colour-coded.

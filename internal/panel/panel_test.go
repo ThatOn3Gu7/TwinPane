@@ -385,3 +385,22 @@ func TestSelectionStatsFollowTheSharedSelection(t *testing.T) {
 		t.Fatalf("clearing from the other panel left %d selected", n)
 	}
 }
+
+// The path line shows the home folder as "~"; the panel's real path does not
+// change, and a folder whose name merely starts like home is left alone.
+func TestDisplayPathShortensHome(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	cases := map[string]string{
+		home:                            "~",
+		filepath.Join(home, "projects"): "~/projects",
+		filepath.Join(home, "a", "b"):   "~/a/b",
+		home + "x":                      home + "x",
+		"/etc":                          "/etc",
+	}
+	for in, want := range cases {
+		if got := displayPath(in); got != want {
+			t.Errorf("displayPath(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
