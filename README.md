@@ -15,10 +15,6 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT license"></a>
 </p>
 
-<p align="center">
-  <img src="assets/demo.gif" alt="TwinPane in use: two folders side by side, files marked and copied to the other panel, an item deleted to the trash and restored, hidden files shown, and a search." width="900">
-</p>
-
 TwinPane shows two folders side by side and lets you copy, move, rename,
 delete, compress, extract, view and edit files between them, entirely inside
 the terminal. It is built for people who manage files in a shell, especially
@@ -37,23 +33,14 @@ view with large touch targets is easier than typing long paths.
   them), and
   nothing is ever overwritten without asking.
 
-```
- TwinPane  0.10.0                                  hidden: off · active: left panel
-╭──────────────────────────────────────╮┌──────────────────────────────────────┐
-│ /home/me/L                           ││ /home/me/R                           │
-│ Name        ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓          │
-│ ..          ┃  Move 2 items (1 folder, 1 file) to the trash?       ┃          │
-│ proj/       ┃                                                      ┃          │
-│ notes.txt   ┃  /home/me/L/proj/                                    ┃          │
-│             ┃  /home/me/L/notes.txt                                ┃          │
-│             ┃  Folders are moved to the trash with ALL of their    ┃          │
-│             ┃  contents: 4 items inside.                           ┃          │
-│             ┃  In total: 4 files, 2 folders, 8 B.                  ┃          │
-│             ┃   No, cancel (n)    Yes, move to trash (y)           ┃          │
-│             ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛          │
-╰──────────────────────────────────────╯└──────────────────────────────────────┘
-  Tab   switch   Space   select   c   copy   m   move   r   rename   d   delete    ?   help
-```
+<p align="center">
+  <img src="assets/demo.gif" alt="TwinPane in use: two folders side by side, files marked and copied into the other panel, an item deleted to the trash and restored, hidden files shown, and a search." width="900">
+</p>
+
+<p align="center">
+  <sub>Recorded from the real program — the script that makes it is
+  <a href="scripts/demo/record_demo.py"><code>scripts/demo/record_demo.py</code></a>.</sub>
+</p>
 
 ## Contents
 

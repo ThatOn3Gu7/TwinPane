@@ -10,7 +10,7 @@ files; the program doesn't need them.
 | `twinpane-mark.svg`, `twinpane-mark-512.png` | panels only, transparent background, for light and dark backgrounds |
 | `twinpane-wordmark-light.svg` / `.png` | mark + "TwinPane" for **light** backgrounds (dark text), transparent |
 | `twinpane-wordmark-dark.svg` / `.png` | mark + "TwinPane" for **dark** backgrounds (light text), transparent |
-| `demo.gif` | the demo at the top of the README, recorded from the real binary |
+| `demo.gif` | the demo in the README introduction, recorded from the real binary |
 
 Colours: navy `#0B1D30`, cyan `#22D3EE`, blue `#3B82F6`. In the wordmark,
 "Pane" is `#0284C7` on light backgrounds and `#22D3EE` on dark ones.

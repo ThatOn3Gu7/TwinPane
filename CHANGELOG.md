@@ -161,11 +161,12 @@ things back and a retention that cleans up on its own.
   part that tells you where you are is not the part that gets cut off on a
   narrow terminal. Only the row changes: the panel keeps the full path, and so
   do errors, the clipboard, Go to and the title.
-- **The README opens with a demo.** `assets/demo.gif` shows two panels, marking
-  and copying, deleting to the trash and restoring, hidden files and search,
-  recorded from the built binary by `scripts/demo/record_demo.py` against a
-  throwaway home folder — re-record it with the same script after a visible
-  change instead of hand-editing it.
+- **The README shows the program instead of drawing it.** The hand-drawn
+  terminal in the introduction is replaced by `assets/demo.gif`, which shows
+  two panels, marking and copying, deleting to the trash and restoring, hidden
+  files and search — recorded from the built binary by
+  `scripts/demo/record_demo.py` against a throwaway home folder. Re-record it
+  with the same script after a visible change instead of hand-editing it.
 - **The render path stopped re-walking the listing.** The panel's entry count,
   the selection count and the selected-size total are computed in one pass and
   cached until the listing or the selection changes, and the hint bar asks for
