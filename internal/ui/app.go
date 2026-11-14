@@ -155,6 +155,10 @@ type App struct {
 	quietUntil     time.Time // ignore keys until then (late terminal replies)
 	now            func() time.Time
 	spinning       bool                // a spinner tick is scheduled (only while a panel loads)
+	pathScrolling  bool                // a path-scroll tick is scheduled (only while the path overflows)
+	pathScrollText string              // the path the offset below belongs to
+	pathScrollOff  int                 // first character of the visible window
+	pathScrollHold int                 // frames to wait at the start of a new path
 	search         *searchView         // recursive search overlay
 	advancedSearch *advancedSearchView // FZF-inspired filename/content search
 	advancedSeq    int
@@ -654,7 +658,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.actExited = true
 		a.closeActivityLog()
 	}
-	return m, a.syncNotice(a.syncSpinner(cmd))
+	return m, a.syncNotice(a.syncSpinner(a.syncPathScroll(cmd)))
 }
 
 // spinInterval is the frame time of the loading spinner.
@@ -672,6 +676,81 @@ func (a *App) syncSpinner(cmd tea.Cmd) tea.Cmd {
 	}
 	a.spinning = true
 	return tea.Batch(cmd, tea.Tick(spinInterval, func(time.Time) tea.Msg { return spinTickMsg{} }))
+}
+
+// pathScrollInterval is the frame time of the status row's path marquee.
+const pathScrollInterval = 150 * time.Millisecond
+
+// pathScrollGap is the blank kept between the end of a scrolled path and its
+// start when it wraps around, so the two never touch.
+const pathScrollGap = 8
+
+// pathScrollHold is how many frames a new path rests at its beginning before
+// it starts walking: a full second at the default frame time, which is enough
+// to read the first part of the path (usually the part that says where you are).
+const pathScrollHold = 7
+
+// pathScrollMsg advances the status row's path marquee.
+type pathScrollMsg struct{}
+
+// syncPathScroll schedules the next marquee frame while the status row is
+// showing a path that does not fit. One tick is pending at a time, and none
+// once the row has something else to say or the path fits again, so an idle
+// TwinPane — or one with a short path — does no work for this.
+func (a *App) syncPathScroll(cmd tea.Cmd) tea.Cmd {
+	if a.overlayOwnsScreen() {
+		// The row is behind a window that has the user's attention; walking
+		// it underneath would repaint the screen for nothing.
+		a.pathScrolling, a.pathScrollText, a.pathScrollOff = false, "", 0
+		return cmd
+	}
+	text, ok := a.pathRowText()
+	if !ok || ansi.StringWidth(" "+text) <= a.width {
+		a.pathScrolling, a.pathScrollText, a.pathScrollOff = false, "", 0
+		return cmd
+	}
+	if a.pathScrollText != text {
+		// A new path (or a resize) starts the marquee from its beginning.
+		a.pathScrollText, a.pathScrollOff, a.pathScrollHold = text, 0, pathScrollHold
+	}
+	if a.pathScrolling {
+		return cmd
+	}
+	a.pathScrolling = true
+	return tea.Batch(cmd, tea.Tick(pathScrollInterval, func(time.Time) tea.Msg { return pathScrollMsg{} }))
+}
+
+// overlayOwnsScreen reports whether something is floating over the panels and
+// keeping the keyboard: the help screen, the Settings window, the live progress
+// window or a dialog. The status row is still drawn, but nobody is reading it.
+func (a *App) overlayOwnsScreen() bool {
+	return a.showHelp || a.showSettings || a.live != nil || a.dialog != nil
+}
+
+// pathRowText is the path the status row falls back to when nothing else is
+// reporting there, and whether this frame's row is that path. The conditions
+// mirror statusView: a message, a running task, the viewer's position and the
+// properties card all outrank the path.
+func (a *App) pathRowText() (string, bool) {
+	text := a.status
+	if n := a.notice; n != nil && text != "" && text == n.msg {
+		if _, _, _, _, ok := a.noticeRect(); ok {
+			text = ""
+		}
+	}
+	if text != "" || a.taskCountText() != "" {
+		return "", false
+	}
+	if a.viewer != nil && a.viewerPosition() != "" {
+		return "", false
+	}
+	if a.props != nil && a.props.info != nil {
+		return "", false
+	}
+	if e, ok := a.ActivePanel().Current(); ok && !e.IsParent {
+		return fsys.SanitizeName(e.Path), true
+	}
+	return fsys.SanitizeName(a.ActivePanel().Path()), true
 }
 
 // syncSelections mirrors the selection while both panels show the same
@@ -695,6 +774,19 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.width, a.height = msg.Width, msg.Height
 		a.layout()
 		return a, nil
+
+	case pathScrollMsg:
+		a.pathScrolling = false
+		switch {
+		case a.pathScrollHold > 0:
+			a.pathScrollHold--
+		case a.pathScrollText != "":
+			// The window walks one column per frame and wraps after the
+			// path and the blank that separates it from its own start.
+			loop := len([]rune(a.pathScrollText)) + pathScrollGap
+			a.pathScrollOff = (a.pathScrollOff + 1) % loop
+		}
+		return a, nil // Update schedules the next frame if it is still needed
 
 	case spinTickMsg:
 		a.spinning = false
@@ -1286,14 +1378,47 @@ func (a *App) statusView() string {
 		text = a.props.info.Path
 	}
 	if text == "" {
-		if e, ok := a.ActivePanel().Current(); ok && !e.IsParent {
-			text = e.Path
-		} else {
-			text = a.ActivePanel().Path()
+		if p, ok := a.pathRowText(); ok {
+			// pathRowText sanitizes the path itself: the marquee measures
+			// exactly the string it draws.
+			return st.Render(a.pathRow(p))
 		}
 	}
 	text = fsys.SanitizeName(text)
 	return st.Render(fitWidth(" "+text, a.width))
+}
+
+// pathRow renders the full path on the status row. A path that fits is drawn
+// as it is; one that does not is scrolled rather than cut, sliding left and
+// coming back in from the right after a short gap, so every part of it is
+// readable at some point. Only this row scrolls: a message, a task count or
+// the viewer's position is always shown whole, and truncated at the end.
+func (a *App) pathRow(text string) string {
+	whole := " " + text
+	if ansi.StringWidth(whole) <= a.width {
+		return fitWidth(whole, a.width)
+	}
+	loop := []rune(text + strings.Repeat(" ", pathScrollGap))
+	if a.width <= 0 || len(loop) == 0 {
+		return ""
+	}
+	off := a.pathScrollOff % len(loop)
+	var b strings.Builder
+	used := 1
+	b.WriteByte(' ')
+	for i := 0; used < a.width; i++ {
+		r := loop[(off+i)%len(loop)]
+		w := ansi.StringWidth(string(r))
+		if used+w > a.width {
+			break
+		}
+		b.WriteRune(r)
+		used += w
+	}
+	if pad := a.width - used; pad > 0 {
+		b.WriteString(strings.Repeat(" ", pad))
+	}
+	return b.String()
 }
 
 // toggleHidden flips the one hidden-files setting and applies it to both

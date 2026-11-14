@@ -337,6 +337,13 @@ corner of the panel area rather than by a line at the bottom of the screen:
   A refusal counts too: pressing `c` with nothing to copy, `d` with the cursor
   on `..`, `o` on a folder or `x` on a file that needs 7-Zip all answer in the
   pop-up, whole.
+- **A long path walks instead of ending in `…`.** When nothing else is
+  reporting there, the row above the hint bar names the file or folder under
+  the cursor. If that path is wider than the terminal it rests at its start for
+  a moment, then scrolls a column at a time and comes back in from the right
+  after a short gap, looping until the cursor moves. Only this row scrolls: a
+  message, a running task or the viewer's position takes the row whole and
+  stops the walk, and a path that fits is drawn still.
 - **What stays in the status line — state you read while working:** progress
   ("Checking copy paths…", "Scanning folder sizes…"), mode and state notes
   ("sort by name", "hidden: shown", "preview pane on"), navigation ("back to

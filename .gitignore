@@ -4,3 +4,7 @@
 /twinpane
 /twinpane.exe
 .DS_Store
+
+# Python bytecode (the demo recorder is the only Python here).
+__pycache__/
+*.pyc

@@ -32,6 +32,15 @@ things back and a retention that cleans up on its own.
   nothing is copied. This works on Termux, desktop Linux, other distributions,
   macOS and Windows alike: the desktop's own trash is gone, one store behaving
   the same everywhere and carrying the retention with it.
+- **A long path scrolls instead of being cut.** The row above the hint bar
+  names the file or folder under the cursor, and a path deeper than the
+  terminal is wide used to end in `…`, hiding the part that tells you where you
+  are. It now walks: it rests at its start for a second, slides a column at a
+  time, and comes back in from the right after a short gap, looping for as long
+  as the path is on screen. Only that row moves — a message, a task count or
+  the viewer's position always takes the row whole and stops the walk — and a
+  path that fits is still drawn still. Nothing is scheduled while it does not
+  need to scroll, so an idle TwinPane does no work for it.
 - **Retention that needs no daemon.** Items older than **29 days** are removed
   at start-up and every six hours while TwinPane is open; Settings → *Trash* →
   **Keep deleted items for** sets it (1–365 days), and lowering it prunes at
